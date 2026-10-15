@@ -1,0 +1,24 @@
+# build output
+app/build/
+build/
+.gradle/
+local.properties
+*.apk
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# model weights — fetched, not committed.
+# MIT covers the source repo's code, but MobileFaceNet weights are almost
+# certainly MS1M-derived and MS-Celeb-1M was withdrawn. Run scripts/fetch_model.sh.
+models/*.tflite
+app/src/main/assets/*.tflite
+
+# personal data — real photo filenames + judgements from a private library.
+# Leading slash: anchor to repo root, or it also swallows src/.../spike/data/
+/data/
+
+# macOS
+.DS_Store

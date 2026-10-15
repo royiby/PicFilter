@@ -1,0 +1,397 @@
+package com.picfilter.spike.data
+
+import android.content.ContentValues
+import android.content.Context
+import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+/** Phase 1 store. Raw SQLite + typed DAO (Room swap is a later cleanup). */
+class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 2) {
+
+    override fun onCreate(d: SQLiteDatabase) {
+        d.execSQL("""CREATE TABLE person(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            created_at INTEGER NOT NULL)""")
+        d.execSQL("""CREATE TABLE centroid(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id INTEGER NOT NULL,
+            vec BLOB NOT NULL,
+            face_count INTEGER NOT NULL,
+            created_at INTEGER NOT NULL)""")
+        d.execSQL("""CREATE TABLE item(
+            id INTEGER PRIMARY KEY,
+            uri TEXT NOT NULL, name TEXT, rel_path TEXT, bucket TEXT,
+            size_bytes INTEGER, date_added INTEGER,
+            width INTEGER, height INTEGER, dhash INTEGER,
+            scanned_at INTEGER NOT NULL)""")
+        d.execSQL("""CREATE TABLE face(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL,
+            orig_px INTEGER, sharpness REAL, yaw REAL, roll REAL,
+            state TEXT NOT NULL, person_id INTEGER, similarity REAL)""")
+        d.execSQL("""CREATE TABLE score(
+            item_id INTEGER PRIMARY KEY,
+            faces INTEGER, matched INTEGER, indet INTEGER,
+            text_frac REAL, text_blocks INTEGER, dupe_group INTEGER,
+            decision TEXT NOT NULL, reason TEXT, confidence REAL,
+            scored_at INTEGER NOT NULL)""")
+        d.execSQL("""CREATE TABLE action_log(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id INTEGER NOT NULL, action TEXT NOT NULL,
+            at INTEGER NOT NULL, note TEXT)""")
+        createV2(d)
+        d.execSQL("CREATE INDEX idx_face_item ON face(item_id)")
+        d.execSQL("CREATE INDEX idx_item_bucket ON item(bucket)")
+    }
+
+    private fun createV2(d: SQLiteDatabase) {
+        d.execSQL("""CREATE TABLE IF NOT EXISTS label(
+            item_id INTEGER PRIMARY KEY,
+            label TEXT NOT NULL,
+            at INTEGER NOT NULL,
+            note TEXT)""")
+        d.execSQL("""CREATE TABLE IF NOT EXISTS dupe_verdict(
+            group_id INTEGER PRIMARY KEY,
+            verdict TEXT NOT NULL,
+            at INTEGER NOT NULL)""")
+    }
+
+    override fun onUpgrade(d: SQLiteDatabase, old: Int, new: Int) {
+        // Additive only — the scored corpus is expensive to rebuild.
+        if (old < 2) createV2(d)
+    }
+
+    // ---------- people / centroids ----------
+
+    fun upsertPerson(name: String): Long {
+        writableDatabase.execSQL(
+            "INSERT OR IGNORE INTO person(name, created_at) VALUES(?,?)",
+            arrayOf<Any>(name, System.currentTimeMillis())
+        )
+        readableDatabase.rawQuery("SELECT id FROM person WHERE name=?", arrayOf(name)).use {
+            return if (it.moveToFirst()) it.getLong(0) else -1L
+        }
+    }
+
+    fun addCentroid(personId: Long, vec: FloatArray, faceCount: Int) {
+        val v = ContentValues().apply {
+            put("person_id", personId); put("vec", floatsToBytes(vec))
+            put("face_count", faceCount); put("created_at", System.currentTimeMillis())
+        }
+        writableDatabase.insert("centroid", null, v)
+    }
+
+    /** All centroids, keyed by person. Matching takes the max similarity over a person's set. */
+    fun centroidsByPerson(): Map<Long, List<FloatArray>> {
+        val out = HashMap<Long, MutableList<FloatArray>>()
+        readableDatabase.rawQuery("SELECT person_id, vec FROM centroid", null).use { c ->
+            while (c.moveToNext()) {
+                out.getOrPut(c.getLong(0)) { mutableListOf() } += bytesToFloats(c.getBlob(1))
+            }
+        }
+        return out
+    }
+
+    fun personNames(): Map<Long, String> {
+        val out = HashMap<Long, String>()
+        readableDatabase.rawQuery("SELECT id, name FROM person", null).use { c ->
+            while (c.moveToNext()) out[c.getLong(0)] = c.getString(1)
+        }
+        return out
+    }
+
+    fun clearEnrollment() {
+        writableDatabase.execSQL("DELETE FROM centroid")
+        writableDatabase.execSQL("DELETE FROM person")
+    }
+
+    // ---------- items ----------
+
+    fun upsertItem(
+        id: Long, uri: String, name: String?, relPath: String?, bucket: String?,
+        sizeBytes: Long, dateAdded: Long, width: Int, height: Int,
+    ) {
+        val v = ContentValues().apply {
+            put("id", id); put("uri", uri); put("name", name); put("rel_path", relPath)
+            put("bucket", bucket); put("size_bytes", sizeBytes); put("date_added", dateAdded)
+            put("width", width); put("height", height); put("scanned_at", System.currentTimeMillis())
+        }
+        writableDatabase.insertWithOnConflict("item", null, v, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun itemCount(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM item", null).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
+    fun unscoredItems(limit: Int): List<Triple<Long, String, Int>> {
+        val out = mutableListOf<Triple<Long, String, Int>>()
+        readableDatabase.rawQuery(
+            """SELECT i.id, i.uri, i.width FROM item i
+               LEFT JOIN score s ON s.item_id = i.id
+               WHERE s.item_id IS NULL ORDER BY i.date_added DESC LIMIT ?""",
+            arrayOf(limit.toString())
+        ).use { c -> while (c.moveToNext()) out += Triple(c.getLong(0), c.getString(1), c.getInt(2)) }
+        return out
+    }
+
+    fun setDhash(itemId: Long, h: Long) =
+        writableDatabase.execSQL("UPDATE item SET dhash=? WHERE id=?", arrayOf<Any>(h, itemId))
+
+    fun allDhashes(): List<Pair<Long, Long>> {
+        val out = mutableListOf<Pair<Long, Long>>()
+        readableDatabase.rawQuery("SELECT id, dhash FROM item WHERE dhash IS NOT NULL", null).use { c ->
+            while (c.moveToNext()) out += c.getLong(0) to c.getLong(1)
+        }
+        return out
+    }
+
+    // ---------- faces / scores ----------
+
+    fun addFace(
+        itemId: Long, origPx: Int, sharpness: Double, yaw: Float, roll: Float,
+        state: String, personId: Long?, similarity: Float?,
+    ) {
+        val v = ContentValues().apply {
+            put("item_id", itemId); put("orig_px", origPx); put("sharpness", sharpness)
+            put("yaw", yaw); put("roll", roll); put("state", state)
+            if (personId != null) put("person_id", personId) else putNull("person_id")
+            if (similarity != null) put("similarity", similarity) else putNull("similarity")
+        }
+        writableDatabase.insert("face", null, v)
+    }
+
+    fun putScore(
+        itemId: Long, faces: Int, matched: Int, indet: Int,
+        textFrac: Float, textBlocks: Int, decision: String, reason: String, confidence: Float,
+    ) {
+        val v = ContentValues().apply {
+            put("item_id", itemId); put("faces", faces); put("matched", matched); put("indet", indet)
+            put("text_frac", textFrac); put("text_blocks", textBlocks)
+            put("decision", decision); put("reason", reason); put("confidence", confidence)
+            put("scored_at", System.currentTimeMillis())
+        }
+        writableDatabase.insertWithOnConflict("score", null, v, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun setDupeGroup(itemId: Long, group: Long) =
+        writableDatabase.execSQL("UPDATE score SET dupe_group=? WHERE item_id=?", arrayOf<Any>(group, itemId))
+
+    fun decisionCounts(): List<Pair<String, Int>> {
+        val out = mutableListOf<Pair<String, Int>>()
+        readableDatabase.rawQuery(
+            "SELECT decision, COUNT(*) FROM score GROUP BY decision ORDER BY 2 DESC", null
+        ).use { c -> while (c.moveToNext()) out += c.getString(0) to c.getInt(1) }
+        return out
+    }
+
+    fun reasonCounts(): List<Pair<String, Int>> {
+        val out = mutableListOf<Pair<String, Int>>()
+        readableDatabase.rawQuery(
+            "SELECT reason, COUNT(*) FROM score GROUP BY reason ORDER BY 2 DESC", null
+        ).use { c -> while (c.moveToNext()) out += c.getString(0) to c.getInt(1) }
+        return out
+    }
+
+    fun faceStateCounts(): List<Pair<String, Int>> {
+        val out = mutableListOf<Pair<String, Int>>()
+        readableDatabase.rawQuery(
+            "SELECT state, COUNT(*) FROM face GROUP BY state ORDER BY 2 DESC", null
+        ).use { c -> while (c.moveToNext()) out += c.getString(0) to c.getInt(1) }
+        return out
+    }
+
+    fun matchesPerPerson(): List<Triple<String, Int, Double>> {
+        val out = mutableListOf<Triple<String, Int, Double>>()
+        readableDatabase.rawQuery(
+            """SELECT p.name, COUNT(*), AVG(f.similarity) FROM face f
+               JOIN person p ON p.id = f.person_id
+               WHERE f.state='MATCH' GROUP BY p.name ORDER BY 2 DESC""", null
+        ).use { c -> while (c.moveToNext()) out += Triple(c.getString(0), c.getInt(1), c.getDouble(2)) }
+        return out
+    }
+
+    /** Raw per-face metrics for threshold sweeps — no re-detection needed. */
+    fun facesForSweep(): List<FaceRow> {
+        val out = mutableListOf<FaceRow>()
+        readableDatabase.rawQuery(
+            "SELECT item_id, orig_px, sharpness, yaw, roll FROM face", null
+        ).use { c ->
+            while (c.moveToNext()) out += FaceRow(
+                c.getLong(0), c.getInt(1), c.getDouble(2), c.getFloat(3), c.getFloat(4))
+        }
+        return out
+    }
+
+    /** itemId -> (textFrac, textBlocks) */
+    fun textSignals(): Map<Long, Pair<Float, Int>> {
+        val out = HashMap<Long, Pair<Float, Int>>()
+        readableDatabase.rawQuery("SELECT item_id, text_frac, text_blocks FROM score", null).use { c ->
+            while (c.moveToNext()) out[c.getLong(0)] = c.getFloat(1) to c.getInt(2)
+        }
+        return out
+    }
+
+    fun dupeGroupsAt(hamming: Int): Pair<Int, Int> {
+        val all = allDhashes()
+        val parent = HashMap<Long, Long>()
+        fun find(x: Long): Long { var r = x; while (parent[r] != null && parent[r] != r) r = parent[r]!!; parent[r] = r; return r }
+        for ((id, _) in all) parent[id] = id
+        for (i in all.indices) for (j in i + 1 until all.size)
+            if (java.lang.Long.bitCount(all[i].second xor all[j].second) <= hamming) {
+                val ra = find(all[i].first); val rb = find(all[j].first); if (ra != rb) parent[ra] = rb
+            }
+        val groups = HashMap<Long, Int>()
+        for ((id, _) in all) groups[find(id)] = (groups[find(id)] ?: 0) + 1
+        val multi = groups.values.count { it >= 2 }
+        val extra = groups.values.filter { it >= 2 }.sumOf { it - 1 }
+        return multi to extra
+    }
+
+    // ---------- golden set ----------
+
+    fun putLabel(itemId: Long, label: String, note: String? = null) {
+        val v = ContentValues().apply {
+            put("item_id", itemId); put("label", label)
+            put("at", System.currentTimeMillis()); put("note", note)
+        }
+        writableDatabase.insertWithOnConflict("label", null, v, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun deleteLabel(itemId: Long) =
+        writableDatabase.execSQL("DELETE FROM label WHERE item_id=?", arrayOf<Any>(itemId))
+
+    fun labelCounts(): List<Pair<String, Int>> {
+        val out = mutableListOf<Pair<String, Int>>()
+        readableDatabase.rawQuery(
+            "SELECT label, COUNT(*) FROM label GROUP BY label ORDER BY 2 DESC", null
+        ).use { c -> while (c.moveToNext()) out += c.getString(0) to c.getInt(1) }
+        return out
+    }
+
+    /** Golden-set queue: unlabelled items, stratified so every reason is covered. */
+    fun goldenQueue(perReason: Int): List<ReviewRow> {
+        val out = mutableListOf<ReviewRow>()
+        val reasons = mutableListOf<String>()
+        readableDatabase.rawQuery("SELECT DISTINCT reason FROM score", null).use { c ->
+            while (c.moveToNext()) reasons += c.getString(0)
+        }
+        for (r in reasons) {
+            readableDatabase.rawQuery(
+                """SELECT i.id, i.uri, s.decision, s.reason, s.faces, s.matched, s.indet,
+                          s.text_frac, s.dupe_group
+                   FROM score s JOIN item i ON i.id = s.item_id
+                   LEFT JOIN label l ON l.item_id = i.id
+                   WHERE s.reason = ? AND l.item_id IS NULL
+                   ORDER BY i.date_added DESC LIMIT ?""",
+                arrayOf(r, perReason.toString())
+            ).use { c ->
+                while (c.moveToNext()) out += ReviewRow(
+                    c.getLong(0), c.getString(1), c.getString(2), c.getString(3),
+                    c.getInt(4), c.getInt(5), c.getInt(6), c.getFloat(7),
+                    if (c.isNull(8)) null else c.getLong(8))
+            }
+        }
+        return out.shuffled()
+    }
+
+    /** Dupe groups needing a verdict, as lists of member uris. */
+    fun dupeGroups(): List<Pair<Long, List<Pair<Long, String>>>> {
+        val groups = LinkedHashMap<Long, MutableList<Pair<Long, String>>>()
+        readableDatabase.rawQuery(
+            """SELECT s.dupe_group, i.id, i.uri FROM score s
+               JOIN item i ON i.id = s.item_id
+               LEFT JOIN dupe_verdict v ON v.group_id = s.dupe_group
+               WHERE s.dupe_group IS NOT NULL AND v.group_id IS NULL
+               ORDER BY s.dupe_group""", null
+        ).use { c ->
+            while (c.moveToNext())
+                groups.getOrPut(c.getLong(0)) { mutableListOf() } += c.getLong(1) to c.getString(2)
+        }
+        return groups.entries.map { it.key to it.value }.filter { it.second.size >= 2 }
+    }
+
+    fun putDupeVerdict(groupId: Long, verdict: String) {
+        val v = ContentValues().apply {
+            put("group_id", groupId); put("verdict", verdict); put("at", System.currentTimeMillis())
+        }
+        writableDatabase.insertWithOnConflict("dupe_verdict", null, v, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun dupeVerdictCounts(): List<Pair<String, Int>> {
+        val out = mutableListOf<Pair<String, Int>>()
+        readableDatabase.rawQuery(
+            "SELECT verdict, COUNT(*) FROM dupe_verdict GROUP BY verdict", null
+        ).use { c -> while (c.moveToNext()) out += c.getString(0) to c.getInt(1) }
+        return out
+    }
+
+    /** Agreement between the scorer's decision and the human label. */
+    fun confusion(): List<Triple<String, String, Int>> {
+        val out = mutableListOf<Triple<String, String, Int>>()
+        readableDatabase.rawQuery(
+            """SELECT s.reason, l.label, COUNT(*) FROM label l
+               JOIN score s ON s.item_id = l.item_id
+               GROUP BY s.reason, l.label ORDER BY s.reason, 3 DESC""", null
+        ).use { c -> while (c.moveToNext()) out += Triple(c.getString(0), c.getString(1), c.getInt(2)) }
+        return out
+    }
+
+    data class LabelRow(
+        val itemId: Long, val label: String, val name: String?,
+        val reason: String?, val faces: Int, val matched: Int, val indet: Int,
+    )
+
+    fun allLabels(): List<LabelRow> {
+        val out = mutableListOf<LabelRow>()
+        readableDatabase.rawQuery(
+            """SELECT l.item_id, l.label, i.name, s.reason, s.faces, s.matched, s.indet
+               FROM label l
+               LEFT JOIN item i ON i.id = l.item_id
+               LEFT JOIN score s ON s.item_id = l.item_id
+               ORDER BY l.at""", null
+        ).use { c ->
+            while (c.moveToNext()) out += LabelRow(
+                c.getLong(0), c.getString(1), c.getString(2), c.getString(3),
+                c.getInt(4), c.getInt(5), c.getInt(6))
+        }
+        return out
+    }
+
+    fun clearLabels(): Int {
+        val n = readableDatabase.rawQuery("SELECT COUNT(*) FROM label", null)
+            .use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        writableDatabase.execSQL("DELETE FROM label")
+        writableDatabase.execSQL("DELETE FROM dupe_verdict")
+        return n
+    }
+
+    fun resetScores() {
+        writableDatabase.execSQL("DELETE FROM score")
+        writableDatabase.execSQL("DELETE FROM face")
+    }
+
+    data class ReviewRow(
+        val id: Long, val uri: String, val decision: String, val reason: String,
+        val faces: Int, val matched: Int, val indet: Int, val textFrac: Float,
+        val dupeGroup: Long?,
+    )
+
+    data class FaceRow(
+        val itemId: Long, val origPx: Int, val sharpness: Double,
+        val yaw: Float, val roll: Float,
+    )
+
+    companion object {
+        fun floatsToBytes(v: FloatArray): ByteArray {
+            val b = ByteBuffer.allocate(v.size * 4).order(ByteOrder.LITTLE_ENDIAN)
+            for (x in v) b.putFloat(x)
+            return b.array()
+        }
+        fun bytesToFloats(a: ByteArray): FloatArray {
+            val b = ByteBuffer.wrap(a).order(ByteOrder.LITTLE_ENDIAN)
+            return FloatArray(a.size / 4) { b.getFloat() }
+        }
+    }
+}
