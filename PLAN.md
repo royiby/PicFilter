@@ -109,7 +109,48 @@ is deciding what gets copied into that folder. Default-deny, and **no OAuth, no
 `appendonly` upload, no network, no token expiry.** One-time user setup in the
 Google Photos app.
 
-### Transition policy — DECIDED 2026-10-15: both backups on
+### ⚠️ PREMISE CHANGE — 2026-10-18: the problem is rescue, not gatekeeping
+
+Spike 4 finally answered, and it inverts the product. **WhatsApp backup was
+already turned off months ago**, by hand, precisely because of the junk. So
+WhatsApp media never reaches the cloud library at all — there is nothing to
+gatekeep.
+
+But switching it off is a blunt instrument: it stopped the junk *and* the
+keepers. Measured on the real device:
+
+```
+ALL whatsapp items     638   264.7 MB   2026-07-29 .. 2026-10-17
+KEEP (family)          143    59.5 MB   <- exist ONLY on this phone
+REVIEW                 352   135.4 MB   <- certainly contains more keepers
+DISCARD_CANDIDATE      143    69.8 MB
+```
+
+**143+ irreplaceable photos have had no cloud copy for ~2.5 months.** The junk
+they were traded away for totals 265 MB, which is negligible on a modern phone.
+
+So the value proposition flips:
+- ~~Stop junk reaching the cloud~~ — already solved, bluntly, by the user.
+- **Let the good photos back in.** PicFilter's job is to restore backup for the
+  keepers without re-admitting the junk. The promoter is no longer a filter in
+  front of a firehose; it is a **rescue** operation on photos that are currently
+  one dropped phone away from being lost.
+
+This makes Phase 3 the highest-value work by a wide margin, and gives it a
+deadline-shaped quality it did not have before. Local trash/cleanup drops to
+near-zero value (265 MB). Phase 4's cloud backlog is unaffected but unrelated —
+the cloud library has no WhatsApp junk in it.
+
+The remaining half of spike 4 is now the critical one: **confirm that a new
+`Pictures/PicFilter` folder appears in Backup device folders and can be toggled
+on.** The "off" half is already done.
+
+### Transition policy — superseded 2026-10-18
+
+*(Kept for history: the "both backups on" decision assumed WhatsApp backup was
+on. It was not, so there is no transition to manage — only a folder to enable.)*
+
+### Original transition policy — DECIDED 2026-10-15: both backups on
 
 Flipping WhatsApp backup off before the promoter is proven would mean genuine
 keepers stop reaching the cloud with nothing yet carrying them across. So during

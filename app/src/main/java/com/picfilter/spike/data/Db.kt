@@ -528,6 +528,32 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
         return sb.toString()
     }
 
+    /** What is sitting on this phone only, with no cloud copy? */
+    fun exposure(): String {
+        val sb = StringBuilder()
+        fun row(label: String, where: String) {
+            readableDatabase.rawQuery(
+                """SELECT COUNT(*), MIN(i.date_added), MAX(i.date_added), SUM(i.size_bytes)
+                   FROM item i JOIN score s ON s.item_id = i.id WHERE $where""", null
+            ).use { c ->
+                if (c.moveToFirst() && c.getInt(0) > 0) {
+                    val mb = c.getLong(3) / 1048576.0
+                    sb.append("\n  %-22s n=%-5d %.1f MB   %s .. %s".format(
+                        label, c.getInt(0), mb,
+                        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                            .format(java.util.Date(c.getLong(1) * 1000)),
+                        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                            .format(java.util.Date(c.getLong(2) * 1000))))
+                }
+            }
+        }
+        row("KEEP (family)", "s.decision='KEEP'")
+        row("REVIEW", "s.decision='REVIEW'")
+        row("DISCARD_CANDIDATE", "s.decision='DISCARD_CANDIDATE'")
+        row("ALL whatsapp items", "1=1")
+        return sb.toString()
+    }
+
     fun resetScores() {
         writableDatabase.execSQL("DELETE FROM score")
         writableDatabase.execSQL("DELETE FROM face")

@@ -143,6 +143,10 @@ class MainActivity : ComponentActivity() {
             }.start()
             "report"    -> Thread { Pipeline.report(this) }.start()
             "sweep"     -> Thread { Sweep.run(this) }.start()
+            "exposure"  -> Thread {
+                val d = com.picfilter.spike.data.Db(this)
+                Log.i(TAG, "EXPOSURE" + d.exposure()); d.close()
+            }.start()
             "item"      -> Thread {
                 val d = com.picfilter.spike.data.Db(this)
                 val id = intent?.getStringExtra("id")?.toLongOrNull() ?: 0L
