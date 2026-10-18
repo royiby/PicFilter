@@ -981,3 +981,49 @@ similarity belongs to a different face than the family member, but filtering to
 **Takeout's remaining value is measuring recall independently** — this method
 can only sample what the scorer already routed to REVIEW. It is no longer the
 blocker on threshold work, because there is no threshold work to do.
+
+---
+
+# 🐛 Silent promotion loss — 19 files reported rescued that were not there
+
+After the second promotion run the app reported **187 promoted**, but the folder
+held **168 files**. The app's own logging said `copied=44 failed=0`; only an
+independent `ls` caught it.
+
+Diagnosis: all 19 missing files were written in the **first** run, in its final
+second (`promoted_at=16:19:10–11`), with real recorded byte counts. They were
+verified present immediately afterwards, then vanished.
+
+**Prime suspect: the EXIF repair pass, which was run twice over all 143 files.**
+`ExifInterface.saveAttributes()` rewrites the entire JPEG to insert an APP1
+segment; the lost files were the last ones written. Not proven — but repeatedly
+rewriting an already-stamped set has no upside, so it is now avoided.
+
+Originals were never at risk: 638 WhatsApp sources present throughout, 0 trashed.
+
+## Fixes
+1. **Verify after write.** The promoter now stats the destination and refuses to
+   record a promotion for a file that is not on disk. A rescue tool that reports
+   success for a missing file is worse than one that fails loudly.
+2. **`fixDates` is now idempotent** — it skips files that already carry
+   `DateTimeOriginal`, so the suspected rewrite loop cannot recur.
+3. **`op=repair`** drops promotion records whose file is gone, making them
+   eligible again. Re-running promote recovered all 19.
+
+Final state: **187 files on disk, 187 records, 0 missing**, dates intact.
+
+## ⚠️ Process failure: unasserted string replacements
+
+Twice in one session a patch silently did nothing because its search string had
+already been changed by an earlier edit, and that particular `replace` carried
+no assertion:
+
+- `label()` kept narrowing to `ItemCard`, making **every rescue button a no-op**
+  with no exception and no log.
+- `Promoter.repair()` was never added, and `install -r` then redeployed the
+  previous APK, so a "successful" run exercised old code and reported
+  `candidates=0`.
+
+Both looked like working runs. **Every scripted edit must assert its anchor
+matched, and a build failure must stop the pipeline rather than let a stale APK
+install.**

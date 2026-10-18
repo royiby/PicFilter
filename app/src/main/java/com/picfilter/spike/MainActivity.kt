@@ -152,7 +152,38 @@ class MainActivity : ComponentActivity() {
                     byLabel = intent?.getStringExtra("bylabel") == "1",
                 )
             }.start()
+            "repair"    -> Thread { com.picfilter.spike.engine.Promoter.repair(this) }.start()
             "fixdates"  -> Thread { com.picfilter.spike.engine.Promoter.fixDates(this) }.start()
+            "promodiag" -> Thread {
+                val d = com.picfilter.spike.data.Db(this)
+                val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
+                var missing = 0; var present = 0
+                d.readableDatabase.rawQuery(
+                    "SELECT dest_name, at, bytes FROM promotion ORDER BY at", null).use { c ->
+                    while (c.moveToNext()) {
+                        val n = c.getString(0)
+                        val f = java.io.File("/sdcard/Pictures/PicFilter/$n")
+                        if (f.exists()) present++ else {
+                            missing++
+                            Log.i(TAG, "PRDIAG MISSING $n promoted_at=${fmt.format(java.util.Date(c.getLong(1)))} recorded_bytes=${c.getLong(2)}")
+                        }
+                    }
+                }
+                Log.i(TAG, "PRDIAG present=$present missing=$missing")
+                d.close()
+            }.start()
+            "promolist" -> Thread {
+                val d = com.picfilter.spike.data.Db(this)
+                for ((_, n) in d.promotedDests()) Log.i(TAG, "PROMOLIST $n")
+                d.close()
+            }.start()
+            "promocheck" -> Thread {
+                val d = com.picfilter.spike.data.Db(this)
+                val (rows, distinct, dupes) = d.promotionCollisions()
+                Log.i(TAG, "PROMOCHK rows=$rows distinct_names=$distinct lost=${rows - distinct}")
+                for (x in dupes.take(12)) Log.i(TAG, "PROMOCHK   collision $x")
+                d.close()
+            }.start()
             "calibrate" -> Thread {
                 val d = com.picfilter.spike.data.Db(this)
                 Log.i(TAG, "CALIB  band            KEEP/total   keep-rate")

@@ -692,6 +692,19 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
         return out
     }
 
+    /** Collisions: distinct source items that were written to the same filename. */
+    fun promotionCollisions(): Triple<Int, Int, List<String>> {
+        var rows = 0; var distinct = 0
+        val dupes = mutableListOf<String>()
+        readableDatabase.rawQuery("SELECT COUNT(*), COUNT(DISTINCT dest_name) FROM promotion", null)
+            .use { if (it.moveToFirst()) { rows = it.getInt(0); distinct = it.getInt(1) } }
+        readableDatabase.rawQuery(
+            "SELECT dest_name, COUNT(*) n FROM promotion GROUP BY dest_name HAVING n > 1 ORDER BY n DESC",
+            null
+        ).use { c -> while (c.moveToNext()) dupes += "${c.getString(0)} x${c.getInt(1)}" }
+        return Triple(rows, distinct, dupes)
+    }
+
     fun promotionSummary(): String {
         readableDatabase.rawQuery(
             "SELECT COUNT(*), COALESCE(SUM(bytes),0) FROM promotion", null

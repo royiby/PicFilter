@@ -93,6 +93,16 @@ object Promoter {
                 // Write the date INTO the file, then restate it on the row.
                 stampDate(ctx, dest, taken, name)
 
+                // Verify rather than trust: 19 files from the first run were
+                // recorded as promoted and later found absent. A rescue tool
+                // that reports success for a file that is not there is worse
+                // than one that fails loudly.
+                val f = java.io.File("/sdcard/$DEST/$name")
+                if (!f.exists() || f.length() <= 0L) {
+                    Log.w(TAG, "PROMOTE VERIFY FAILED $name (not on disk after write)")
+                    failed++
+                    continue
+                }
                 db.recordPromotion(r.id, dest.toString(), name, copied)
                 bytes += copied; ok++
             } catch (e: Exception) {
@@ -137,15 +147,46 @@ object Promoter {
     }
 
     /** Repair dates on files already promoted (EXIF was lost on first run). */
+    /**
+     * Stamp dates on already-promoted files that still LACK one.
+     *
+     * saveAttributes() rewrites the whole JPEG to insert an APP1 segment. This
+     * was run twice over all 143 files of the first batch, and 19 of them —
+     * the last written — were later found missing. Repeated rewriting is the
+     * prime suspect, so only stamp what is actually undated.
+     */
     fun fixDates(ctx: Context) {
         val db = Db(ctx)
-        var ok = 0; var bad = 0
+        var ok = 0; var bad = 0; var skipped = 0; var gone = 0
         for ((uriStr, name) in db.promotedDests()) {
+            val f = java.io.File("/sdcard/$DEST/$name")
+            if (!f.exists()) { gone++; continue }
+            val already = try {
+                ExifInterface(f.absolutePath)
+                    .getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) != null
+            } catch (e: Exception) { false }
+            if (already) { skipped++; continue }
             val taken = originalDateMs(name, System.currentTimeMillis() / 1000)
             if (stampDate(ctx, Uri.parse(uriStr), taken, name)) ok++ else bad++
         }
-        Log.i(TAG, "STAMP repaired=$ok failed=$bad")
+        Log.i(TAG, "STAMP stamped=$ok failed=$bad already_dated=$skipped missing_file=$gone")
         db.close()
+    }
+
+    /** Drop promotion records whose file is gone, so they become eligible again. */
+    fun repair(ctx: Context): Int {
+        val db = Db(ctx)
+        var dropped = 0
+        for ((_, name) in db.promotedDests()) {
+            if (!java.io.File("/sdcard/$DEST/$name").exists()) {
+                db.writableDatabase.execSQL(
+                    "DELETE FROM promotion WHERE dest_name=?", arrayOf<Any>(name))
+                dropped++
+            }
+        }
+        Log.i(TAG, "REPAIR dropped $dropped stale promotion records; re-run promote to recopy")
+        db.close()
+        return dropped
     }
 
     /** WhatsApp filenames encode the date: IMG-20260630-WA0181.jpg */
