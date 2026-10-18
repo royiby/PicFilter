@@ -165,8 +165,11 @@ class FaceEngine(
             val s = cos(obs.embedding, v)
             if (s > best) { best = s; bestPerson = pid }
         }
+        // Keep bestPerson even on a miss: a face at 0.52 against a known person
+        // is a strong "probably family" hint for the rescue review, and it is
+        // exactly the band where MATCH_THRESHOLD is doing contested work.
         return if (best >= MATCH_THRESHOLD) Triple(MatchState.MATCH, bestPerson, best)
-               else Triple(MatchState.NO_MATCH, null, best)
+               else Triple(MatchState.NO_MATCH, bestPerson, best)
     }
 
     // ---- alignment: falls back to a box crop rather than failing ----

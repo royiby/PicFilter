@@ -39,6 +39,7 @@ class ReviewActivity : ComponentActivity() {
     private sealed interface Card
     private data class ItemCard(val row: Db.ReviewRow) : Card
     private data class DupeCard(val groupId: Long, val members: List<Pair<Long, String>>) : Card
+    private data class RescueCard(val row: Db.RescueRow) : Card
 
     private var mode = "golden"
     private var queue: List<Card> = emptyList()
@@ -99,6 +100,10 @@ class ReviewActivity : ComponentActivity() {
         if (mode == "dupes") {
             buttons.addView(bigButton("DIFFERENT", "#B4453A") { verdict("DIFFERENT") })
             buttons.addView(bigButton("SAME", "#2F7D53") { verdict("SAME") })
+        } else if (mode == "rescue") {
+            buttons.addView(bigButton("NOT MINE", "#3A4150") { label("DISCARD") })
+            buttons.addView(bigButton("SKIP", "#5A6270") { label("SKIP") })
+            buttons.addView(bigButton("KEEP — IT'S FAMILY", "#2F7D53") { label("KEEP") })
         } else {
             buttons.addView(bigButton("DISCARD", "#B4453A") { label("DISCARD") })
             buttons.addView(bigButton("SKIP", "#3A4150") { label("SKIP") })
@@ -136,8 +141,11 @@ class ReviewActivity : ComponentActivity() {
     // --------------------------------------------------------------- queue
 
     private fun loadQueue() {
-        queue = if (mode == "dupes") db.dupeGroups().map { DupeCard(it.first, it.second) }
-                else db.goldenQueue(perReason = 40).map { ItemCard(it) }
+        queue = when (mode) {
+            "dupes" -> db.dupeGroups().map { DupeCard(it.first, it.second) }
+            "rescue" -> db.rescueQueue().map { RescueCard(it) }
+            else -> db.goldenQueue(perReason = 40).map { ItemCard(it) }
+        }
         idx = 0
     }
 
@@ -169,6 +177,18 @@ class ReviewActivity : ComponentActivity() {
                 })
             }
             info.text = "group $gid · ${members.size} members\nAre these the same picture?"
+        } else if (card is RescueCard) {
+            val r = card.row
+            strip.visibility = View.GONE
+            image.setImageBitmap(thumb(Uri.parse(r.uri), 1400))
+            val near = when {
+                r.nearName != null && r.nearSim != null ->
+                    "closest match:  ${r.nearName}  ${"%.3f".format(r.nearSim)}" +
+                        (if (r.nearSim >= 0.50f) "   ← near miss" else "")
+                r.nearSim != null -> "closest similarity ${"%.3f".format(r.nearSim)}"
+                else -> "no measurable face (too small or turned away)"
+            }
+            info.text = "$near\nfaces=${r.faces}  unidentifiable=${r.indet}  ·  ${r.reason}"
         } else if (card is ItemCard) {
             val r = card.row
             strip.visibility = View.GONE

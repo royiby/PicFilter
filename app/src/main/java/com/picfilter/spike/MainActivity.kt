@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
                 })
             }
         })
+        root.addView(launch("Rescue review  — find more family photos", "rescue"))
         root.addView(launch("Review items  (golden set)", "golden"))
         root.addView(launch("Verify duplicate groups", "dupes"))
         return root
@@ -148,9 +149,21 @@ class MainActivity : ComponentActivity() {
                     this,
                     dryRun = intent?.getStringExtra("live") != "1",
                     decisions = (intent?.getStringExtra("decisions") ?: "KEEP").split(","),
+                    byLabel = intent?.getStringExtra("bylabel") == "1",
                 )
             }.start()
             "fixdates"  -> Thread { com.picfilter.spike.engine.Promoter.fixDates(this) }.start()
+            "rescueq"   -> Thread {
+                val d = com.picfilter.spike.data.Db(this)
+                val q = d.rescueQueue()
+                Log.i(TAG, "RESCUEQ size=${q.size}")
+                for (r in q.take(15)) Log.i(TAG, "RESCUEQ  " +
+                    "near=${r.nearName ?: "-"} ${r.nearSim?.let { "%.3f".format(it) } ?: "-"} " +
+                    "faces=${r.faces} indet=${r.indet} ${r.reason}")
+                val withNear = q.count { (it.nearSim ?: 0f) >= 0.45f }
+                Log.i(TAG, "RESCUEQ items with a near-miss >=0.45: $withNear")
+                d.close()
+            }.start()
             "exposure"  -> Thread {
                 val d = com.picfilter.spike.data.Db(this)
                 Log.i(TAG, "EXPOSURE" + d.exposure()); d.close()

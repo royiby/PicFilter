@@ -30,15 +30,19 @@ object Promoter {
     private const val DEST = "Pictures/PicFilter"
     private val WA_DATE = Regex("""IMG-(\d{8})-WA""")
 
-    fun run(ctx: Context, dryRun: Boolean, decisions: List<String> = listOf("KEEP")) {
+    fun run(
+        ctx: Context, dryRun: Boolean,
+        decisions: List<String> = listOf("KEEP"),
+        byLabel: Boolean = false,
+    ) {
         require(!decisions.contains("DISCARD_CANDIDATE")) { "refusing to promote discards" }
         val db = Db(ctx)
-        val rows = db.itemsForPromotion(decisions)
+        val rows = if (byLabel) db.labelledKeepForPromotion() else db.itemsForPromotion(decisions)
         val totalMb = rows.sumOf { it.bytes } / 1048576.0
         val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
         Log.i(TAG, "PROMOTE ${if (dryRun) "DRY RUN" else "LIVE"} " +
-            "decisions=$decisions candidates=${rows.size} ${"%.1f".format(totalMb)} MB")
+            "source=${if (byLabel) "human KEEP labels" else decisions} candidates=${rows.size} ${"%.1f".format(totalMb)} MB")
         if (rows.isEmpty()) {
             Log.i(TAG, "PROMOTE nothing to do (already promoted: ${db.promotionSummary()})")
             db.close(); return

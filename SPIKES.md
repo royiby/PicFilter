@@ -892,3 +892,39 @@ not worth further cycles.
 `when` takes the first match — so the rescue silently ran the old spike instead.
 The Phase 0 test is now `op=spikewrite`. Worth remembering: adding a branch to a
 long `when` can be shadowed with no warning.
+
+---
+
+# Rescue review — widening beyond the confident 143
+
+A second review mode ordered by **how close each photo's best face came to an
+enrolled person**, so the most-likely-family items come first and the user can
+stop when they stop seeing family. Required recording the nearest person even
+on a miss (previously discarded), then a rescore.
+
+```
+RESCUEQ size=247                       (INDETERMINATE_FACE + FEW_FACES_NO_MATCH)
+  near=גבע      0.549  faces=2
+  near=גבע      0.548  faces=9
+  near=Person 1 0.547  faces=3
+  near=דני      0.546  faces=2
+  near=Person 1 0.544  faces=3
+  ...
+items with a near-miss >= 0.45: 78
+```
+
+## ⚠️ The threshold cuts through a dense region, not a gap
+
+The head of the queue is a tight cluster of faces sitting **0.001–0.01 below
+`MATCH_THRESHOLD = 0.55`**. These are not ambiguous strangers; they came within
+a rounding error of matching a named family member.
+
+A threshold is only safe where the distribution is sparse. Here it slices
+through a populated band, which is why the ice-cream photo survived by 0.023 —
+that was not bad luck, it is where this threshold always sits.
+
+**The rescue review doubles as threshold calibration.** Every KEEP/NOT-MINE
+decision in the 0.50–0.55 band is a labelled point exactly where the boundary
+is contested. If most of that band comes back KEEP, 0.55 is too high and the
+evidence to lower it will have been produced as a by-product of protecting
+photos — no Takeout export required.

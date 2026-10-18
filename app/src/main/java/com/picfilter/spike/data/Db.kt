@@ -420,6 +420,59 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
         writableDatabase.insert("cluster_face", null, v)
     }
 
+    data class RescueRow(
+        val id: Long, val uri: String, val reason: String, val faces: Int,
+        val indet: Int, val nearName: String?, val nearSim: Float?,
+    )
+
+    /**
+     * Items worth a human look for rescue: REVIEW items that contain faces,
+     * ordered by how close their best near-miss came to an enrolled person.
+     * Most-likely-family first, so the user can stop when they stop seeing family.
+     */
+    fun rescueQueue(): List<RescueRow> {
+        val out = mutableListOf<RescueRow>()
+        readableDatabase.rawQuery(
+            """SELECT i.id, i.uri, s.reason, s.faces, s.indet,
+                      (SELECT p.name FROM face f LEFT JOIN person p ON p.id=f.person_id
+                       WHERE f.item_id=i.id AND f.similarity IS NOT NULL
+                       ORDER BY f.similarity DESC LIMIT 1),
+                      (SELECT MAX(f.similarity) FROM face f WHERE f.item_id=i.id)
+               FROM item i
+               JOIN score s ON s.item_id = i.id
+               LEFT JOIN label l ON l.item_id = i.id
+               LEFT JOIN promotion pr ON pr.item_id = i.id
+               WHERE s.decision='REVIEW'
+                 AND s.reason IN ('INDETERMINATE_FACE','FEW_FACES_NO_MATCH')
+                 AND l.item_id IS NULL AND pr.item_id IS NULL
+               ORDER BY 7 DESC, s.faces DESC""", null
+        ).use { c ->
+            while (c.moveToNext()) out += RescueRow(
+                c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getInt(4),
+                c.getString(5), if (c.isNull(6)) null else c.getFloat(6))
+        }
+        return out
+    }
+
+    /** Items the human marked KEEP and that are not yet promoted. */
+    fun labelledKeepForPromotion(): List<PromoRow> {
+        val out = mutableListOf<PromoRow>()
+        readableDatabase.rawQuery(
+            """SELECT i.id, i.uri, i.name, i.size_bytes, i.date_added, s.reason
+               FROM label l
+               JOIN item i ON i.id = l.item_id
+               JOIN score s ON s.item_id = i.id
+               LEFT JOIN promotion pr ON pr.item_id = i.id
+               WHERE l.label='KEEP' AND pr.item_id IS NULL
+               ORDER BY i.date_added""", null
+        ).use { c ->
+            while (c.moveToNext()) out += PromoRow(
+                c.getLong(0), c.getString(1), c.getString(2),
+                c.getLong(3), c.getLong(4), c.getString(5))
+        }
+        return out
+    }
+
     data class Candidate(val id: Long, val size: Int, val thumbs: List<String>)
 
     /** Undecided clusters, largest first, each with its best thumbnails. */
