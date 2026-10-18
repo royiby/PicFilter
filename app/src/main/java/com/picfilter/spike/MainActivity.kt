@@ -133,6 +133,7 @@ class MainActivity : ComponentActivity() {
             }
         })
         root.addView(launch("Rescue review  — find more family photos", "rescue"))
+        root.addView(launch("Check what was backed up  — catch false matches", "verify"))
         root.addView(launch("Second pass  — photos with no faces", "noface"))
         root.addView(launch("Review items  (golden set)", "golden"))
         root.addView(launch("Verify duplicate groups", "dupes"))
@@ -168,6 +169,11 @@ class MainActivity : ComponentActivity() {
                 )
             }.start()
             "repair"    -> Thread { com.picfilter.spike.engine.Promoter.repair(this) }.start()
+            "unpromote" -> Thread {
+                intent?.getStringExtra("id")?.toLongOrNull()?.let {
+                    com.picfilter.spike.engine.Promoter.unpromote(this, it)
+                }
+            }.start()
             "watchon"   -> Thread { com.picfilter.spike.engine.Watcher.enable(this) }.start()
             "watchoff"  -> Thread { com.picfilter.spike.engine.Watcher.disable(this) }.start()
             "watchnow"  -> Thread { com.picfilter.spike.engine.Watcher.runNow(this) }.start()

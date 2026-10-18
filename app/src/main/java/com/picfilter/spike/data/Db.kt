@@ -687,6 +687,41 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
         return out
     }
 
+    /** Promoted items awaiting human confirmation that they really are family. */
+    fun promotedForReview(): List<RescueRow> {
+        val out = mutableListOf<RescueRow>()
+        readableDatabase.rawQuery(
+            """SELECT i.id, i.uri, s.reason, s.faces, s.indet,
+                      (SELECT p.name FROM face f LEFT JOIN person p ON p.id=f.person_id
+                       WHERE f.item_id=i.id AND f.state='MATCH'
+                       ORDER BY f.similarity DESC LIMIT 1),
+                      (SELECT MAX(f.similarity) FROM face f WHERE f.item_id=i.id AND f.state='MATCH')
+               FROM promotion pr
+               JOIN item i ON i.id = pr.item_id
+               JOIN score s ON s.item_id = i.id
+               LEFT JOIN label l ON l.item_id = i.id
+               WHERE l.item_id IS NULL
+               ORDER BY 7 ASC""", null
+        ).use { c ->
+            while (c.moveToNext()) out += RescueRow(
+                c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getInt(4),
+                c.getString(5), if (c.isNull(6)) null else c.getFloat(6))
+        }
+        return out
+    }
+
+    fun promotionNameFor(itemId: Long): String? =
+        readableDatabase.rawQuery(
+            "SELECT dest_name FROM promotion WHERE item_id=?", arrayOf(itemId.toString())
+        ).use { if (it.moveToFirst()) it.getString(0) else null }
+
+    fun deletePromotion(itemId: Long) {
+        writableDatabase.execSQL("DELETE FROM promotion WHERE item_id=?", arrayOf<Any>(itemId))
+        writableDatabase.execSQL(
+            "INSERT INTO action_log(item_id, action, at, note) VALUES(?,?,?,?)",
+            arrayOf<Any>(itemId, "UNPROMOTE", System.currentTimeMillis(), "human said not family"))
+    }
+
     fun promotedDests(): List<Pair<String, String>> {
         val out = mutableListOf<Pair<String, String>>()
         readableDatabase.rawQuery("SELECT dest_uri, dest_name FROM promotion", null).use { c ->

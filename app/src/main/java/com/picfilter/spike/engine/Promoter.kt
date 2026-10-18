@@ -173,6 +173,34 @@ object Promoter {
         db.close()
     }
 
+    /**
+     * Undo a promotion the human says was wrong: delete the copy we made and
+     * forget it. The SOURCE is never touched. Safe without a system dialog
+     * because PicFilter created the destination file itself.
+     */
+    fun unpromote(ctx: Context, itemId: Long): Boolean {
+        val db = Db(ctx)
+        val name = db.promotionNameFor(itemId)
+        var removed = false
+        if (name != null) {
+            try {
+                val n = ctx.contentResolver.delete(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND ${MediaStore.MediaColumns.DISPLAY_NAME}=?",
+                    arrayOf("$DEST/", name))
+                removed = n > 0
+            } catch (e: Exception) {
+                Log.w(TAG, "UNPROMOTE delete failed for $name: ${e.javaClass.simpleName}")
+            }
+            java.io.File("/sdcard/$DEST/$name").takeIf { it.exists() }?.delete()
+        }
+        db.deletePromotion(itemId)
+        db.close()
+        Log.i(TAG, "UNPROMOTE item=$itemId name=$name file_removed=$removed " +
+            "(source untouched; if it already synced, delete it in Google Photos too)")
+        return removed
+    }
+
     /** Drop promotion records whose file is gone, so they become eligible again. */
     fun repair(ctx: Context): Int {
         val db = Db(ctx)

@@ -103,6 +103,10 @@ class ReviewActivity : ComponentActivity() {
         if (mode == "dupes") {
             buttons.addView(bigButton("DIFFERENT", "#B4453A") { verdict("DIFFERENT") })
             buttons.addView(bigButton("SAME", "#2F7D53") { verdict("SAME") })
+        } else if (mode == "verify") {
+            buttons.addView(bigButton("NOT MINE — REMOVE", "#B4453A") { label("DISCARD") })
+            buttons.addView(bigButton("SKIP", "#5A6270") { label("SKIP") })
+            buttons.addView(bigButton("CORRECT", "#2F7D53") { label("KEEP") })
         } else if (mode == "rescue" || mode == "noface") {
             buttons.addView(bigButton("NOT MINE", "#3A4150") { label("DISCARD") })
             buttons.addView(bigButton("SKIP", "#5A6270") { label("SKIP") })
@@ -148,6 +152,7 @@ class ReviewActivity : ComponentActivity() {
             "dupes" -> db.dupeGroups().map { DupeCard(it.first, it.second) }
             "rescue" -> db.rescueQueue().map { RescueCard(it) }
             "noface" -> db.rescueQueue(listOf("NO_FACE_PLAIN")).map { RescueCard(it) }
+            "verify" -> db.promotedForReview().map { RescueCard(it) }
             else -> db.goldenQueue(perReason = 40).map { ItemCard(it) }
         }
         idx = 0
@@ -185,6 +190,13 @@ class ReviewActivity : ComponentActivity() {
             val r = card.row
             strip.visibility = View.GONE
             image.setImageBitmap(thumb(Uri.parse(r.uri), 1400))
+            if (mode == "verify") {
+                info.text = "PicFilter backed this up as family" +
+                    (r.nearName?.let { n -> ", matching $n" } ?: "") +
+                    (r.nearSim?.let { v -> " at ${"%.3f".format(v)}" } ?: "") +
+                    ".\nIs that right?"
+                return
+            }
             if (mode == "noface") {
                 info.text = "No recognisable face in this photo.\n" +
                     "Keep it if it still matters — a place, a drawing, a document."
@@ -232,6 +244,9 @@ class ReviewActivity : ComponentActivity() {
             null -> return
         }
         db.putLabel(id, v)
+        if (mode == "verify" && v == "DISCARD") {
+            Thread { com.picfilter.spike.engine.Promoter.unpromote(this, id) }.start()
+        }
         history.addLast(idx to id)
         idx++; render()
     }

@@ -1055,3 +1055,52 @@ Phase 0 diagnostics. Discard candidates are reported in the digest and nowhere
 else.
 
 The digest is suppressed when nothing changed, so a quiet library stays quiet.
+
+---
+
+# ⚠️ False positive found in the KEEP set — and a measurement gap
+
+The owner reported that `IMG-20260630-WA0181.jpg` — the three-children photo used
+throughout this project as the motivating example — **should not have been
+rescued**. They had marked it "not mine".
+
+```
+ITEM IMG-20260630-WA0181.jpg -> KEEP / ENROLLED_PERSON  faces=3 matched=2
+    face MATCH = Person 1 sim=0.573
+    face MATCH = גבע      sim=0.619
+    face NO_MATCH = גבע   sim=0.511
+```
+
+Two faces matched enrolled people **above** the 0.55 threshold. Both are false
+positives.
+
+## Two failures, both mine
+
+**1. A human judgement was deleted on a misreading.** The owner wrote "I think I
+discarded the first card with the 3 children. can we run the test again?" — a
+statement of fact plus a request. It was read as regret, and `op=unlabel` was run
+on that item, erasing a correct DISCARD. The exported label file
+(`data/golden_labels_2026-10-15.txt`) has 14 rows precisely because of this.
+
+**2. The KEEP set was never verified.** Calibration measured whether photos
+*below* the threshold were family — they were not, hence "do not lower it". It
+never asked whether matches *above* the threshold are correct. The 143 KEEP
+items went straight to promotion unreviewed, and the unreviewed-bucket gap was
+explicitly flagged for `DISCARD_CANDIDATE` while being skipped for `KEEP`,
+because false keeps had been filed as "the safe error" and stopped being thought
+about.
+
+**False keeps are not safe.** They copy other people's children into the user's
+cloud library and consume their quota. "Safe" only ever meant "does not lose
+data", which is a narrower claim than it was being used for.
+
+## Fix: a verification pass over everything promoted
+
+New `verify` review mode lists every promoted item **ordered by weakest match
+first**, so the likeliest false positives surface immediately. `NOT MINE —
+REMOVE` calls `Promoter.unpromote`: deletes the copy PicFilter made, drops the
+promotion record, logs the action. The source is never touched, and no system
+dialog is needed because the app created the destination file itself.
+
+Caveat recorded in the log line: **un-promoting does not un-upload.** If the item
+already synced, it must also be deleted in Google Photos by hand.
