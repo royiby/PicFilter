@@ -8,7 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /** Phase 1 store. Raw SQLite + typed DAO (Room swap is a later cleanup). */
-class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
+class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
 
     override fun onCreate(d: SQLiteDatabase) {
         d.execSQL("""CREATE TABLE person(
@@ -44,6 +44,7 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
             at INTEGER NOT NULL, note TEXT)""")
         createV2(d)
         createV3(d)
+        createV4(d)
         d.execSQL("CREATE INDEX idx_face_item ON face(item_id)")
         d.execSQL("CREATE INDEX idx_item_bucket ON item(bucket)")
     }
@@ -78,10 +79,18 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
         d.execSQL("CREATE INDEX IF NOT EXISTS idx_cf_cluster ON cluster_face(cluster_id)")
     }
 
+    private fun createV4(d: SQLiteDatabase) {
+        d.execSQL("""CREATE TABLE IF NOT EXISTS promotion(
+            item_id INTEGER PRIMARY KEY,
+            dest_uri TEXT, dest_name TEXT, bytes INTEGER,
+            at INTEGER NOT NULL)""")
+    }
+
     override fun onUpgrade(d: SQLiteDatabase, old: Int, new: Int) {
         // Additive only — the scored corpus is expensive to rebuild.
         if (old < 2) createV2(d)
         if (old < 3) createV3(d)
+        if (old < 4) createV4(d)
     }
 
     // ---------- people / centroids ----------
@@ -552,6 +561,61 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
         row("DISCARD_CANDIDATE", "s.decision='DISCARD_CANDIDATE'")
         row("ALL whatsapp items", "1=1")
         return sb.toString()
+    }
+
+    // ---------- promotion (rescue to a backed-up folder) ----------
+
+    data class PromoRow(
+        val id: Long, val uri: String, val name: String?, val bytes: Long,
+        val dateAdded: Long, val reason: String,
+    )
+
+    /** KEEP items not yet promoted. Never returns DISCARD_CANDIDATE. */
+    fun itemsForPromotion(decisions: List<String>): List<PromoRow> {
+        val marks = decisions.joinToString(",") { "?" }
+        val out = mutableListOf<PromoRow>()
+        readableDatabase.rawQuery(
+            """SELECT i.id, i.uri, i.name, i.size_bytes, i.date_added, s.reason
+               FROM item i JOIN score s ON s.item_id = i.id
+               LEFT JOIN promotion pr ON pr.item_id = i.id
+               WHERE s.decision IN ($marks) AND pr.item_id IS NULL
+               ORDER BY i.date_added""",
+            decisions.toTypedArray()
+        ).use { c ->
+            while (c.moveToNext()) out += PromoRow(
+                c.getLong(0), c.getString(1), c.getString(2),
+                c.getLong(3), c.getLong(4), c.getString(5))
+        }
+        return out
+    }
+
+    fun recordPromotion(itemId: Long, destUri: String, destName: String, bytes: Long) {
+        val v = ContentValues().apply {
+            put("item_id", itemId); put("dest_uri", destUri); put("dest_name", destName)
+            put("bytes", bytes); put("at", System.currentTimeMillis())
+        }
+        writableDatabase.insertWithOnConflict("promotion", null, v, SQLiteDatabase.CONFLICT_REPLACE)
+        writableDatabase.execSQL(
+            "INSERT INTO action_log(item_id, action, at, note) VALUES(?,?,?,?)",
+            arrayOf<Any>(itemId, "PROMOTE", System.currentTimeMillis(), destName))
+    }
+
+    fun promotedDests(): List<Pair<String, String>> {
+        val out = mutableListOf<Pair<String, String>>()
+        readableDatabase.rawQuery("SELECT dest_uri, dest_name FROM promotion", null).use { c ->
+            while (c.moveToNext()) out += c.getString(0) to c.getString(1)
+        }
+        return out
+    }
+
+    fun promotionSummary(): String {
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*), COALESCE(SUM(bytes),0) FROM promotion", null
+        ).use { c ->
+            return if (c.moveToFirst())
+                "${c.getInt(0)} items, ${"%.1f".format(c.getLong(1) / 1048576.0)} MB"
+            else "none"
+        }
     }
 
     fun resetScores() {

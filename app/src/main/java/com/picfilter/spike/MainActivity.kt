@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
             "trash" -> trash()
             "untrash" -> untrash()
             "verify" -> verify()
-            "promote" -> promote()
+            "spikewrite" -> promote()   // Phase 0 gatekeeper write test
             "bench" -> Thread {
                 Bench.run(this, intent?.getStringExtra("limit")?.toIntOrNull() ?: 300)
             }.start()
@@ -143,6 +143,14 @@ class MainActivity : ComponentActivity() {
             }.start()
             "report"    -> Thread { Pipeline.report(this) }.start()
             "sweep"     -> Thread { Sweep.run(this) }.start()
+            "promote"   -> Thread {
+                com.picfilter.spike.engine.Promoter.run(
+                    this,
+                    dryRun = intent?.getStringExtra("live") != "1",
+                    decisions = (intent?.getStringExtra("decisions") ?: "KEEP").split(","),
+                )
+            }.start()
+            "fixdates"  -> Thread { com.picfilter.spike.engine.Promoter.fixDates(this) }.start()
             "exposure"  -> Thread {
                 val d = com.picfilter.spike.data.Db(this)
                 Log.i(TAG, "EXPOSURE" + d.exposure()); d.close()

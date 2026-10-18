@@ -833,3 +833,62 @@ decision boundary.
 - Face count rose to 1,844 across 638 items (2.9/image) from 1,409 across 609
   (2.3/image). 29 new items cannot account for 435 faces; worth checking whether
   the recent additions are large group photos or whether something double-counts.
+
+---
+
+# The rescue — 2026-10-18
+
+143 KEEP items copied into `Pictures/PicFilter`. Verified independently of the
+app's own logging:
+
+```
+files on disk          143   60 MB
+MediaStore indexed     143
+whatsapp sources       638   (unchanged — copy only, nothing moved or deleted)
+trashed anywhere         0
+```
+
+## 🐛 DATE_TAKEN at insert is silently discarded
+
+First run produced `datetaken=NULL, date_added=<today>` on all 143. Cause:
+**MediaProvider re-scans the file when `IS_PENDING` goes 1 → 0 and recomputes
+metadata from EXIF**, overwriting the `DATE_TAKEN` supplied at insert. WhatsApp
+strips EXIF from ~91% of its media, so there was nothing to recompute *from* and
+the column was nulled.
+
+Left alone, all 143 rescued photos would have filed into Google Photos under
+today's date rather than across June–October. For a rescue of family photos
+that is close to a silent data-quality disaster: the files are safe but the
+timeline is destroyed.
+
+**Fix: write the date into the JPEG's own EXIF**, not just the MediaStore row.
+Verified by pulling a rescued file and reading its bytes:
+
+```
+rescued file:  DateTimeOriginal  = 2026:06:30 00:00:00
+               DateTimeDigitized = 2026:06:30 00:00:00
+               DateTime          = 2026:06:30 00:00:00
+source file:   0 EXIF tags
+```
+
+Google Photos reads `DateTimeOriginal` cloud-side, so the date now travels with
+the file instead of living in a local database row.
+
+### Date source: filename beats `date_added`
+WhatsApp filenames encode the date (`IMG-20260630-WA0181.jpg`), and on this
+device they disagree with `date_added` by a month — files named June 30 have
+`date_added` of July 29, almost certainly because the phone was set up then and
+WhatsApp media restored in bulk. The filename is the better signal; the
+promoter parses it and falls back to `date_added` only when absent.
+
+### Known cosmetic limitation
+MediaStore's `datetaken` column stays NULL even after `MediaScannerConnection`
+re-scans. This affects only the **local gallery's sort order** for that folder.
+The cloud outcome depends on EXIF, which is correct and verified, so this was
+not worth further cycles.
+
+## 🐛 Op-name collision
+`op=promote` already belonged to the Phase 0 gatekeeper write test, and Kotlin's
+`when` takes the first match — so the rescue silently ran the old spike instead.
+The Phase 0 test is now `op=spikewrite`. Worth remembering: adding a branch to a
+long `when` can be shadowed with no warning.
