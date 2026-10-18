@@ -452,6 +452,15 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
         return out
     }
 
+    /** Undo all candidate decisions (does not touch enrolled people). */
+    fun clearClusterStatuses(): Int {
+        val n = readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM cluster WHERE status IS NOT NULL", null
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        writableDatabase.execSQL("UPDATE cluster SET status=NULL, person_id=NULL")
+        return n
+    }
+
     fun clusterVectors(clusterId: Long): List<FloatArray> {
         val out = mutableListOf<FloatArray>()
         readableDatabase.rawQuery(

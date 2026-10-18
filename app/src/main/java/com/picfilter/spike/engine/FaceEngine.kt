@@ -77,7 +77,8 @@ class FaceEngine(
          * asymmetric — over-split is recoverable (name the clusters identically
          * and the centroids merge under one person), over-merge is not (two
          * people averaged into one centroid is permanently poisoned). So bias
-         * high. Provisional until visually verified. See SPIKES.md.
+         * high. Visually verified against a real library 2026-10-18: "95% good
+         * enough" by the library's owner. See SPIKES.md.
          */
         const val CLUSTER_THRESHOLD = 0.65f
     }

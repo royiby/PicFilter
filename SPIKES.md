@@ -716,3 +716,20 @@ stored and singletons are filtered at *presentation* instead
 `op=sweepcl` (threshold curve) and `op=recluster --es t <x>` operate on stored
 embeddings, so iterating on clustering costs seconds rather than 5 minutes.
 The onboarding intro also now offers "Continue with faces already found".
+
+## ✅ 0.65 visually verified
+
+Regrouped at 0.65 and reviewed card by card by the library's owner — the only
+person who can judge whether a cluster is one human. Verdict: **"95% good
+enough."** The threshold moves from provisional to accepted.
+
+Remaining question is *which direction* the ~5% errs, because the two are not
+equally costly: over-split costs the user a second naming tap, over-merge
+poisons a centroid permanently.
+
+### ⚠️ Process note: do not automate the candidate screen
+Scripted `input tap` navigation repeatedly landed on decision buttons, silently
+recording judgements about the user's family photos — 28 in one pass and 15 in
+another, all spurious, all reset. Buttons that record opinions about people must
+be driven by the person, not by a test harness. `op=clearcl` exists to undo this
+class of mistake; the real fix was to stop automating that screen.
