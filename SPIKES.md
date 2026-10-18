@@ -928,3 +928,56 @@ decision in the 0.50–0.55 band is a labelled point exactly where the boundary
 is contested. If most of that band comes back KEEP, 0.55 is too high and the
 evidence to lower it will have been produced as a by-product of protecting
 photos — no Takeout export required.
+
+---
+
+# Threshold calibration from 247 human labels — 2026-10-18
+
+The rescue review produced 203 DISCARD + 44 KEEP over the 247 REVIEW items that
+contain faces. Every one is a labelled point in the band where
+`MATCH_THRESHOLD = 0.55` is contested, so it settles the question directly —
+no Takeout export needed.
+
+## ❌ Near-miss similarity does NOT predict "this is family"
+
+Keep-rate by the photo's best face similarity:
+
+```
+ALL                          FEW_FACES_NO_MATCH (clean subset)
+0.000..0.350  13.5%          0.000..0.350  16.1%
+0.350..0.400  23.1%          0.350..0.400  28.6%
+0.400..0.450  17.9%          0.400..0.450  28.6%
+0.450..0.475  21.7%          0.450..0.475  21.4%
+0.475..0.500  15.4%          0.475..0.500  25.0%
+0.500..0.520   5.9%          0.500..0.520   0.0%   <- 0/10
+0.520..0.540   6.3%          0.520..0.540   0.0%   <- 0/5
+```
+
+If similarity predicted family-ness, keep-rate would climb steeply toward 0.55.
+It is flat, and **zero** in the two bands closest to the threshold on the clean
+subset: 15 photos whose faces came nearest to matching an enrolled person, none
+of them family.
+
+The `INDETERMINATE_FACE` confound was checked and ruled out — those items' max
+similarity belongs to a different face than the family member, but filtering to
+`FEW_FACES_NO_MATCH` (where every face passed the quality gate) makes the result
+*stronger*, not weaker.
+
+## Consequences
+
+1. **Do not lower `MATCH_THRESHOLD`.** The region just below 0.55 is genuinely
+   not family. Dropping to 0.50 would admit ~15 non-family photos and recover
+   none. 0.55 is not too high — a worry carried for several sessions, now retired.
+2. **The ice-cream photo surviving by 0.023 was not evidence of a mis-placed
+   threshold.** It was a true positive near the boundary, not a near-miss of a
+   boundary in the wrong place.
+3. **Ranking the rescue queue by near-miss was a failed idea.** It did not
+   surface family first. Harmless here (all 247 were reviewed) but it should not
+   be presented to a user as "most likely family".
+4. The 44 genuinely-missed family photos were missed for reasons the embedding
+   never saw: faces too small or turned to pass the quality gate, or photos that
+   are family-relevant without a recognisable face at all.
+
+**Takeout's remaining value is measuring recall independently** — this method
+can only sample what the scorer already routed to REVIEW. It is no longer the
+blocker on threshold work, because there is no threshold work to do.

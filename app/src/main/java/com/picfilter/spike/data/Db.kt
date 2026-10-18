@@ -653,6 +653,37 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
             arrayOf<Any>(itemId, "PROMOTE", System.currentTimeMillis(), destName))
     }
 
+    /**
+     * Human verdicts bucketed by the photo's best face similarity. Every one of
+     * these is a labelled point in the band where MATCH_THRESHOLD is contested,
+     * so this says directly whether 0.55 sits in the right place.
+     */
+    fun calibration(reasonFilter: String? = null): List<Triple<String, Int, Int>> {
+        val out = mutableListOf<Triple<String, Int, Int>>()
+        val edges = listOf(0.0f, 0.35f, 0.40f, 0.45f, 0.475f, 0.50f, 0.52f, 0.54f, 1.01f)
+        for (i in 0 until edges.size - 1) {
+            val lo = edges[i]; val hi = edges[i + 1]
+            var keep = 0; var total = 0
+            val extra = if (reasonFilter != null) " AND s.reason = ?" else ""
+            readableDatabase.rawQuery(
+                """SELECT l.label, (SELECT MAX(f.similarity) FROM face f WHERE f.item_id=l.item_id) sim
+                   FROM label l JOIN score s ON s.item_id = l.item_id
+                   WHERE l.label IN ('KEEP','DISCARD')$extra""",
+                if (reasonFilter != null) arrayOf(reasonFilter) else null
+            ).use { c ->
+                while (c.moveToNext()) {
+                    if (c.isNull(1)) continue
+                    val sim = c.getFloat(1)
+                    if (sim >= lo && sim < hi) {
+                        total++; if (c.getString(0) == "KEEP") keep++
+                    }
+                }
+            }
+            if (total > 0) out += Triple("%.3f..%.3f".format(lo, hi), keep, total)
+        }
+        return out
+    }
+
     fun promotedDests(): List<Pair<String, String>> {
         val out = mutableListOf<Pair<String, String>>()
         readableDatabase.rawQuery("SELECT dest_uri, dest_name FROM promotion", null).use { c ->

@@ -153,6 +153,17 @@ class MainActivity : ComponentActivity() {
                 )
             }.start()
             "fixdates"  -> Thread { com.picfilter.spike.engine.Promoter.fixDates(this) }.start()
+            "calibrate" -> Thread {
+                val d = com.picfilter.spike.data.Db(this)
+                Log.i(TAG, "CALIB  band            KEEP/total   keep-rate")
+                for (r in listOf("FEW_FACES_NO_MATCH", "INDETERMINATE_FACE")) {
+                    Log.i(TAG, "CALIB  --- $r ---")
+                    for ((band, keep, total) in d.calibration(r))
+                        Log.i(TAG, "CALIB  %-15s %3d/%-3d      %5.1f%%".format(
+                            band, keep, total, keep * 100.0 / total))
+                }
+                d.close()
+            }.start()
             "rescueq"   -> Thread {
                 val d = com.picfilter.spike.data.Db(this)
                 val q = d.rescueQueue()
