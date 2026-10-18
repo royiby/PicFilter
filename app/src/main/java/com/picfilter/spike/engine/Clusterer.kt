@@ -82,9 +82,74 @@ object Clusterer {
         }
 
         progress?.onProgress(0, 1, "Grouping people")
-        val assign = cluster(vecs, FaceEngine.CLUSTER_THRESHOLD)
+        val assign = clusterAverage(vecs, FaceEngine.CLUSTER_THRESHOLD)
         persist(db, assign, vecs, meta)
         db.close()
+    }
+
+    /**
+     * Average-linkage agglomerative clustering.
+     *
+     * The greedy variant below merges against a RUNNING CENTROID, which chains:
+     * A joins B, the centroid drifts toward B, C joins the drifted centroid, and
+     * two different people end up merged — while the same drift pushes genuine
+     * matches below threshold and splits others. The user saw both failures at
+     * once, which is the signature of chaining rather than a mis-set threshold.
+     *
+     * Average linkage compares a candidate against the MEAN SIMILARITY TO EVERY
+     * MEMBER of a cluster, so one drifting member cannot drag the whole group.
+     * Lance-Williams update keeps it O(n^2) rather than recomputing pairs.
+     */
+    fun clusterAverage(vecs: List<FloatArray>, threshold: Float): IntArray {
+        val n = vecs.size
+        if (n == 0) return IntArray(0)
+        val sim = FloatArray(n * n)
+        for (i in 0 until n) {
+            sim[i * n + i] = Float.NEGATIVE_INFINITY   // never merge with self
+            for (j in i + 1 until n) {
+                val s = cos(vecs[i], vecs[j])
+                sim[i * n + j] = s; sim[j * n + i] = s
+            }
+        }
+        val active = BooleanArray(n) { true }
+        val size = IntArray(n) { 1 }
+        val label = IntArray(n) { it }          // union-find style representative
+
+        while (true) {
+            var bi = -1; var bj = -1; var best = threshold
+            for (i in 0 until n) {
+                if (!active[i]) continue
+                val row = i * n
+                for (j in i + 1 until n) {
+                    if (!active[j]) continue
+                    val s = sim[row + j]
+                    if (s >= best) { best = s; bi = i; bj = j }
+                }
+            }
+            if (bi < 0) break
+
+            // merge bj into bi, average-linkage (Lance-Williams)
+            val ni = size[bi]; val nj = size[bj]
+            for (k in 0 until n) {
+                if (!active[k] || k == bi || k == bj) continue
+                val merged = (ni * sim[bi * n + k] + nj * sim[bj * n + k]) / (ni + nj)
+                sim[bi * n + k] = merged; sim[k * n + bi] = merged
+            }
+            size[bi] = ni + nj
+            active[bj] = false
+            for (x in 0 until n) if (label[x] == bj) label[x] = bi
+        }
+
+        // compact labels to 0..k-1
+        val remap = HashMap<Int, Int>()
+        val out = IntArray(n)
+        for (i in 0 until n) out[i] = remap.getOrPut(label[i]) { remap.size }
+        val counts = HashMap<Int, Int>()
+        for (a in out) counts[a] = (counts[a] ?: 0) + 1
+        Log.i(TAG, "AVGLINK t=$threshold clusters=${remap.size} " +
+            "singletons=${counts.values.count { it == 1 }} " +
+            "top10=${counts.values.sortedDescending().take(10).joinToString(",")}")
+        return out
     }
 
     /** Greedy agglomerative against running centroids; O(n * clusters). */
@@ -151,7 +216,7 @@ object Clusterer {
         val faces = db.allClusterFaces()
         if (faces.isEmpty()) { Log.w(TAG, "RECLUSTER nothing stored — run bootstrap first"); db.close(); return }
         val vecs = faces.map { it.vec }
-        val assign = cluster(vecs, threshold)
+        val assign = clusterAverage(vecs, threshold)
         db.clearClusters()
         val meta = faces.map { Triple(it.itemId ?: -1L, it.thumb, it.origPx) }
         persist(db, assign, vecs, meta)
@@ -167,6 +232,7 @@ object Clusterer {
         val vecs = faces.map { it.vec }
         Log.i(TAG, "SWEEPCL faces=${vecs.size}")
         for (t in floatArrayOf(0.45f, 0.50f, 0.55f, 0.60f, 0.65f, 0.70f, 0.75f, 0.80f)) {
+            clusterAverage(vecs, t)      // logs its own AVGLINK line for comparison
             val assign = cluster(vecs, t)
             val sizes = HashMap<Int, Int>()
             for (a in assign) sizes[a] = (sizes[a] ?: 0) + 1

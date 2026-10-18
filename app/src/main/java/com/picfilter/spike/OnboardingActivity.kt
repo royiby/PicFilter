@@ -57,7 +57,7 @@ class OnboardingActivity : ComponentActivity() {
         // "resume" skips the scan and works from clusters already extracted —
         // used for adding people later, and for re-grouping experiments.
         if (intent?.getStringExtra("resume") == "1") {
-            candidates = db.candidates(limit = 15, thumbsEach = 6)
+            candidates = db.candidates(limit = 20, thumbsEach = 6)
             idx = 0
             if (candidates.isEmpty()) showNoFaces() else showCandidate()
         } else {
@@ -103,7 +103,7 @@ class OnboardingActivity : ComponentActivity() {
         root.addView(button("Start", "#2F6FD0") { runScan() })
         if (db.candidates(limit = 1, thumbsEach = 1).isNotEmpty()) {
             root.addView(button("Continue with faces already found", "#3A6EA5") {
-                candidates = db.candidates(limit = 15, thumbsEach = 6)
+                candidates = db.candidates(limit = 20, thumbsEach = 6)
                 idx = 0
                 if (candidates.isEmpty()) showNoFaces() else showCandidate()
             })
@@ -134,7 +134,7 @@ class OnboardingActivity : ComponentActivity() {
                 }
             }
             runOnUiThread {
-                candidates = db.candidates(limit = 15, thumbsEach = 6)
+                candidates = db.candidates(limit = 20, thumbsEach = 6)
                 idx = 0
                 if (candidates.isEmpty()) showNoFaces() else showCandidate()
             }
@@ -256,7 +256,7 @@ class OnboardingActivity : ComponentActivity() {
             }
             col.addView(android.widget.HorizontalScrollView(this).apply { addView(strip) })
             col.addView(button("Go back and add someone", "#2F6FD0") {
-                candidates = db.candidates(limit = 15, thumbsEach = 6)
+                candidates = db.candidates(limit = 20, thumbsEach = 6)
                 idx = 0
                 if (candidates.isEmpty()) showSummary() else showCandidate()
             })

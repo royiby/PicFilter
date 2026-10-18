@@ -733,3 +733,34 @@ recording judgements about the user's family photos — 28 in one pass and 15 in
 another, all spurious, all reset. Buttons that record opinions about people must
 be driven by the person, not by a test harness. `op=clearcl` exists to undo this
 class of mistake; the real fix was to stop automating that screen.
+
+## ✅ Average-linkage clustering replaces greedy
+
+The owner's verdict on greedy @0.65 was "95% good enough", with **both** failure
+modes present: some people split across cards, some cards mixing people. Both at
+once is the signature of **chaining**, not a mis-set threshold — greedy merges
+against a running centroid, which drifts toward each new member, pulling in
+unrelated faces while pushing genuine matches below threshold.
+
+Average linkage compares a candidate against the mean similarity to *every*
+member, so one drifting member cannot drag the group. Lance-Williams update
+keeps it O(n²); 433 faces cluster in well under a second.
+
+Measured on the same 433 stored faces:
+
+| threshold | greedy largest | **avg-link largest** | greedy singletons | **avg-link singletons** |
+|---|---|---|---|---|
+| 0.45 | 133 (30.7%) | **40** | 24 | **24** |
+| 0.50 | 70 (16.2%) | **22** | 31 | 39 |
+| 0.55 | 51 (11.8%) | **17** | 48 | 59 |
+| 0.60 | 30 (6.9%) | **13** | 75 | **79** |
+| 0.65 | 18 (4.2%) | **10** | 93 | 105 |
+| 0.70 | 13 (3.0%) | **10** | 123 | 131 |
+
+**Average linkage @0.60 dominates greedy @0.65 on both axes at once:** largest
+cluster 13 vs 18, singletons 79 vs 93. Not a trade-off — strictly better, which
+is what you expect when the underlying defect was chaining rather than threshold
+placement.
+
+Adopted: average linkage, threshold **0.60**. The greedy implementation is kept
+only so `op=sweepcl` can print both for comparison.

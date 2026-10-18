@@ -71,16 +71,16 @@ class FaceEngine(
         const val MATCH_THRESHOLD = 0.55f
 
         /**
-         * Clusters this similar are treated as the same person during bootstrap.
-         * Raised 0.55 -> 0.65: at 0.55 the largest cluster held 20% of all faces
-         * on a real library, which is implausible for one person. The errors are
-         * asymmetric — over-split is recoverable (name the clusters identically
-         * and the centroids merge under one person), over-merge is not (two
-         * people averaged into one centroid is permanently poisoned). So bias
-         * high. Visually verified against a real library 2026-10-18: "95% good
-         * enough" by the library's owner. See SPIKES.md.
+         * Average-linkage threshold. Lower than the greedy value it replaces,
+         * because average linkage does not chain: greedy merged against a
+         * drifting running centroid, which simultaneously over-merged some
+         * people and split others (the user observed both at once).
+         *
+         * Measured on a real 433-face library, avg-linkage @0.60 DOMINATES
+         * greedy @0.65 on both axes: largest cluster 13 vs 18 (less merging)
+         * and 79 vs 93 singletons (less fragmentation). See SPIKES.md.
          */
-        const val CLUSTER_THRESHOLD = 0.65f
+        const val CLUSTER_THRESHOLD = 0.60f
     }
 
     private val interp: Interpreter
