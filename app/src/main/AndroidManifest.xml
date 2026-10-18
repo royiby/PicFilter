@@ -17,6 +17,10 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".OnboardingActivity"
+            android:exported="false"
+            android:label="PicFilter Setup" />
+        <activity
             android:name=".ReviewActivity"
             android:exported="false"
             android:label="PicFilter Review" />

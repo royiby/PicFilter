@@ -140,6 +140,59 @@ Note the trap — an OAuth app left in **Testing** publishing status expires ref
 tokens after 7 days, which breaks an unattended background job. Avoiding this is
 a real reason to prefer the folder approach.
 
+### Enrolment: cluster-then-name (onboarding)
+
+Enrolment is **not** a folder convention — that was a dev shortcut. On first run
+the app finds the recurring faces in the user's own library and asks which ones
+matter. The measurement from SPIKES.md *is* the product: clustering 953 faces
+produced a clear recurring-people head (92,48,46,45,42,38,34) over a long
+singleton tail, with the top 10 clusters covering 43% of all faces.
+
+```
+install -> permissions -> sample ~600 recent images (~80s, measured)
+        -> detect + embed under the STRICT gate -> cluster -> rank by size
+        -> show top 15 candidates, each a montage of up to 6 crops
+        -> [name] / [not important] / [these aren't the same person]
+        -> named clusters' centroids become enrolled people
+        -> warn about unclaimed recurring faces
+```
+
+**Enrolment uses a stricter gate than scoring.** Scoring is biased to recall —
+every face must be judged, and an unjudgeable one becomes INDETERMINATE and
+forces review. Enrolment is biased to precision, because centroids are only as
+good as the faces behind them, and admitting small faces is exactly what
+produced the 205-face garbage cluster.
+
+| | min face (original px) | max pose |
+|---|---|---|
+| scoring | 40 | 45° |
+| enrolment | 80 | 30° |
+
+Other decisions:
+- **Sample the whole library, not just WhatsApp** — a user's own camera photos
+  are far better enrolment material than forwarded group shots.
+- **Montage, not a single face**, so the user can see the cluster is coherent
+  before naming it. `These aren't the same person` is a first-class button —
+  clusters *are* sometimes wrong.
+- **Names are optional** (`Person 3` otherwise). The algorithm only needs
+  identity grouping; removing typing friction from the step that gates
+  everything else is worth more than tidy names.
+- **No hard cap on people.** Show 15 candidates, suggest ~10. Matching is
+  O(people) per face, so extra enrolments are nearly free — and the error
+  direction is safe: more enrolled people means more false KEEPs, fewer means
+  more false discards.
+- **Two centroids per person** when a cluster is big enough (main + the most
+  distinct third). Matching takes the max across a person's set, so extra
+  vectors only help recall — and this is the hook for re-enrolment as children's
+  faces drift.
+- Singleton clusters are dropped; they are noise for onboarding.
+
+**The skipped-person warning is a safety feature, not polish.** If someone
+enrols 3 people but has 6 in the family, photos of the other 3 become discard
+candidates — that is exactly the ice-cream photo. The final screen therefore
+shows every unclaimed face appearing in 5+ photos and says plainly that photos
+of them can be suggested for deletion.
+
 ### On-device ML
 - **Detect:** ML Kit Face Detection (bundled model). Gives boxes, landmarks,
   head angles, and a smile/open-eyes signal. Detection only — no recognition.
@@ -271,7 +324,7 @@ Two requirements that came out of the spikes:
   files. Catch `FileNotFoundException` and treat it as a dead row.
 - Chunk trash requests at **2000 URIs** max per call.
 
-### Phase 1 — Enrollment + scorer
+### Phase 1 — Enrolment + scorer
 Room schema, enrollment flow (pick photos → centroids), detect/embed/match,
 scoring, debug screen showing per-item signals. No actions yet.
 

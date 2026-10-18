@@ -8,7 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /** Phase 1 store. Raw SQLite + typed DAO (Room swap is a later cleanup). */
-class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 2) {
+class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
 
     override fun onCreate(d: SQLiteDatabase) {
         d.execSQL("""CREATE TABLE person(
@@ -43,6 +43,7 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 2) {
             item_id INTEGER NOT NULL, action TEXT NOT NULL,
             at INTEGER NOT NULL, note TEXT)""")
         createV2(d)
+        createV3(d)
         d.execSQL("CREATE INDEX idx_face_item ON face(item_id)")
         d.execSQL("CREATE INDEX idx_item_bucket ON item(bucket)")
     }
@@ -59,9 +60,28 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 2) {
             at INTEGER NOT NULL)""")
     }
 
+    private fun createV3(d: SQLiteDatabase) {
+        d.execSQL("""CREATE TABLE IF NOT EXISTS cluster(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            size INTEGER NOT NULL,
+            centroid BLOB NOT NULL,
+            status TEXT,
+            person_id INTEGER,
+            created_at INTEGER NOT NULL)""")
+        d.execSQL("""CREATE TABLE IF NOT EXISTS cluster_face(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cluster_id INTEGER NOT NULL,
+            item_id INTEGER,
+            thumb_path TEXT,
+            orig_px INTEGER,
+            vec BLOB NOT NULL)""")
+        d.execSQL("CREATE INDEX IF NOT EXISTS idx_cf_cluster ON cluster_face(cluster_id)")
+    }
+
     override fun onUpgrade(d: SQLiteDatabase, old: Int, new: Int) {
         // Additive only — the scored corpus is expensive to rebuild.
         if (old < 2) createV2(d)
+        if (old < 3) createV3(d)
     }
 
     // ---------- people / centroids ----------
@@ -366,6 +386,95 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 2) {
         writableDatabase.execSQL("DELETE FROM dupe_verdict")
         return n
     }
+
+    // ---------- onboarding clusters ----------
+
+    fun clearClusters() {
+        writableDatabase.execSQL("DELETE FROM cluster_face")
+        writableDatabase.execSQL("DELETE FROM cluster")
+    }
+
+    fun addCluster(size: Int, centroid: FloatArray): Long {
+        val v = ContentValues().apply {
+            put("size", size); put("centroid", floatsToBytes(centroid))
+            put("created_at", System.currentTimeMillis())
+        }
+        return writableDatabase.insert("cluster", null, v)
+    }
+
+    fun addClusterFace(clusterId: Long, itemId: Long?, thumb: String?, origPx: Int, vec: FloatArray) {
+        val v = ContentValues().apply {
+            put("cluster_id", clusterId)
+            if (itemId != null) put("item_id", itemId) else putNull("item_id")
+            put("thumb_path", thumb); put("orig_px", origPx); put("vec", floatsToBytes(vec))
+        }
+        writableDatabase.insert("cluster_face", null, v)
+    }
+
+    data class Candidate(val id: Long, val size: Int, val thumbs: List<String>)
+
+    /** Undecided clusters, largest first, each with its best thumbnails. */
+    fun candidates(limit: Int, thumbsEach: Int): List<Candidate> {
+        val out = mutableListOf<Candidate>()
+        readableDatabase.rawQuery(
+            "SELECT id, size FROM cluster WHERE status IS NULL ORDER BY size DESC LIMIT ?",
+            arrayOf(limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                val id = c.getLong(0); val size = c.getInt(1)
+                val thumbs = mutableListOf<String>()
+                readableDatabase.rawQuery(
+                    """SELECT thumb_path FROM cluster_face WHERE cluster_id=? AND thumb_path IS NOT NULL
+                       ORDER BY orig_px DESC LIMIT ?""",
+                    arrayOf(id.toString(), thumbsEach.toString())
+                ).use { t -> while (t.moveToNext()) thumbs += t.getString(0) }
+                out += Candidate(id, size, thumbs)
+            }
+        }
+        return out
+    }
+
+    fun clusterVectors(clusterId: Long): List<FloatArray> {
+        val out = mutableListOf<FloatArray>()
+        readableDatabase.rawQuery(
+            "SELECT vec FROM cluster_face WHERE cluster_id=?", arrayOf(clusterId.toString())
+        ).use { c -> while (c.moveToNext()) out += bytesToFloats(c.getBlob(0)) }
+        return out
+    }
+
+    fun setClusterStatus(clusterId: Long, status: String, personId: Long?) {
+        val v = ContentValues().apply {
+            put("status", status)
+            if (personId != null) put("person_id", personId) else putNull("person_id")
+        }
+        writableDatabase.update("cluster", v, "id=?", arrayOf(clusterId.toString()))
+    }
+
+    /** Clusters the user passed over — the people whose photos may get flagged. */
+    fun skippedClusters(minSize: Int): List<Candidate> {
+        val out = mutableListOf<Candidate>()
+        readableDatabase.rawQuery(
+            """SELECT id, size FROM cluster
+               WHERE (status = 'SKIPPED' OR status IS NULL) AND size >= ?
+               ORDER BY size DESC""",
+            arrayOf(minSize.toString())
+        ).use { c ->
+            while (c.moveToNext()) {
+                val id = c.getLong(0)
+                val thumbs = mutableListOf<String>()
+                readableDatabase.rawQuery(
+                    "SELECT thumb_path FROM cluster_face WHERE cluster_id=? AND thumb_path IS NOT NULL ORDER BY orig_px DESC LIMIT 1",
+                    arrayOf(id.toString())
+                ).use { t -> while (t.moveToNext()) thumbs += t.getString(0) }
+                out += Candidate(id, c.getInt(1), thumbs)
+            }
+        }
+        return out
+    }
+
+    fun enrolledCount(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM person", null)
+            .use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
     fun resetScores() {
         writableDatabase.execSQL("DELETE FROM score")

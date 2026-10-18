@@ -109,6 +109,15 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        root.addView(Button(this).apply {
+            text = "Set up — find the people you care about"
+            textSize = 17f
+            setOnClickListener {
+                startActivity(android.content.Intent().apply {
+                    component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
+                })
+            }
+        })
         root.addView(launch("Review items  (golden set)", "golden"))
         root.addView(launch("Verify duplicate groups", "dupes"))
         return root
@@ -134,6 +143,11 @@ class MainActivity : ComponentActivity() {
             }.start()
             "report"    -> Thread { Pipeline.report(this) }.start()
             "sweep"     -> Thread { Sweep.run(this) }.start()
+            "bootstrap" -> Thread {
+                com.picfilter.spike.engine.Clusterer.bootstrap(
+                    this, intent?.getStringExtra("sample")?.toIntOrNull()
+                        ?: com.picfilter.spike.engine.Clusterer.SAMPLE_SIZE)
+            }.start()
             "labels"      -> Thread { Pipeline.labels(this) }.start()
             "clearlabels" -> Thread { Pipeline.clearLabels(this) }.start()
             "unlabel"     -> Thread {

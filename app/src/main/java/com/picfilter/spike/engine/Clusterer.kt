@@ -1,0 +1,205 @@
+package com.picfilter.spike.engine
+
+import android.content.ContentUris
+import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
+import android.provider.MediaStore
+import android.util.Log
+import com.picfilter.spike.data.Db
+import java.io.File
+import java.io.FileOutputStream
+
+private const val TAG = "PICFILTER"
+
+/**
+ * Onboarding bootstrap: sample the library, embed faces under the STRICT
+ * enrolment gate, cluster them, and persist the clusters as named-person
+ * candidates with thumbnails.
+ *
+ * Validated on a real library (SPIKES.md): 609 images -> 953 faces -> a clear
+ * recurring-people head (92,48,46,45,42,38,34) over a long singleton tail, with
+ * the top 10 clusters covering 43% of all faces. That head is the candidate list.
+ *
+ * The strict gate matters: admitting small faces is precisely what produced a
+ * single 205-face garbage cluster, because tiny blurry faces all look alike to a
+ * 192-d model.
+ */
+object Clusterer {
+
+    /** Measured: ~600 images is enough to surface the head, at ~80s. */
+    const val SAMPLE_SIZE = 600
+    private const val THUMB_DIR = "face_thumbs"
+
+    fun interface Progress { fun onProgress(done: Int, total: Int, phase: String) }
+
+    fun bootstrap(ctx: Context, sample: Int = SAMPLE_SIZE, progress: Progress? = null) {
+        val db = Db(ctx)
+        db.clearClusters()
+        clearThumbs(ctx)
+
+        // Draw from the WHOLE library, not just WhatsApp: a user's own camera
+        // photos are far better enrolment material than forwarded group shots.
+        val uris = sampleUris(ctx, sample)
+        Log.i(TAG, "BOOTSTRAP sampling=${uris.size} images (strict gate)")
+
+        val vecs = ArrayList<FloatArray>()
+        val meta = ArrayList<Triple<Long, String?, Int>>()   // itemId, thumbPath, origPx
+        var faces = 0
+        val t0 = System.currentTimeMillis()
+
+        FaceEngine(
+            ctx,
+            targetPx = 1200,
+            minOrigPx = FaceEngine.ENROL_MIN_ORIG_PX,
+            maxPose = FaceEngine.ENROL_MAX_POSE,
+        ).use { eng ->
+            for ((i, u) in uris.withIndex()) {
+                progress?.onProgress(i, uris.size, "Scanning your photos")
+                try {
+                    val img = eng.decode(ctx, u) ?: continue
+                    val obs = eng.observe(img, keepCrop = true)
+                    img.bitmap.recycle()
+                    for (o in obs) {
+                        val e = o.embedding
+                        val crop = o.crop
+                        if (e == null || crop == null) { crop?.recycle(); continue }
+                        val id = ContentUris.parseId(u)
+                        val path = saveThumb(ctx, crop, "${id}_${faces}")
+                        crop.recycle()
+                        vecs += e
+                        meta += Triple(id, path, o.origPx)
+                        faces++
+                    }
+                } catch (e: Exception) { /* dead row or unreadable; skip */ }
+            }
+        }
+        Log.i(TAG, "BOOTSTRAP faces=$faces in ${System.currentTimeMillis() - t0}ms")
+
+        if (vecs.isEmpty()) {
+            Log.w(TAG, "BOOTSTRAP no usable faces — nothing to enrol")
+            db.close(); return
+        }
+
+        progress?.onProgress(0, 1, "Grouping people")
+        val assign = cluster(vecs)
+        persist(db, assign, vecs, meta)
+        db.close()
+    }
+
+    /** Greedy agglomerative against running centroids; O(n * clusters). */
+    private fun cluster(vecs: List<FloatArray>): IntArray {
+        val centroids = ArrayList<FloatArray>()
+        val sizes = ArrayList<Int>()
+        val assign = IntArray(vecs.size)
+        for ((i, e) in vecs.withIndex()) {
+            var best = -1; var bestSim = -1f
+            for (k in centroids.indices) {
+                val s = cos(e, centroids[k])
+                if (s > bestSim) { bestSim = s; best = k }
+            }
+            if (best >= 0 && bestSim >= FaceEngine.CLUSTER_THRESHOLD) {
+                val c = centroids[best]; val n = sizes[best]
+                for (j in c.indices) c[j] = (c[j] * n + e[j]) / (n + 1)
+                l2(c); sizes[best] = n + 1
+                assign[i] = best
+            } else {
+                centroids += e.copyOf(); sizes += 1
+                assign[i] = centroids.size - 1
+            }
+        }
+        Log.i(TAG, "BOOTSTRAP clusters=${centroids.size} " +
+            "top=${sizes.sortedDescending().take(10).joinToString(",")}")
+        return assign
+    }
+
+    private fun persist(
+        db: Db, assign: IntArray, vecs: List<FloatArray>,
+        meta: List<Triple<Long, String?, Int>>,
+    ) {
+        val members = HashMap<Int, MutableList<Int>>()
+        for (i in assign.indices) members.getOrPut(assign[i]) { mutableListOf() } += i
+        var kept = 0
+        for ((_, idxs) in members.entries.sortedByDescending { it.value.size }) {
+            // singletons are noise for onboarding purposes
+            if (idxs.size < 2) continue
+            val dim = vecs[0].size
+            val centroid = FloatArray(dim)
+            for (i in idxs) for (j in 0 until dim) centroid[j] += vecs[i][j]
+            for (j in 0 until dim) centroid[j] /= idxs.size
+            l2(centroid)
+            val cid = db.addCluster(idxs.size, centroid)
+            for (i in idxs) {
+                val (itemId, thumb, px) = meta[i]
+                db.addClusterFace(cid, itemId, thumb, px, vecs[i])
+            }
+            kept++
+        }
+        Log.i(TAG, "BOOTSTRAP persisted=$kept clusters (singletons dropped)")
+    }
+
+    // ---------------------------------------------------------------- misc
+
+    private fun sampleUris(ctx: Context, limit: Int): List<Uri> {
+        val out = mutableListOf<Uri>()
+        ctx.contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.MediaColumns._ID), null, null,
+            "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+        )?.use { c ->
+            val i = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            while (c.moveToNext() && out.size < limit) {
+                out += ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(i))
+            }
+        }
+        return out
+    }
+
+    private fun thumbDir(ctx: Context) = File(ctx.filesDir, THUMB_DIR).apply { mkdirs() }
+
+    private fun saveThumb(ctx: Context, bmp: Bitmap, name: String): String? = try {
+        val f = File(thumbDir(ctx), "$name.jpg")
+        FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.JPEG, 88, it) }
+        f.absolutePath
+    } catch (e: Exception) { null }
+
+    fun clearThumbs(ctx: Context) {
+        thumbDir(ctx).listFiles()?.forEach { it.delete() }
+    }
+
+    /**
+     * Turn a named cluster into an enrolled person. Stores the cluster centroid
+     * plus, when the cluster is large enough, a second centroid from its most
+     * distinct half — matching takes the MAX over a person's centroids, so extra
+     * vectors only ever help recall.
+     */
+    fun enrolCluster(ctx: Context, clusterId: Long, name: String) {
+        val db = Db(ctx)
+        val vecs = db.clusterVectors(clusterId)
+        if (vecs.isEmpty()) { db.close(); return }
+        val dim = vecs[0].size
+        val pid = db.upsertPerson(name)
+
+        val centroid = FloatArray(dim)
+        for (v in vecs) for (j in 0 until dim) centroid[j] += v[j]
+        for (j in 0 until dim) centroid[j] /= vecs.size
+        l2(centroid)
+        db.addCentroid(pid, centroid, vecs.size)
+
+        if (vecs.size >= 6) {
+            val far = vecs.sortedBy { cos(it, centroid) }.take(vecs.size / 3)
+            if (far.size >= 2) {
+                val second = FloatArray(dim)
+                for (v in far) for (j in 0 until dim) second[j] += v[j]
+                for (j in 0 until dim) second[j] /= far.size
+                l2(second)
+                db.addCentroid(pid, second, far.size)
+                Log.i(TAG, "ENROL '$name' centroids=2 (main=${vecs.size}, outlier=${far.size})")
+            }
+        } else {
+            Log.i(TAG, "ENROL '$name' centroids=1 (${vecs.size} faces)")
+        }
+        db.setClusterStatus(clusterId, "NAMED", pid)
+        db.close()
+    }
+}

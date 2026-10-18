@@ -31,6 +31,8 @@ data class FaceObs(
     val roll: Float,
     val embedding: FloatArray?,   // null when quality bar not met
     val quality: Boolean,
+    /** Aligned 112x112 crop, only retained when keepCrop was requested. */
+    val crop: android.graphics.Bitmap? = null,
 )
 
 data class DecodedImage(val bitmap: Bitmap, val sampleSize: Int, val origW: Int, val origH: Int)
@@ -43,16 +45,33 @@ data class DecodedImage(val bitmap: Bitmap, val sampleSize: Int, val origW: Int,
  * Gate measured at 40px in SPIKES.md 3d: 18.5% of faces indeterminate,
  * only 40.5% of crowd images affected.
  */
-class FaceEngine(ctx: Context, private val targetPx: Int = 1000) : AutoCloseable {
+class FaceEngine(
+    ctx: Context,
+    private val targetPx: Int = 1000,
+    private val minOrigPx: Int = MIN_ORIG_PX,
+    private val maxPose: Float = MAX_POSE,
+) : AutoCloseable {
 
     companion object {
         const val IN = 112
+
+        // --- scoring gate: biased to RECALL. Every face must be judged, and a
+        // face we cannot judge becomes INDETERMINATE, which forces review.
         const val MIN_ORIG_PX = 40
+        const val MAX_POSE = 45f
+
+        // --- enrolment gate: biased to PRECISION. Centroids are only as good as
+        // the faces behind them, and admitting small faces is exactly what
+        // produced the 205-face garbage cluster (SPIKES.md).
+        const val ENROL_MIN_ORIG_PX = 80
+        const val ENROL_MAX_POSE = 30f
+
         // MIN_SHARPNESS deleted: a 0->25 sweep moved 2 faces out of 1409 (SPIKES.md).
         // Sharpness is still measured and stored — it just never gated anything.
-        const val MAX_YAW = 45f
-        const val MAX_ROLL = 45f
         const val MATCH_THRESHOLD = 0.55f
+
+        /** Clusters this similar are treated as the same person during bootstrap. */
+        const val CLUSTER_THRESHOLD = 0.55f
     }
 
     private val interp: Interpreter
@@ -77,7 +96,7 @@ class FaceEngine(ctx: Context, private val targetPx: Int = 1000) : AutoCloseable
         // model was published for pairwise comparison: input batch is fixed at 2
         batch = interp.getInputTensor(0).shape()[0]
         dim = interp.getOutputTensor(0).shape().last()
-        Log.i(TAG, "ENGINE model batch=$batch dim=$dim gate=${MIN_ORIG_PX}px")
+        Log.i(TAG, "ENGINE model batch=$batch dim=$dim gate=${minOrigPx}px/${maxPose.toInt()}deg")
     }
 
     fun decode(ctx: Context, u: Uri): DecodedImage? {
@@ -95,7 +114,7 @@ class FaceEngine(ctx: Context, private val targetPx: Int = 1000) : AutoCloseable
         return DecodedImage(bmp, s, b.outWidth, b.outHeight)
     }
 
-    fun observe(img: DecodedImage): List<FaceObs> {
+    fun observe(img: DecodedImage, keepCrop: Boolean = false): List<FaceObs> {
         val faces = Tasks.await(detector.process(InputImage.fromBitmap(img.bitmap, 0)))
         val out = ArrayList<FaceObs>(faces.size)
         for (f in faces) {
@@ -109,11 +128,15 @@ class FaceEngine(ctx: Context, private val targetPx: Int = 1000) : AutoCloseable
             val sharp = sharpness(crop)
             val yaw = f.headEulerAngleY
             val roll = f.headEulerAngleZ
-            val ok = origPx >= MIN_ORIG_PX &&
-                     abs(yaw) <= MAX_YAW && abs(roll) <= MAX_ROLL
+            val ok = origPx >= minOrigPx &&
+                     abs(yaw) <= maxPose && abs(roll) <= maxPose
             val emb = if (ok) embed(crop) else null
-            crop.recycle()
-            out += FaceObs(origPx, sharp, yaw, roll, emb, ok)
+            if (keepCrop && ok) {
+                out += FaceObs(origPx, sharp, yaw, roll, emb, ok, crop)
+            } else {
+                crop.recycle()
+                out += FaceObs(origPx, sharp, yaw, roll, emb, ok)
+            }
         }
         return out
     }
