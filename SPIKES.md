@@ -764,3 +764,72 @@ placement.
 
 Adopted: average linkage, threshold **0.60**. The greedy implementation is kept
 only so `op=sweepcl` can print both for comparison.
+
+---
+
+# End-to-end validation — 2026-10-18
+
+9 people enrolled through the onboarding flow (5 named, 4 left as "Person N"),
+638 WhatsApp items scored.
+
+```
+face MATCH = 198   NO_MATCH = 953   INDETERMINATE = 693
+
+KEEP              = 143   (ENROLLED_PERSON)
+REVIEW            = 352
+DISCARD_CANDIDATE = 143   (TEXT_NO_FACE 130 + CROWD_NO_MATCH 13)
+```
+
+| | before enrolment | after |
+|---|---|---|
+| KEEP | 0 | **143** |
+| `CROWD_NO_MATCH` | 37 | **13** |
+
+**Enrolment protected two-thirds of the crowd discards.** Matches per person:
+
+```
+גבע       74  mean_sim 0.645
+דני       45  mean_sim 0.686
+Person 1  40  mean_sim 0.648
+מישי      19  mean_sim 0.698
+אבי       13  mean_sim 0.848
+אמא        7  mean_sim 0.869
+```
+
+## ✅ The originating failure case is fixed
+
+```
+IMG-20260630-WA0181.jpg -> KEEP / ENROLLED_PERSON  faces=3 matched=2 indet=0
+    face NO_MATCH         sim=0.511 px=212
+    face MATCH = Person 1 sim=0.573 px=228
+    face MATCH = גבע      sim=0.619 px=246
+```
+
+This is the photo that previously scored `DISCARD_CANDIDATE / CROWD_NO_MATCH`
+with `indeterminate=0` — the case proving the INDETERMINATE guard protects
+against *unrecognisable* faces but offers nothing against *unenrolled* ones.
+
+## ⚠️ It was saved by 0.023
+
+`MATCH_THRESHOLD` is 0.55. Person 1 matched at **0.573**. The third face sits at
+**0.511**, 0.039 below the line. Had the threshold been 0.60 — a value that
+looked entirely reasonable before this measurement — Person 1 would not have
+matched.
+
+**The threshold is load-bearing at exactly the margin where real photos live,
+and it remains the one major parameter never fitted against labels.** This is
+now the strongest argument for the Takeout export: not that accuracy is
+unknown in the abstract, but that a known-good photo survives by 4% of the
+decision boundary.
+
+## Other observations
+- **Person 2, 3 and 4 matched nothing.** Enrolment samples the whole library;
+  scoring currently covers only WhatsApp folders. People who appear mainly in
+  camera-roll photos will legitimately score zero here. Worth confirming rather
+  than assuming — the alternative explanation is that their centroids are bad.
+- **Confidence varies widely by person** (0.645–0.869). אבי and אמא are few but
+  certain; גבע has 74 matches at a 0.645 mean, so a meaningful share sit near
+  the threshold and are the likeliest false positives.
+- Face count rose to 1,844 across 638 items (2.9/image) from 1,409 across 609
+  (2.3/image). 29 new items cannot account for 435 faces; worth checking whether
+  the recent additions are large group photos or whether something double-counts.

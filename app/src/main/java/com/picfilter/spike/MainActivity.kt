@@ -143,6 +143,11 @@ class MainActivity : ComponentActivity() {
             }.start()
             "report"    -> Thread { Pipeline.report(this) }.start()
             "sweep"     -> Thread { Sweep.run(this) }.start()
+            "item"      -> Thread {
+                val d = com.picfilter.spike.data.Db(this)
+                val id = intent?.getStringExtra("id")?.toLongOrNull() ?: 0L
+                Log.i(TAG, "ITEM " + d.itemDetail(id)); d.close()
+            }.start()
             "clearcl"   -> Thread {
                 val d = com.picfilter.spike.data.Db(this)
                 Log.i(TAG, "CLUSTERS reset ${d.clearClusterStatuses()} decisions"); d.close()

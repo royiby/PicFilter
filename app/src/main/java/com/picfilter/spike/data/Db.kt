@@ -503,6 +503,31 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
         readableDatabase.rawQuery("SELECT COUNT(*) FROM person", null)
             .use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
+    /** Full scoring detail for one item — used to check specific photos. */
+    fun itemDetail(itemId: Long): String {
+        val sb = StringBuilder()
+        readableDatabase.rawQuery(
+            """SELECT i.name, s.decision, s.reason, s.faces, s.matched, s.indet, s.text_frac
+               FROM item i LEFT JOIN score s ON s.item_id = i.id WHERE i.id = ?""",
+            arrayOf(itemId.toString())
+        ).use { c ->
+            if (!c.moveToFirst()) return "item $itemId not found"
+            sb.append("${c.getString(0)}  ->  ${c.getString(1)} / ${c.getString(2)}  ")
+            sb.append("faces=${c.getInt(3)} matched=${c.getInt(4)} indet=${c.getInt(5)}")
+        }
+        readableDatabase.rawQuery(
+            """SELECT f.state, p.name, f.similarity, f.orig_px FROM face f
+               LEFT JOIN person p ON p.id = f.person_id WHERE f.item_id = ?""",
+            arrayOf(itemId.toString())
+        ).use { c ->
+            while (c.moveToNext()) sb.append("\n    face ${c.getString(0)}" +
+                (c.getString(1)?.let { " = $it" } ?: "") +
+                (if (c.isNull(2)) "" else " sim=${"%.3f".format(c.getFloat(2))}") +
+                " px=${c.getInt(3)}")
+        }
+        return sb.toString()
+    }
+
     fun resetScores() {
         writableDatabase.execSQL("DELETE FROM score")
         writableDatabase.execSQL("DELETE FROM face")
