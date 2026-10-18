@@ -42,17 +42,8 @@ class OnboardingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         db = Db(this)
-        root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#11131A"))
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-        }
-        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-            val b = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            v.setPadding(dp(16) + b.left, dp(16) + b.top, dp(16) + b.right, dp(16) + b.bottom)
-            insets
-        }
+        root = Ui.screen(this)
+        Ui.applyInsets(root, this, extraBottom = 8)
         setContentView(root)
         // "resume" skips the scan and works from clusters already extracted —
         // used for adding people later, and for re-grouping experiments.
@@ -68,24 +59,26 @@ class OnboardingActivity : ComponentActivity() {
     private fun dp(v: Int) = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
-    private fun title(t: String) = TextView(this).apply {
-        text = t; textSize = 24f; setTextColor(Color.WHITE)
-        setPadding(0, 0, 0, dp(10))
-    }
+    private fun title(t: String) = Ui.title(this, t, 26f)
 
-    private fun body(t: String) = TextView(this).apply {
-        text = t; textSize = 15f; setTextColor(Color.parseColor("#C7D2E0"))
-        setPadding(0, 0, 0, dp(14))
-    }
+    private fun body(t: String) = Ui.body(this, t)
 
-    private fun button(t: String, colour: String, onClick: () -> Unit) = Button(this).apply {
-        text = t; textSize = 16f
-        setTextColor(Color.WHITE); setBackgroundColor(Color.parseColor(colour))
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(56)
-        ).apply { setMargins(0, dp(6), 0, dp(6)) }
-        setOnClickListener { onClick() }
-    }
+    /** Colour names are kept at call sites; map them onto the Material palette. */
+    private fun button(t: String, colour: String, onClick: () -> Unit) = Ui.wideButton(
+        this, t,
+        when (colour) {
+            "#2F7D53" -> Ui.GREEN
+            "#2F6FD0", "#3A6EA5" -> Ui.PRIMARY
+            "#8A5A2B" -> "#5C4433"
+            else -> Ui.NEUTRAL
+        },
+        when (colour) {
+            "#2F7D53" -> Ui.ON_GREEN
+            "#2F6FD0", "#3A6EA5" -> Ui.ON_PRIMARY
+            else -> Ui.ON_SURFACE
+        },
+        onClick,
+    )
 
     // ------------------------------------------------------------- 1. intro
 
@@ -117,9 +110,15 @@ class OnboardingActivity : ComponentActivity() {
         root.removeAllViews()
         root.addView(title("Finding faces"))
         val status = body("Starting…")
-        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            isIndeterminate = false; max = 100
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(14))
+        val bar = com.google.android.material.progressindicator.LinearProgressIndicator(this).apply {
+            isIndeterminate = false
+            max = 100
+            trackCornerRadius = dp(4)
+            setIndicatorColor(Color.parseColor(Ui.PRIMARY))
+            trackThickness = dp(8)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(24), dp(8), dp(24), dp(8)) }
         }
         root.addView(bar)
         root.addView(status)
@@ -167,12 +166,7 @@ class OnboardingActivity : ComponentActivity() {
         val strip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         for (p in c.thumbs) {
             val bmp = try { BitmapFactory.decodeFile(p) } catch (e: Exception) { null } ?: continue
-            strip.addView(ImageView(this).apply {
-                setImageBitmap(bmp)
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                layoutParams = LinearLayout.LayoutParams(dp(92), dp(92))
-                    .apply { setMargins(0, 0, dp(6), 0) }
-            })
+            strip.addView(Ui.thumb(this, 96).apply { setImageBitmap(bmp) })
         }
         val scroll = android.widget.HorizontalScrollView(this).apply { addView(strip) }
         root.addView(scroll)
@@ -244,10 +238,7 @@ class OnboardingActivity : ComponentActivity() {
                     layoutParams = LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.WRAP_CONTENT)
                         .apply { setMargins(0, 0, dp(8), 0) }
                 }
-                cell.addView(ImageView(this).apply {
-                    setImageBitmap(bmp); scaleType = ImageView.ScaleType.CENTER_CROP
-                    layoutParams = LinearLayout.LayoutParams(dp(80), dp(80))
-                })
+                cell.addView(Ui.thumb(this, 80).apply { setImageBitmap(bmp) })
                 cell.addView(TextView(this).apply {
                     text = "${s.size} photos"; textSize = 11f
                     setTextColor(Color.parseColor("#9FB0C8"))

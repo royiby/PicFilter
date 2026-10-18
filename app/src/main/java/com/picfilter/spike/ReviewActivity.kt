@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
+import com.google.android.material.button.MaterialButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
@@ -38,6 +39,8 @@ class ReviewActivity : ComponentActivity() {
     private lateinit var strip: LinearLayout
     private lateinit var info: TextView
     private lateinit var counter: TextView
+    private lateinit var actionBar: LinearLayout
+    private lateinit var undoBtn: View
 
     private sealed interface Card
     private data class ItemCard(val row: Db.ReviewRow) : Card
@@ -64,85 +67,79 @@ class ReviewActivity : ComponentActivity() {
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
     private fun buildUi(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#11131A"))
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-        }
+        val root = Ui.screen(this)
 
         counter = TextView(this).apply {
-            setTextColor(Color.parseColor("#9FB0C8")); textSize = 13f
+            setTextColor(Color.parseColor(Ui.ON_SURFACE_VARIANT)); textSize = 12f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setPadding(dp(24), dp(14), dp(24), dp(6))
         }
         root.addView(counter)
 
-        image = ImageView(this).apply {
+        image = Ui.photo(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+            ).apply { setMargins(dp(16), 0, dp(16), 0) }
         }
         root.addView(image)
 
         strip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(110))
+            setPadding(dp(16), dp(10), dp(16), 0)
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(104))
             visibility = View.GONE
         }
         root.addView(strip)
 
         info = TextView(this).apply {
-            setTextColor(Color.parseColor("#E6EDF6")); textSize = 13f
-            typeface = Typeface.MONOSPACE
-            setPadding(0, dp(8), 0, dp(8))
+            setTextColor(Color.parseColor(Ui.ON_SURFACE)); textSize = 14f
+            setLineSpacing(0f, 1.3f)
+            setPadding(dp(24), dp(14), dp(24), dp(12))
         }
         root.addView(info)
 
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(72))
+            setPadding(dp(12), 0, dp(12), dp(6))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52))
         }
-        if (mode == "dupes") {
-            buttons.addView(bigButton("DIFFERENT", "#B4453A") { verdict("DIFFERENT") })
-            buttons.addView(bigButton("SAME", "#2F7D53") { verdict("SAME") })
-        } else if (mode == "verify") {
-            buttons.addView(bigButton("NOT MINE — REMOVE", "#B4453A") { label("DISCARD") })
-            buttons.addView(bigButton("SKIP", "#5A6270") { label("SKIP") })
-            buttons.addView(bigButton("CORRECT", "#2F7D53") { label("KEEP") })
-        } else if (mode == "rescue" || mode == "noface") {
-            buttons.addView(bigButton("NOT MINE", "#3A4150") { label("DISCARD") })
-            buttons.addView(bigButton("SKIP", "#5A6270") { label("SKIP") })
-            buttons.addView(bigButton("KEEP — IT'S FAMILY", "#2F7D53") { label("KEEP") })
-        } else {
-            buttons.addView(bigButton("DISCARD", "#B4453A") { label("DISCARD") })
-            buttons.addView(bigButton("SKIP", "#3A4150") { label("SKIP") })
-            buttons.addView(bigButton("KEEP", "#2F7D53") { label("KEEP") })
+        when (mode) {
+            "dupes" -> {
+                buttons.addView(Ui.filled(this, "Different", Ui.NEUTRAL, Ui.ON_SURFACE) { verdict("DIFFERENT") })
+                buttons.addView(Ui.filled(this, "Same photo", Ui.GREEN, Ui.ON_GREEN) { verdict("SAME") })
+            }
+            "verify" -> {
+                buttons.addView(Ui.filled(this, "Not mine", Ui.RED, Ui.ON_RED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE) { label("SKIP") })
+                buttons.addView(Ui.filled(this, "Correct", Ui.GREEN, Ui.ON_GREEN) { label("KEEP") })
+            }
+            "rescue", "noface" -> {
+                buttons.addView(Ui.filled(this, "Not mine", Ui.NEUTRAL, Ui.ON_SURFACE) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE_VARIANT) { label("SKIP") })
+                buttons.addView(Ui.filled(this, "Keep", Ui.GREEN, Ui.ON_GREEN) { label("KEEP") })
+            }
+            else -> {
+                buttons.addView(Ui.filled(this, "Discard", Ui.RED, Ui.ON_RED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE) { label("SKIP") })
+                buttons.addView(Ui.filled(this, "Keep", Ui.GREEN, Ui.ON_GREEN) { label("KEEP") })
+            }
         }
+        actionBar = buttons
         root.addView(buttons)
 
-        val undo = Button(this).apply {
+        undoBtn = MaterialButton(this, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
             text = "Undo last"
+            isAllCaps = false
+            setTextColor(Color.parseColor(Ui.PRIMARY))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(44))
             setOnClickListener { undo() }
         }
-        root.addView(undo)
+        root.addView(undoBtn)
 
-        // the nav bar was covering the undo button
-        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            v.setPadding(dp(12) + bars.left, dp(12) + bars.top,
-                         dp(12) + bars.right, dp(12) + bars.bottom)
-            insets
-        }
+        Ui.applyInsets(root, this, extraBottom = 4)
         return root
-    }
-
-    private fun bigButton(label: String, colour: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        textSize = 16f
-        setTextColor(Color.WHITE)
-        setBackgroundColor(Color.parseColor(colour))
-        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-            .apply { setMargins(dp(4), 0, dp(4), 0) }
-        setOnClickListener { onClick() }
     }
 
     // --------------------------------------------------------------- queue
@@ -161,6 +158,8 @@ class ReviewActivity : ComponentActivity() {
     private fun render() {
         if (idx >= queue.size) {
             image.setImageDrawable(null); strip.visibility = View.GONE
+            actionBar.visibility = View.GONE
+            undoBtn.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
             val summary = if (mode == "dupes")
                 db.dupeVerdictCounts().joinToString("  ") { "${it.first}=${it.second}" }
             else db.labelCounts().joinToString("  ") { "${it.first}=${it.second}" }
@@ -168,7 +167,9 @@ class ReviewActivity : ComponentActivity() {
             counter.text = "queue empty"
             return
         }
-        counter.text = "${idx + 1} / ${queue.size}   [$mode]"
+        actionBar.visibility = View.VISIBLE
+        undoBtn.visibility = View.VISIBLE
+        counter.text = "${idx + 1} of ${queue.size}"
 
         val card = queue[idx]
         if (card is DupeCard) {
@@ -178,12 +179,7 @@ class ReviewActivity : ComponentActivity() {
             strip.removeAllViews()
             image.setImageBitmap(thumb(Uri.parse(members[0].second), 1400))
             for ((_, u) in members) {
-                strip.addView(ImageView(this).apply {
-                    scaleType = ImageView.ScaleType.CENTER_CROP
-                    layoutParams = LinearLayout.LayoutParams(dp(100), dp(100))
-                        .apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
-                    setImageBitmap(thumb(Uri.parse(u), 240))
-                })
+                strip.addView(Ui.thumb(this, 88).apply { setImageBitmap(thumb(Uri.parse(u), 240)) })
             }
             info.text = "group $gid · ${members.size} members\nAre these the same picture?"
         } else if (card is RescueCard) {

@@ -1104,3 +1104,30 @@ dialog is needed because the app created the destination file itself.
 
 Caveat recorded in the log line: **un-promoting does not un-upload.** If the item
 already synced, it must also be deleted in Google Photos by hand.
+
+---
+
+# UX: Material 3 rebuild — 2026-10-18
+
+The interface was hand-rolled `Button`/`TextView` with hardcoded colours — fine
+for a spike, wrong for something a person uses on their own photos daily.
+
+Rebuilt on Material 3 with a Google-Photos-shaped visual language:
+- `Theme.Material3.DayNight.NoActionBar`, near-black surfaces (`#131314`),
+  tonal containers (`#1E1F20`), blue accent (`#A8C7FA`)
+- A shared `Ui.kt` toolkit so every screen is one product: `actionCard`,
+  `statRow`, `filled`, `wideButton`, `photo`/`thumb` (`ShapeableImageView`,
+  18 dp corners), `applyInsets`
+- Home is now a stat row (backed up / to review / junk found) over tappable
+  cards, with the auto-rescue state as an accent card
+- Review screens use a rounded photo, a bottom pill action bar, and plain-language
+  labels ("Not mine", "Keep", "Same photo") instead of shouting caps
+- Onboarding restyled by redirecting its three local helpers at the toolkit —
+  one small change, whole flow updated
+- `LinearProgressIndicator` replaces the stock `ProgressBar`
+- Action bar hides on the finished screen; counter reads "3 of 20" not "3 / 20 [mode]"
+
+## State after the threshold change
+All review queues are now empty — 494 of 638 items carry a human label
+(378 DISCARD, 116 KEEP). Decisions under the fitted thresholds:
+KEEP 58, REVIEW 422, DISCARD_CANDIDATE 158.

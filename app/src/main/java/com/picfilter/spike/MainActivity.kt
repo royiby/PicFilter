@@ -89,55 +89,67 @@ class MainActivity : ComponentActivity() {
         dispatch(op)
     }
 
-    /** Home screen: the review UI is used by hand, so it needs real buttons. */
+    /** Home. Photos-style: a stat row, then tappable cards. */
     private fun buildHome(): android.view.View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(40, 60, 40, 40)
-        }
-        root.addView(TextView(this).apply { text = "PicFilter"; textSize = 26f })
-        root.addView(tv.apply { textSize = 14f })
-        fun launch(label: String, mode: String) = Button(this).apply {
-            text = label
-            textSize = 17f
-            setOnClickListener {
-                startActivity(
-                    android.content.Intent().apply {
-                        component = ComponentName(this@MainActivity, ReviewActivity::class.java)
-                        putExtra("mode", mode)
-                    }
-                )
-            }
-        }
-        root.addView(Button(this).apply {
-            text = "Set up — find the people you care about"
-            textSize = 17f
-            setOnClickListener {
+        val db = com.picfilter.spike.data.Db(this)
+        val promoted = try { db.promotionCount() } catch (e: Exception) { 0 }
+        val people = try { db.enrolledCount() } catch (e: Exception) { 0 }
+        val counts = try { db.decisionCounts().toMap() } catch (e: Exception) { emptyMap() }
+        db.close()
+        val review = counts["REVIEW"] ?: 0
+        val discard = counts["DISCARD_CANDIDATE"] ?: 0
+        val keep = counts["KEEP"] ?: 0
+
+        val col = Ui.screen(this)
+        col.addView(Ui.title(this, "PicFilter"))
+        col.addView(Ui.body(this, if (people == 0)
+            "Start by telling PicFilter who matters to you."
+        else "$people people enrolled · protecting photos of them automatically"))
+        col.addView(Ui.statRow(this, listOf(
+            "$promoted" to "backed up",
+            "$review" to "to review",
+            "$discard" to "junk found",
+        )))
+
+        val watchOn = try { com.picfilter.spike.engine.Watcher.isEnabled(this) } catch (e: Exception) { false }
+        col.addView(Ui.actionCard(this,
+            if (watchOn) "Auto-rescue is on" else "Auto-rescue is off",
+            if (watchOn) "New WhatsApp photos of your people are backed up for you"
+            else "Turn on to protect new photos automatically",
+            accent = watchOn) {
+            if (watchOn) com.picfilter.spike.engine.Watcher.disable(this)
+            else com.picfilter.spike.engine.Watcher.enable(this)
+            setContentView(buildHome())
+        })
+
+        fun open(label: String, supporting: String, mode: String) =
+            col.addView(Ui.actionCard(this, label, supporting) {
                 startActivity(android.content.Intent().apply {
-                    component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
+                    component = ComponentName(this@MainActivity, ReviewActivity::class.java)
+                    putExtra("mode", mode)
                 })
-            }
+            })
+
+        col.addView(Ui.actionCard(this,
+            if (people == 0) "Set up — find your people" else "Manage people",
+            if (people == 0) "Scans your library and finds recurring faces"
+            else "$people enrolled · add or re-scan") {
+            startActivity(android.content.Intent().apply {
+                component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
+            })
         })
-        root.addView(Button(this).apply {
-            fun refresh() {
-                text = if (com.picfilter.spike.engine.Watcher.isEnabled(this@MainActivity))
-                    "Auto-rescue: ON  (tap to turn off)" else "Auto-rescue: OFF  (tap to turn on)"
-            }
-            textSize = 17f
-            refresh()
-            setOnClickListener {
-                if (com.picfilter.spike.engine.Watcher.isEnabled(this@MainActivity))
-                    com.picfilter.spike.engine.Watcher.disable(this@MainActivity)
-                else com.picfilter.spike.engine.Watcher.enable(this@MainActivity)
-                postDelayed({ refresh() }, 400)
-            }
-        })
-        root.addView(launch("Rescue review  — find more family photos", "rescue"))
-        root.addView(launch("Check what was backed up  — catch false matches", "verify"))
-        root.addView(launch("Second pass  — photos with no faces", "noface"))
-        root.addView(launch("Review items  (golden set)", "golden"))
-        root.addView(launch("Verify duplicate groups", "dupes"))
-        return root
+        open("Check what was backed up", "Catch photos saved by mistake", "verify")
+        open("Find more family photos", "Photos we were unsure about", "rescue")
+        open("Photos with no faces", "Places, drawings, documents", "noface")
+        open("Duplicates", "Near-identical copies, grouped", "dupes")
+
+        val scroll = android.widget.ScrollView(this).apply {
+            addView(col)
+            setBackgroundColor(android.graphics.Color.parseColor(Ui.SURFACE))
+        }
+        Ui.applyInsets(scroll, this, extraBottom = 12)
+        tv.visibility = android.view.View.GONE
+        return scroll
     }
 
     private fun dispatch(op: String) {

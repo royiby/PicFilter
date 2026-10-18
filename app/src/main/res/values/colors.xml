@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Google Photos-ish: near-black surfaces, blue accent, soft tonal containers -->
+    <color name="pf_primary">#A8C7FA</color>
+    <color name="pf_on_primary">#0A305F</color>
+    <color name="pf_primary_container">#284777</color>
+    <color name="pf_on_primary_container">#D7E3FF</color>
+    <color name="pf_surface">#131314</color>
+    <color name="pf_on_surface">#E3E3E3</color>
+    <color name="pf_surface_variant">#1E1F20</color>
+    <color name="pf_on_surface_variant">#C4C7C5</color>
+    <color name="pf_green">#6DD58C</color>
+    <color name="pf_on_green">#003917</color>
+    <color name="pf_red">#F2B8B5</color>
+    <color name="pf_on_red">#601410</color>
+</resources>
