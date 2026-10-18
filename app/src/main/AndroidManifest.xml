@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION" />
     <!-- Android 14+: signals we handle partial grants; we still want full access -->
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application android:label="PicFilter Spike" android:icon="@android:drawable/ic_menu_gallery">
         <activity

@@ -705,6 +705,16 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
         return Triple(rows, distinct, dupes)
     }
 
+    fun promotionCount(): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM promotion", null)
+            .use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
+    fun unscoredCount(): Int =
+        readableDatabase.rawQuery(
+            """SELECT COUNT(*) FROM item i LEFT JOIN score s ON s.item_id = i.id
+               WHERE s.item_id IS NULL""", null
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
     fun promotionSummary(): String {
         readableDatabase.rawQuery(
             "SELECT COUNT(*), COALESCE(SUM(bytes),0) FROM promotion", null
@@ -713,6 +723,19 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
                 "${c.getInt(0)} items, ${"%.1f".format(c.getLong(1) / 1048576.0)} MB"
             else "none"
         }
+    }
+
+    /** Test helper: make the N most recent items unscored again. */
+    fun unscoreRecent(n: Int): Int {
+        val ids = mutableListOf<Long>()
+        readableDatabase.rawQuery(
+            "SELECT item_id FROM score ORDER BY scored_at DESC LIMIT ?", arrayOf(n.toString())
+        ).use { c -> while (c.moveToNext()) ids += c.getLong(0) }
+        for (id in ids) {
+            writableDatabase.execSQL("DELETE FROM score WHERE item_id=?", arrayOf<Any>(id))
+            writableDatabase.execSQL("DELETE FROM face WHERE item_id=?", arrayOf<Any>(id))
+        }
+        return ids.size
     }
 
     fun resetScores() {

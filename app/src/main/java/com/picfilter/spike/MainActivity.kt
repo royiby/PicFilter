@@ -118,6 +118,20 @@ class MainActivity : ComponentActivity() {
                 })
             }
         })
+        root.addView(Button(this).apply {
+            fun refresh() {
+                text = if (com.picfilter.spike.engine.Watcher.isEnabled(this@MainActivity))
+                    "Auto-rescue: ON  (tap to turn off)" else "Auto-rescue: OFF  (tap to turn on)"
+            }
+            textSize = 17f
+            refresh()
+            setOnClickListener {
+                if (com.picfilter.spike.engine.Watcher.isEnabled(this@MainActivity))
+                    com.picfilter.spike.engine.Watcher.disable(this@MainActivity)
+                else com.picfilter.spike.engine.Watcher.enable(this@MainActivity)
+                postDelayed({ refresh() }, 400)
+            }
+        })
         root.addView(launch("Rescue review  — find more family photos", "rescue"))
         root.addView(launch("Review items  (golden set)", "golden"))
         root.addView(launch("Verify duplicate groups", "dupes"))
@@ -153,6 +167,14 @@ class MainActivity : ComponentActivity() {
                 )
             }.start()
             "repair"    -> Thread { com.picfilter.spike.engine.Promoter.repair(this) }.start()
+            "watchon"   -> Thread { com.picfilter.spike.engine.Watcher.enable(this) }.start()
+            "watchoff"  -> Thread { com.picfilter.spike.engine.Watcher.disable(this) }.start()
+            "watchnow"  -> Thread { com.picfilter.spike.engine.Watcher.runNow(this) }.start()
+            "unscore"   -> Thread {
+                val d = com.picfilter.spike.data.Db(this)
+                Log.i(TAG, "UNSCORE cleared ${d.unscoreRecent(intent?.getStringExtra("n")?.toIntOrNull() ?: 3)}")
+                d.close()
+            }.start()
             "fixdates"  -> Thread { com.picfilter.spike.engine.Promoter.fixDates(this) }.start()
             "promodiag" -> Thread {
                 val d = com.picfilter.spike.data.Db(this)

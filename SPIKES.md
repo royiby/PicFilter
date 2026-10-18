@@ -1027,3 +1027,31 @@ no assertion:
 Both looked like working runs. **Every scripted edit must assert its anchor
 matched, and a build failure must stop the pipeline rather than let a stale APK
 install.**
+
+---
+
+# Phase 3 — the watcher
+
+New WhatsApp arrivals are now scored and keepers copied to the backed-up folder
+automatically, via a WorkManager periodic job (2h, battery-not-low).
+
+```
+WATCH enabled, every 2h (battery-not-low)
+SCAN upserted=638 total_items=638
+SCORE done=3 dead_rows=0 failed=0 wall_ms=748
+PROMOTE LIVE source=[KEEP] candidates=0
+WATCH new=0 scored=3 protected=0
+```
+
+Verified end to end by surgically un-scoring three recent items so the worker
+had real work, rather than only checking that it could be enabled.
+
+## Safety by construction, not by configuration
+The worker **auto-promotes but never auto-discards.** Copying is additive and
+reversible; deleting is not. `Promoter.run` is called with `decisions=["KEEP"]`
+and hard-refuses `DISCARD_CANDIDATE` via `require`, and no trash or delete call
+is reachable from `engine/` at all — `createTrashRequest` exists only in the
+Phase 0 diagnostics. Discard candidates are reported in the digest and nowhere
+else.
+
+The digest is suppressed when nothing changed, so a quiet library stays quiet.
