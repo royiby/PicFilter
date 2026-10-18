@@ -133,6 +133,7 @@ class MainActivity : ComponentActivity() {
             }
         })
         root.addView(launch("Rescue review  — find more family photos", "rescue"))
+        root.addView(launch("Second pass  — photos with no faces", "noface"))
         root.addView(launch("Review items  (golden set)", "golden"))
         root.addView(launch("Verify duplicate groups", "dupes"))
         return root

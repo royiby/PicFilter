@@ -430,7 +430,10 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
      * ordered by how close their best near-miss came to an enrolled person.
      * Most-likely-family first, so the user can stop when they stop seeing family.
      */
-    fun rescueQueue(): List<RescueRow> {
+    fun rescueQueue(
+        reasons: List<String> = listOf("INDETERMINATE_FACE", "FEW_FACES_NO_MATCH"),
+    ): List<RescueRow> {
+        val marks = reasons.joinToString(",") { "?" }
         val out = mutableListOf<RescueRow>()
         readableDatabase.rawQuery(
             """SELECT i.id, i.uri, s.reason, s.faces, s.indet,
@@ -443,9 +446,9 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
                LEFT JOIN label l ON l.item_id = i.id
                LEFT JOIN promotion pr ON pr.item_id = i.id
                WHERE s.decision='REVIEW'
-                 AND s.reason IN ('INDETERMINATE_FACE','FEW_FACES_NO_MATCH')
+                 AND s.reason IN ($marks)
                  AND l.item_id IS NULL AND pr.item_id IS NULL
-               ORDER BY 7 DESC, s.faces DESC""", null
+               ORDER BY 7 DESC, s.faces DESC""", reasons.toTypedArray()
         ).use { c ->
             while (c.moveToNext()) out += RescueRow(
                 c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getInt(4),

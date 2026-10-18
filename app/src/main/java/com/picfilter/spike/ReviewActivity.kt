@@ -103,7 +103,7 @@ class ReviewActivity : ComponentActivity() {
         if (mode == "dupes") {
             buttons.addView(bigButton("DIFFERENT", "#B4453A") { verdict("DIFFERENT") })
             buttons.addView(bigButton("SAME", "#2F7D53") { verdict("SAME") })
-        } else if (mode == "rescue") {
+        } else if (mode == "rescue" || mode == "noface") {
             buttons.addView(bigButton("NOT MINE", "#3A4150") { label("DISCARD") })
             buttons.addView(bigButton("SKIP", "#5A6270") { label("SKIP") })
             buttons.addView(bigButton("KEEP — IT'S FAMILY", "#2F7D53") { label("KEEP") })
@@ -147,6 +147,7 @@ class ReviewActivity : ComponentActivity() {
         queue = when (mode) {
             "dupes" -> db.dupeGroups().map { DupeCard(it.first, it.second) }
             "rescue" -> db.rescueQueue().map { RescueCard(it) }
+            "noface" -> db.rescueQueue(listOf("NO_FACE_PLAIN")).map { RescueCard(it) }
             else -> db.goldenQueue(perReason = 40).map { ItemCard(it) }
         }
         idx = 0
@@ -184,6 +185,11 @@ class ReviewActivity : ComponentActivity() {
             val r = card.row
             strip.visibility = View.GONE
             image.setImageBitmap(thumb(Uri.parse(r.uri), 1400))
+            if (mode == "noface") {
+                info.text = "No recognisable face in this photo.\n" +
+                    "Keep it if it still matters — a place, a drawing, a document."
+                return
+            }
             val near = when {
                 r.nearName != null && r.nearSim != null ->
                     "closest match:  ${r.nearName}  ${"%.3f".format(r.nearSim)}" +
