@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -28,6 +29,8 @@ import com.picfilter.spike.data.Db
  * icon, not adb. Nothing here deletes or moves anything: it only records
  * judgements, which is what the thresholds are then fitted against.
  */
+private const val TAG = "PICFILTER"
+
 class ReviewActivity : ComponentActivity() {
 
     private lateinit var db: Db
@@ -214,9 +217,16 @@ class ReviewActivity : ComponentActivity() {
     // ------------------------------------------------------------ actions
 
     private fun label(v: String) {
-        val r = (queue.getOrNull(idx) as? ItemCard)?.row ?: return
-        db.putLabel(r.id, v)
-        history.addLast(idx to r.id)
+        // Exhaustive on purpose: an unhandled card type must shout, not silently
+        // return. A missing branch here made every rescue button a no-op.
+        val id = when (val c = queue.getOrNull(idx)) {
+            is ItemCard -> c.row.id
+            is RescueCard -> c.row.id
+            is DupeCard -> { Log.w(TAG, "label() on a DupeCard"); return }
+            null -> return
+        }
+        db.putLabel(id, v)
+        history.addLast(idx to id)
         idx++; render()
     }
 
