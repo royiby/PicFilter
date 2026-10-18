@@ -129,6 +129,10 @@ object Pipeline {
         val db = Db(ctx)
         val centroids = db.centroidsByPerson()
         val names = db.personNames()
+        val thresholds = db.personThresholds()
+        if (thresholds.isNotEmpty())
+            Log.i(TAG, "SCORE per-person thresholds: " +
+                thresholds.entries.joinToString { "${names[it.key]}=${"%.2f".format(it.value)}" })
         Log.i(TAG, "SCORE enrolled_people=${centroids.size} ${names.values}")
 
         val textRec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
@@ -144,7 +148,7 @@ object Pipeline {
 
                     var matched = 0; var indet = 0
                     for (o in obs) {
-                        val (state, pid, sim) = eng.match(o, centroids)
+                        val (state, pid, sim) = eng.match(o, centroids, thresholds)
                         when (state) {
                             MatchState.MATCH -> matched++
                             MatchState.INDETERMINATE -> indet++

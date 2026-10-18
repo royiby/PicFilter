@@ -8,7 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /** Phase 1 store. Raw SQLite + typed DAO (Room swap is a later cleanup). */
-class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
+class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
 
     override fun onCreate(d: SQLiteDatabase) {
         d.execSQL("""CREATE TABLE person(
@@ -45,6 +45,7 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
         createV2(d)
         createV3(d)
         createV4(d)
+        createV5(d)
         d.execSQL("CREATE INDEX idx_face_item ON face(item_id)")
         d.execSQL("CREATE INDEX idx_item_bucket ON item(bucket)")
     }
@@ -86,11 +87,16 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
             at INTEGER NOT NULL)""")
     }
 
+    private fun createV5(d: SQLiteDatabase) {
+        try { d.execSQL("ALTER TABLE person ADD COLUMN threshold REAL") } catch (e: Exception) { }
+    }
+
     override fun onUpgrade(d: SQLiteDatabase, old: Int, new: Int) {
         // Additive only — the scored corpus is expensive to rebuild.
         if (old < 2) createV2(d)
         if (old < 3) createV3(d)
         if (old < 4) createV4(d)
+        if (old < 5) createV5(d)
     }
 
     // ---------- people / centroids ----------
@@ -721,6 +727,83 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 4) {
             "INSERT INTO action_log(item_id, action, at, note) VALUES(?,?,?,?)",
             arrayOf<Any>(itemId, "UNPROMOTE", System.currentTimeMillis(), "human said not family"))
     }
+
+    /**
+     * Precision ABOVE the match threshold: of the photos the scorer called KEEP
+     * and a human then judged, how many were actually family — banded by match
+     * strength. The mirror of calibration(), which only ever looked below 0.55.
+     */
+    fun precisionByBand(): List<Triple<String, Int, Int>> {
+        val out = mutableListOf<Triple<String, Int, Int>>()
+        val edges = listOf(0.55f, 0.58f, 0.61f, 0.65f, 0.70f, 0.80f, 1.01f)
+        val rows = mutableListOf<Pair<String, Float>>()
+        readableDatabase.rawQuery(
+            """SELECT l.label,
+                      (SELECT MAX(f.similarity) FROM face f
+                       WHERE f.item_id=l.item_id AND f.state='MATCH') sim
+               FROM label l JOIN score s ON s.item_id = l.item_id
+               WHERE s.decision='KEEP' AND l.label IN ('KEEP','DISCARD')""", null
+        ).use { c ->
+            while (c.moveToNext()) if (!c.isNull(1)) rows += c.getString(0) to c.getFloat(1)
+        }
+        for (i in 0 until edges.size - 1) {
+            val lo = edges[i]; val hi = edges[i + 1]
+            val band = rows.filter { it.second >= lo && it.second < hi }
+            if (band.isNotEmpty())
+                out += Triple("%.2f..%.2f".format(lo, hi), band.count { it.first == "KEEP" }, band.size)
+        }
+        return out
+    }
+
+    /** Which enrolled person is responsible for the false matches. */
+    fun precisionByPerson(): List<Triple<String, Int, Int>> {
+        val out = mutableListOf<Triple<String, Int, Int>>()
+        readableDatabase.rawQuery(
+            """SELECT p.name,
+                      SUM(CASE WHEN l.label='KEEP' THEN 1 ELSE 0 END),
+                      COUNT(*)
+               FROM label l
+               JOIN score s ON s.item_id = l.item_id
+               JOIN face f ON f.item_id = l.item_id AND f.state='MATCH'
+               JOIN person p ON p.id = f.person_id
+               WHERE s.decision='KEEP' AND l.label IN ('KEEP','DISCARD')
+               GROUP BY p.name ORDER BY 3 DESC""", null
+        ).use { c -> while (c.moveToNext()) out += Triple(c.getString(0), c.getInt(1), c.getInt(2)) }
+        return out
+    }
+
+    /** personId -> fitted threshold (absent means use the global default). */
+    fun personThresholds(): Map<Long, Float> {
+        val out = HashMap<Long, Float>()
+        readableDatabase.rawQuery(
+            "SELECT id, threshold FROM person WHERE threshold IS NOT NULL", null
+        ).use { c -> while (c.moveToNext()) out[c.getLong(0)] = c.getFloat(1) }
+        return out
+    }
+
+    fun setPersonThreshold(personId: Long, t: Float) =
+        writableDatabase.execSQL("UPDATE person SET threshold=? WHERE id=?",
+            arrayOf<Any>(t, personId))
+
+    /** (personId, name, similarity, wasActuallyFamily) for every human-judged match. */
+    fun labelledMatches(): List<Quad> {
+        val out = mutableListOf<Quad>()
+        readableDatabase.rawQuery(
+            """SELECT p.id, p.name, f.similarity, l.label
+               FROM label l
+               JOIN score s ON s.item_id = l.item_id
+               JOIN face f ON f.item_id = l.item_id AND f.state='MATCH'
+               JOIN person p ON p.id = f.person_id
+               WHERE s.decision='KEEP' AND l.label IN ('KEEP','DISCARD')
+                 AND f.similarity IS NOT NULL""", null
+        ).use { c ->
+            while (c.moveToNext()) out += Quad(
+                c.getLong(0), c.getString(1), c.getFloat(2), c.getString(3) == "KEEP")
+        }
+        return out
+    }
+
+    data class Quad(val personId: Long, val name: String, val sim: Float, val correct: Boolean)
 
     fun promotedDests(): List<Pair<String, String>> {
         val out = mutableListOf<Pair<String, String>>()

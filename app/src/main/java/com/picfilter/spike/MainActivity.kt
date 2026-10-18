@@ -213,6 +213,24 @@ class MainActivity : ComponentActivity() {
                 for (x in dupes.take(12)) Log.i(TAG, "PROMOCHK   collision $x")
                 d.close()
             }.start()
+            "fit"       -> Thread { com.picfilter.spike.engine.Fitter.fit(this) }.start()
+            "precision" -> Thread {
+                val d = com.picfilter.spike.data.Db(this)
+                Log.i(TAG, "PREC --- precision above the 0.55 threshold ---")
+                var tk = 0; var tt = 0
+                for ((band, keep, total) in d.precisionByBand()) {
+                    tk += keep; tt += total
+                    Log.i(TAG, "PREC  %-12s correct %3d/%-3d  %5.1f%%".format(
+                        band, keep, total, keep * 100.0 / total))
+                }
+                if (tt > 0) Log.i(TAG, "PREC  OVERALL      correct %3d/%-3d  %5.1f%%  (false: %d)".format(
+                    tk, tt, tk * 100.0 / tt, tt - tk))
+                Log.i(TAG, "PREC --- by person ---")
+                for ((name, keep, total) in d.precisionByPerson())
+                    Log.i(TAG, "PREC  %-10s correct %3d/%-3d  %5.1f%%".format(
+                        name, keep, total, keep * 100.0 / total))
+                d.close()
+            }.start()
             "calibrate" -> Thread {
                 val d = com.picfilter.spike.data.Db(this)
                 Log.i(TAG, "CALIB  band            KEEP/total   keep-rate")

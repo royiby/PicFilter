@@ -68,7 +68,16 @@ class FaceEngine(
 
         // MIN_SHARPNESS deleted: a 0->25 sweep moved 2 faces out of 1409 (SPIKES.md).
         // Sharpness is still measured and stored — it just never gated anything.
-        const val MATCH_THRESHOLD = 0.55f
+        /**
+         * Raised 0.55 -> 0.70 after measuring precision ABOVE the threshold for
+         * the first time: at 0.55, only 47% of "family" photos actually were
+         * (67/142). Precision by band: 0.55-0.58 = 18%, 0.58-0.61 = 10%,
+         * 0.61-0.65 = 35%, 0.65-0.70 = 42%, 0.70-0.80 = 82%, 0.80+ = 93%.
+         * Everything below 0.70 is a coin flip or worse. Per-person thresholds
+         * (fitted from the same labels) override this where a centroid is
+         * reliable enough to justify a lower bar.
+         */
+        const val MATCH_THRESHOLD = 0.70f
 
         /**
          * Average-linkage threshold. Lower than the greedy value it replaces,
@@ -155,7 +164,9 @@ class FaceEngine(
      * over their centroid set (supports multiple dated centroids per person).
      */
     fun match(
-        obs: FaceObs, centroids: Map<Long, List<FloatArray>>,
+        obs: FaceObs,
+        centroids: Map<Long, List<FloatArray>>,
+        thresholds: Map<Long, Float> = emptyMap(),
     ): Triple<MatchState, Long?, Float?> {
         if (!obs.quality || obs.embedding == null) return Triple(MatchState.INDETERMINATE, null, null)
         if (centroids.isEmpty()) return Triple(MatchState.NO_MATCH, null, null)
@@ -168,7 +179,8 @@ class FaceEngine(
         // Keep bestPerson even on a miss: a face at 0.52 against a known person
         // is a strong "probably family" hint for the rescue review, and it is
         // exactly the band where MATCH_THRESHOLD is doing contested work.
-        return if (best >= MATCH_THRESHOLD) Triple(MatchState.MATCH, bestPerson, best)
+        val bar = thresholds[bestPerson] ?: MATCH_THRESHOLD
+        return if (best >= bar) Triple(MatchState.MATCH, bestPerson, best)
                else Triple(MatchState.NO_MATCH, bestPerson, best)
     }
 
