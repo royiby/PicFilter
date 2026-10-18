@@ -143,6 +143,11 @@ class MainActivity : ComponentActivity() {
             }.start()
             "report"    -> Thread { Pipeline.report(this) }.start()
             "sweep"     -> Thread { Sweep.run(this) }.start()
+            "sweepcl"   -> Thread { com.picfilter.spike.engine.Clusterer.sweepThresholds(this) }.start()
+            "recluster" -> Thread {
+                com.picfilter.spike.engine.Clusterer.recluster(
+                    this, intent?.getStringExtra("t")?.toFloatOrNull() ?: 0.65f)
+            }.start()
             "bootstrap" -> Thread {
                 com.picfilter.spike.engine.Clusterer.bootstrap(
                     this, intent?.getStringExtra("sample")?.toIntOrNull()

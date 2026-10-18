@@ -652,3 +652,67 @@ against *unrecognisable* faces; it offers nothing against *unenrolled* ones.
 ## UI bug found and fixed
 The "Undo last" button rendered behind the system navigation bar. Now handled via
 `setOnApplyWindowInsetsListener` (system bars + display cutout).
+
+---
+
+# Onboarding on a real library — 2026-10-18
+
+First run of cluster-then-name against the actual phone library.
+
+```
+BOOTSTRAP sampling=600 images (strict gate 80px/30deg)
+BOOTSTRAP faces=433 in 320s
+BOOTSTRAP clusters=102 top=51,24,22,19,18,17,15,14,13,11
+```
+
+Two UI screens verified on real data: the intro and the candidate card
+(montage + "Appears in N photos" + three buttons). No crashes, insets correct.
+
+## ⚠️ Timing claim was wrong
+The intro promised "a minute or two". Measured: **240–320 s**. The earlier ~80 s
+figure was WhatsApp-only images at `targetPx=1000`; onboarding samples the whole
+library (larger camera originals) at `targetPx=1200` with
+`PERFORMANCE_MODE_ACCURATE`. Copy corrected to "about four minutes".
+
+## ⚠️ CLUSTER_THRESHOLD 0.55 over-merges
+
+The top cluster's montage did not look like one child. Threshold sweep over the
+stored embeddings (instant — the 4-minute extraction is not repeated):
+
+| threshold | clusters | singletons | largest | % of faces |
+|---|---|---|---|---|
+| 0.50 | 38 | 3 | 123 | 32.5% |
+| **0.55** *(was shipped)* | 49 | 2 | **77** | **20.3%** |
+| 0.60 | 87 | 25 | 37 | 9.8% |
+| **0.65** *(adopted)* | 119 | 45 | **12** | **3.2%** |
+| 0.70 | 152 | 72 | 11 | 2.9% |
+| 0.80 | 233 | 156 | 10 | 2.6% |
+
+One person holding 1-in-5 of every face in a 600-photo sample is implausible.
+The merge breaks apart sharply between 0.55 and 0.65, then stabilises — beyond
+0.65 the extra threshold mostly manufactures singletons (over-splitting).
+
+### The errors are asymmetric, which settles the direction
+- **Over-split is recoverable.** Name three clusters identically and
+  `upsertPerson` returns the same id; all three centroids attach to that person.
+  Matching takes the max across the set, so it works — and yields *better* pose
+  coverage.
+- **Over-merge is not.** Two children averaged into one centroid is permanently
+  poisoned, and no naming fixes it.
+
+So bias high. Adopted **0.65**, provisional until the montages are eyeballed.
+
+Note the sweep's absolute numbers differ slightly from bootstrap's because it
+ran over the stored (singleton-filtered) set; the *shape* is what matters.
+
+## 🐛 Fixed: recluster eroded the face set
+`recluster()` rebuilds from `cluster_face`, but `persist()` was dropping
+singletons before writing — so every regroup permanently lost faces
+(433 → 379 → 334, against 433 thumbnails still on disk). Now **all** faces are
+stored and singletons are filtered at *presentation* instead
+(`candidates()` requires `size >= 2`). Regrouping is now idempotent.
+
+## Added: regroup without rescanning
+`op=sweepcl` (threshold curve) and `op=recluster --es t <x>` operate on stored
+embeddings, so iterating on clustering costs seconds rather than 5 minutes.
+The onboarding intro also now offers "Continue with faces already found".

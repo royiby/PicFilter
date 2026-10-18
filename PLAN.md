@@ -149,7 +149,7 @@ produced a clear recurring-people head (92,48,46,45,42,38,34) over a long
 singleton tail, with the top 10 clusters covering 43% of all faces.
 
 ```
-install -> permissions -> sample ~600 recent images (~80s, measured)
+install -> permissions -> sample ~600 recent images (~4 min, measured)
         -> detect + embed under the STRICT gate -> cluster -> rank by size
         -> show top 15 candidates, each a montage of up to 6 crops
         -> [name] / [not important] / [these aren't the same person]
@@ -185,7 +185,14 @@ Other decisions:
   distinct third). Matching takes the max across a person's set, so extra
   vectors only help recall — and this is the hook for re-enrolment as children's
   faces drift.
-- Singleton clusters are dropped; they are noise for onboarding.
+- Singleton clusters are **stored but not offered** as candidates — dropping
+  them at write time eroded the face set on every regroup.
+- **Cluster threshold 0.65**, not the spike's 0.55. At 0.55 the largest cluster
+  held 20% of all faces on a real library. The errors are asymmetric: over-split
+  is recoverable (name the clusters identically; centroids merge under one
+  person), over-merge permanently poisons a centroid. Bias high. See SPIKES.md.
+- Clustering can be redone from stored embeddings without re-scanning, so
+  threshold work costs seconds rather than the 4-minute extraction.
 
 **The skipped-person warning is a safety feature, not polish.** If someone
 enrols 3 people but has 6 in the family, photos of the other 3 become discard

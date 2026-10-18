@@ -54,7 +54,15 @@ class OnboardingActivity : ComponentActivity() {
             insets
         }
         setContentView(root)
-        showIntro()
+        // "resume" skips the scan and works from clusters already extracted —
+        // used for adding people later, and for re-grouping experiments.
+        if (intent?.getStringExtra("resume") == "1") {
+            candidates = db.candidates(limit = 15, thumbsEach = 6)
+            idx = 0
+            if (candidates.isEmpty()) showNoFaces() else showCandidate()
+        } else {
+            showIntro()
+        }
     }
 
     private fun dp(v: Int) = TypedValue.applyDimension(
@@ -89,10 +97,17 @@ class OnboardingActivity : ComponentActivity() {
             "and find the faces that keep appearing.\n\n" +
             "You tell it which ones are family and friends. Photos of those people are then " +
             "protected and never suggested for deletion.\n\n" +
-            "This takes a minute or two. Everything happens on this phone — no photos are " +
+            "This takes about four minutes. Everything happens on this phone — no photos are " +
             "uploaded anywhere."
         ))
         root.addView(button("Start", "#2F6FD0") { runScan() })
+        if (db.candidates(limit = 1, thumbsEach = 1).isNotEmpty()) {
+            root.addView(button("Continue with faces already found", "#3A6EA5") {
+                candidates = db.candidates(limit = 15, thumbsEach = 6)
+                idx = 0
+                if (candidates.isEmpty()) showNoFaces() else showCandidate()
+            })
+        }
         root.addView(button("Cancel", "#3A4150") { finish() })
     }
 

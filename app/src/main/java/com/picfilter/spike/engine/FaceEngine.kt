@@ -70,8 +70,16 @@ class FaceEngine(
         // Sharpness is still measured and stored — it just never gated anything.
         const val MATCH_THRESHOLD = 0.55f
 
-        /** Clusters this similar are treated as the same person during bootstrap. */
-        const val CLUSTER_THRESHOLD = 0.55f
+        /**
+         * Clusters this similar are treated as the same person during bootstrap.
+         * Raised 0.55 -> 0.65: at 0.55 the largest cluster held 20% of all faces
+         * on a real library, which is implausible for one person. The errors are
+         * asymmetric — over-split is recoverable (name the clusters identically
+         * and the centroids merge under one person), over-merge is not (two
+         * people averaged into one centroid is permanently poisoned). So bias
+         * high. Provisional until visually verified. See SPIKES.md.
+         */
+        const val CLUSTER_THRESHOLD = 0.65f
     }
 
     private val interp: Interpreter

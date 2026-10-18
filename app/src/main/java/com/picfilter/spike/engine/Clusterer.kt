@@ -82,13 +82,13 @@ object Clusterer {
         }
 
         progress?.onProgress(0, 1, "Grouping people")
-        val assign = cluster(vecs)
+        val assign = cluster(vecs, FaceEngine.CLUSTER_THRESHOLD)
         persist(db, assign, vecs, meta)
         db.close()
     }
 
     /** Greedy agglomerative against running centroids; O(n * clusters). */
-    private fun cluster(vecs: List<FloatArray>): IntArray {
+    private fun cluster(vecs: List<FloatArray>, threshold: Float): IntArray {
         val centroids = ArrayList<FloatArray>()
         val sizes = ArrayList<Int>()
         val assign = IntArray(vecs.size)
@@ -98,7 +98,7 @@ object Clusterer {
                 val s = cos(e, centroids[k])
                 if (s > bestSim) { bestSim = s; best = k }
             }
-            if (best >= 0 && bestSim >= FaceEngine.CLUSTER_THRESHOLD) {
+            if (best >= 0 && bestSim >= threshold) {
                 val c = centroids[best]; val n = sizes[best]
                 for (j in c.indices) c[j] = (c[j] * n + e[j]) / (n + 1)
                 l2(c); sizes[best] = n + 1
@@ -120,9 +120,12 @@ object Clusterer {
         val members = HashMap<Int, MutableList<Int>>()
         for (i in assign.indices) members.getOrPut(assign[i]) { mutableListOf() } += i
         var kept = 0
+        var singles = 0
         for ((_, idxs) in members.entries.sortedByDescending { it.value.size }) {
-            // singletons are noise for onboarding purposes
-            if (idxs.size < 2) continue
+            // Singletons are noise for ONBOARDING, but they must still be STORED:
+            // recluster() rebuilds from cluster_face, so dropping them here erodes
+            // the face set a little more on every regroup. Store all, surface some.
+            if (idxs.size < 2) singles++
             val dim = vecs[0].size
             val centroid = FloatArray(dim)
             for (i in idxs) for (j in 0 until dim) centroid[j] += vecs[i][j]
@@ -133,9 +136,48 @@ object Clusterer {
                 val (itemId, thumb, px) = meta[i]
                 db.addClusterFace(cid, itemId, thumb, px, vecs[i])
             }
-            kept++
+            if (idxs.size >= 2) kept++
         }
-        Log.i(TAG, "BOOTSTRAP persisted=$kept clusters (singletons dropped)")
+        Log.i(TAG, "BOOTSTRAP persisted=$kept multi-face clusters, $singles singletons " +
+            "(singletons stored but not offered as candidates)")
+    }
+
+    /**
+     * Re-group already-embedded faces at a different threshold. Instant — the
+     * expensive part (decode + detect + embed, ~4 min) is not repeated.
+     */
+    fun recluster(ctx: Context, threshold: Float) {
+        val db = Db(ctx)
+        val faces = db.allClusterFaces()
+        if (faces.isEmpty()) { Log.w(TAG, "RECLUSTER nothing stored — run bootstrap first"); db.close(); return }
+        val vecs = faces.map { it.vec }
+        val assign = cluster(vecs, threshold)
+        db.clearClusters()
+        val meta = faces.map { Triple(it.itemId ?: -1L, it.thumb, it.origPx) }
+        persist(db, assign, vecs, meta)
+        Log.i(TAG, "RECLUSTER threshold=$threshold over ${faces.size} stored faces")
+        db.close()
+    }
+
+    /** How does cluster structure respond to the threshold? No re-scan needed. */
+    fun sweepThresholds(ctx: Context) {
+        val db = Db(ctx)
+        val faces = db.allClusterFaces()
+        if (faces.isEmpty()) { Log.w(TAG, "SWEEPCL nothing stored — run bootstrap first"); db.close(); return }
+        val vecs = faces.map { it.vec }
+        Log.i(TAG, "SWEEPCL faces=${vecs.size}")
+        for (t in floatArrayOf(0.45f, 0.50f, 0.55f, 0.60f, 0.65f, 0.70f, 0.75f, 0.80f)) {
+            val assign = cluster(vecs, t)
+            val sizes = HashMap<Int, Int>()
+            for (a in assign) sizes[a] = (sizes[a] ?: 0) + 1
+            val sorted = sizes.values.sortedDescending()
+            val singles = sorted.count { it == 1 }
+            Log.i(TAG, "SWEEPCL t=$t clusters=${sorted.size} singletons=$singles " +
+                "largest=${sorted.firstOrNull() ?: 0} " +
+                "(${"%.1f".format((sorted.firstOrNull() ?: 0) * 100.0 / vecs.size)}% of faces) " +
+                "top10=${sorted.take(10).joinToString(",")}")
+        }
+        db.close()
     }
 
     // ---------------------------------------------------------------- misc

@@ -417,7 +417,7 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
     fun candidates(limit: Int, thumbsEach: Int): List<Candidate> {
         val out = mutableListOf<Candidate>()
         readableDatabase.rawQuery(
-            "SELECT id, size FROM cluster WHERE status IS NULL ORDER BY size DESC LIMIT ?",
+            "SELECT id, size FROM cluster WHERE status IS NULL AND size >= 2 ORDER BY size DESC LIMIT ?",
             arrayOf(limit.toString())
         ).use { c ->
             while (c.moveToNext()) {
@@ -430,6 +430,24 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 3) {
                 ).use { t -> while (t.moveToNext()) thumbs += t.getString(0) }
                 out += Candidate(id, size, thumbs)
             }
+        }
+        return out
+    }
+
+    data class StoredFace(
+        val itemId: Long?, val thumb: String?, val origPx: Int, val vec: FloatArray,
+    )
+
+    /** Every embedded face from the bootstrap pass, so clustering can be redone
+     *  without re-scanning the library (the 4-minute part). */
+    fun allClusterFaces(): List<StoredFace> {
+        val out = mutableListOf<StoredFace>()
+        readableDatabase.rawQuery(
+            "SELECT item_id, thumb_path, orig_px, vec FROM cluster_face", null
+        ).use { c ->
+            while (c.moveToNext()) out += StoredFace(
+                if (c.isNull(0)) null else c.getLong(0),
+                c.getString(1), c.getInt(2), bytesToFloats(c.getBlob(3)))
         }
         return out
     }
