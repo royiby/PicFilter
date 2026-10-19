@@ -8,7 +8,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /** Phase 1 store. Raw SQLite + typed DAO (Room swap is a later cleanup). */
-class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
+class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 6) {
 
     override fun onCreate(d: SQLiteDatabase) {
         d.execSQL("""CREATE TABLE person(
@@ -46,6 +46,7 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
         createV3(d)
         createV4(d)
         createV5(d)
+        createV6(d)
         d.execSQL("CREATE INDEX idx_face_item ON face(item_id)")
         d.execSQL("CREATE INDEX idx_item_bucket ON item(bucket)")
     }
@@ -91,13 +92,66 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
         try { d.execSQL("ALTER TABLE person ADD COLUMN threshold REAL") } catch (e: Exception) { }
     }
 
+    private fun createV6(d: SQLiteDatabase) {
+        d.execSQL("""CREATE TABLE IF NOT EXISTS meta(
+            k TEXT PRIMARY KEY,
+            v TEXT NOT NULL)""")
+        // A score is only valid for the centroids and thresholds it was computed
+        // against. Rows written before this column existed default to 0, which is
+        // below any live revision, so enrolling anyone marks the whole corpus stale.
+        try {
+            d.execSQL("ALTER TABLE score ADD COLUMN centroid_rev INTEGER NOT NULL DEFAULT 0")
+        } catch (e: Exception) { }
+        // On an existing database the scores predate this column and the people
+        // may have been enrolled after them, which is exactly the bug this
+        // column exists to catch. Start the revision at 1 so those rows read as
+        // stale; a fresh database has nobody enrolled and stays at 0.
+        val enrolled = try {
+            d.rawQuery("SELECT COUNT(*) FROM centroid", null)
+                .use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        } catch (e: Exception) { 0 }
+        if (enrolled > 0) {
+            d.execSQL("INSERT OR REPLACE INTO meta(k, v) VALUES('centroid_rev', '1')")
+        }
+    }
+
     override fun onUpgrade(d: SQLiteDatabase, old: Int, new: Int) {
         // Additive only — the scored corpus is expensive to rebuild.
         if (old < 2) createV2(d)
         if (old < 3) createV3(d)
         if (old < 4) createV4(d)
         if (old < 5) createV5(d)
+        if (old < 6) createV6(d)
     }
+
+    // ---------- centroid revision ----------
+
+    /**
+     * Bumped whenever the thing a score is compared against changes: a new
+     * centroid, a wiped enrolment, a refitted threshold. [unscoredItems] treats
+     * any score below the current revision as needing recomputation, so
+     * enrolling a person silently queues a rescore instead of leaving every
+     * item judged against nobody.
+     */
+    fun centroidRev(): Long =
+        readableDatabase.rawQuery("SELECT v FROM meta WHERE k='centroid_rev'", null)
+            .use { if (it.moveToFirst()) it.getString(0).toLongOrNull() ?: 0L else 0L }
+
+    fun bumpCentroidRev(): Long {
+        val next = centroidRev() + 1
+        writableDatabase.execSQL(
+            "INSERT OR REPLACE INTO meta(k, v) VALUES('centroid_rev', ?)",
+            arrayOf<Any>(next.toString())
+        )
+        return next
+    }
+
+    /** Items whose score predates the current centroid revision. */
+    fun staleScoreCount(): Int =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM score WHERE centroid_rev < ?",
+            arrayOf(centroidRev().toString())
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
     // ---------- people / centroids ----------
 
@@ -117,6 +171,7 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
             put("face_count", faceCount); put("created_at", System.currentTimeMillis())
         }
         writableDatabase.insert("centroid", null, v)
+        bumpCentroidRev()
     }
 
     /** All centroids, keyed by person. Matching takes the max similarity over a person's set. */
@@ -141,6 +196,7 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
     fun clearEnrollment() {
         writableDatabase.execSQL("DELETE FROM centroid")
         writableDatabase.execSQL("DELETE FROM person")
+        bumpCentroidRev()
     }
 
     // ---------- items ----------
@@ -165,8 +221,9 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
         readableDatabase.rawQuery(
             """SELECT i.id, i.uri, i.width FROM item i
                LEFT JOIN score s ON s.item_id = i.id
-               WHERE s.item_id IS NULL ORDER BY i.date_added DESC LIMIT ?""",
-            arrayOf(limit.toString())
+               WHERE s.item_id IS NULL OR s.centroid_rev < ?
+               ORDER BY i.date_added DESC LIMIT ?""",
+            arrayOf(centroidRev().toString(), limit.toString())
         ).use { c -> while (c.moveToNext()) out += Triple(c.getLong(0), c.getString(1), c.getInt(2)) }
         return out
     }
@@ -183,6 +240,10 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
     }
 
     // ---------- faces / scores ----------
+
+    /** Rescoring re-detects, so the previous pass's rows have to go first. */
+    fun clearFaces(itemId: Long) =
+        writableDatabase.execSQL("DELETE FROM face WHERE item_id=?", arrayOf<Any>(itemId))
 
     fun addFace(
         itemId: Long, origPx: Int, sharpness: Double, yaw: Float, roll: Float,
@@ -206,6 +267,7 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
             put("text_frac", textFrac); put("text_blocks", textBlocks)
             put("decision", decision); put("reason", reason); put("confidence", confidence)
             put("scored_at", System.currentTimeMillis())
+            put("centroid_rev", centroidRev())
         }
         writableDatabase.insertWithOnConflict("score", null, v, SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -874,9 +936,11 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
         return out
     }
 
-    fun setPersonThreshold(personId: Long, t: Float) =
+    fun setPersonThreshold(personId: Long, t: Float) {
         writableDatabase.execSQL("UPDATE person SET threshold=? WHERE id=?",
             arrayOf<Any>(t, personId))
+        bumpCentroidRev()
+    }
 
     /** (personId, name, similarity, wasActuallyFamily) for every human-judged match. */
     fun labelledMatches(): List<Quad> {
@@ -926,7 +990,8 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
     fun unscoredCount(): Int =
         readableDatabase.rawQuery(
             """SELECT COUNT(*) FROM item i LEFT JOIN score s ON s.item_id = i.id
-               WHERE s.item_id IS NULL""", null
+               WHERE s.item_id IS NULL OR s.centroid_rev < ?""",
+            arrayOf(centroidRev().toString())
         ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
     fun promotionSummary(): String {

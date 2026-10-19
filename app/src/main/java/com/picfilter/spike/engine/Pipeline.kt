@@ -133,7 +133,8 @@ object Pipeline {
         if (thresholds.isNotEmpty())
             Log.i(TAG, "SCORE per-person thresholds: " +
                 thresholds.entries.joinToString { "${names[it.key]}=${"%.2f".format(it.value)}" })
-        Log.i(TAG, "SCORE enrolled_people=${centroids.size} ${names.values}")
+        Log.i(TAG, "SCORE enrolled_people=${centroids.size} ${names.values} " +
+            "centroid_rev=${db.centroidRev()} stale=${db.staleScoreCount()}")
 
         val textRec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         var done = 0; var dead = 0; var failed = 0
@@ -146,6 +147,8 @@ object Pipeline {
                     val img = eng.decode(ctx, uri) ?: run { dead++; null } ?: continue
                     val obs = eng.observe(img)
 
+                    // This item may be a rescore after an enrolment change.
+                    db.clearFaces(itemId)
                     var matched = 0; var indet = 0
                     for (o in obs) {
                         val (state, pid, sim) = eng.match(o, centroids, thresholds)
