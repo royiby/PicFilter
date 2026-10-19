@@ -263,6 +263,13 @@ class MainActivity : ComponentActivity() {
             "watchoff"  -> Thread { com.picfilter.spike.engine.Watcher.disable(this) }.start()
             "watchnow"  -> Thread { com.picfilter.spike.engine.Watcher.runNow(this) }.start()
             "watchstat" -> Thread { com.picfilter.spike.engine.Watcher.status(this) }.start()
+            "memprobe"  -> Thread {
+                Pipeline.memProbe(
+                    this,
+                    stage = intent?.getStringExtra("stage")?.toIntOrNull() ?: 1,
+                    n = intent?.getStringExtra("n")?.toIntOrNull() ?: 100,
+                )
+            }.start()
             "unscore"   -> Thread {
                 val d = com.picfilter.spike.data.Db(this)
                 Log.i(TAG, "UNSCORE cleared ${d.unscoreRecent(intent?.getStringExtra("n")?.toIntOrNull() ?: 3)}")

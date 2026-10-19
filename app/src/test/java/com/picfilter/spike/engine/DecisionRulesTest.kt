@@ -47,6 +47,34 @@ class DecisionRulesTest {
     }
 
     @Test
+    fun `text signals are irrelevant to any image that has a face`() {
+        // Pipeline.score skips the text-recognition pass entirely when the
+        // detector found a face, because running it was a second ML Kit pass
+        // over every image for ~44 MB of native-heap growth per 100. That skip
+        // is only correct if the verdict cannot depend on text once a face is
+        // present, so assert it exhaustively rather than by reading the rules.
+        for (faces in 1..6) for (matched in 0..faces) for (indet in 0..(faces - matched)) {
+            val withoutText = decide(faces, matched, indet, textFrac = 0f, blocks = 0)
+            for (textFrac in listOf(0.01f, 0.2f, 0.95f)) for (blocks in listOf(1, 11, 60)) {
+                assertEquals(
+                    "faces=$faces matched=$matched indet=$indet textFrac=$textFrac blocks=$blocks",
+                    withoutText,
+                    decide(faces, matched, indet, textFrac, blocks),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `text signals do change the answer for a faceless image`() {
+        // The other half: the skip must not be widened to every image.
+        assertNotEquals(
+            decide(faces = 0, matched = 0, indet = 0, textFrac = 0f, blocks = 0),
+            decide(faces = 0, matched = 0, indet = 0, textFrac = 0.5f, blocks = 20),
+        )
+    }
+
+    @Test
     fun `a crowd with no match is the discard case`() {
         val (decision, reason, conf) = decide(faces = 3, matched = 0, indet = 0)
         assertEquals(Decision.DISCARD_CANDIDATE, decision)

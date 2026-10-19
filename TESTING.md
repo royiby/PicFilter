@@ -108,28 +108,64 @@ than the polling it replaced because an empty wake costs one query.
 Throughput under contention is lower: the same work measured 5.2 img/s while the
 onboarding bootstrap was running.
 
-### Known gap: native heap ratchets up per scoring run
+### Native heap: localised to ML Kit, partly mitigated
 
-The real resource problem is memory, not power.
+The real resource problem is memory, not power. Peak PSS during scoring reached
+595 MB, of which 429 MB was native heap, and the floor did not come back down.
 
-- Peak PSS during scoring: **595 MB**, of which **429 MB is native heap**.
-- The native-heap floor does not come back down. Before a 200-photo run: 386 MB.
-  After, and still after 60 seconds idle in the same process: 483 MB. Each
-  scoring run leaves roughly 100 MB behind.
-- This is the likely cause of the two process deaths observed during a session
-  of repeated scoring and onboarding runs — one of which killed a scoring pass
-  halfway through.
+Four scoring passes in one process, native-heap *allocated* (not PSS), measured
+with `op=memprobe` and `dumpsys meminfo`:
 
-Ruled out: the TFLite interpreter and the ML Kit detector are both closed
-(`FaceEngine.close()`), and every bitmap — decoded image, aligned crop, scaled
-intermediate — is explicitly recycled. The remaining suspect is that each
-scoring run constructs a fresh `FaceEngine`, so a fresh ML Kit face-detection
-model and TFLite interpreter are loaded per run and their native allocations are
-not fully returned on close.
+| | at rest | +100 | +100 | +100 | +100 |
+|---|---|---|---|---|---|
+| original | 17 MB | 167 | 266 | 389 | **496** |
 
-Two candidate fixes, neither attempted: hold one `FaceEngine` for the process
-lifetime instead of per run, or move scoring into its own `:scoring` process so
-its memory dies with it.
+Linear, about +110 MB per 100 images, same pid throughout, with no plateau over
+four passes. This is why the process was killed twice during a session of
+repeated scoring and onboarding runs, one of which took a scoring pass with it.
+
+**The first hypothesis was wrong, and the measurement is what caught it.**
+`embed()` allocated a fresh 294 KB direct `ByteBuffer` per face — native memory
+freed only when the GC gets round to the buffer's `Cleaner`, and ~1400 faces a
+scan is ~410 MB, which matched the observed growth almost exactly. Reusing the
+buffer changed nothing: 18 → 152 → 267 → 366 → 478 MB. A plausible cause that
+matches the arithmetic is still a guess.
+
+So `Pipeline.memProbe` (`op=memprobe`, `--es stage N`) bisects by stage, running
+the same images through progressively more of the pipeline. Stage 2 proves the
+point: it runs detection but constructs the engine with an impossible
+`minOrigPx`, so every face fails the quality gate and `embed` is never called.
+
+| stage | what runs | per 100 images |
+|---|---|---|
+| 1 | decode + recycle | +3.5 MB |
+| 2 | + ML Kit face detection | +87.9 MB |
+| 3 | + embedding (TFLite) | +88.7 MB |
+| 4 | + ML Kit text recognition | +132.7 MB |
+
+Decode is clean. **Face detection accounts for ~84 MB per 100 images and text
+recognition for ~44 MB. Embedding accounts for under 1 MB** — two orders of
+magnitude off the hypothesis. Closing the detector reclaims only ~18 MB of
+~106 MB, so recreating it periodically is not a remedy either.
+
+**What was fixed.** `decide()` consults the text signals in exactly one case, an
+image with no faces: a match, an unjudged face, a crowd, or one or two strangers
+all settle the verdict before `textHeavy` is reached. Scoring ran text
+recognition on every image regardless and discarded the result for the ~63% of
+this library that contains a face. It is now skipped unless the detector found
+nothing, which removes most of the 44 MB and a whole ML Kit pass from the
+majority of images. `DecisionRulesTest` pins the invariant that makes this safe —
+exhaustively, for every image shape with at least one face, the verdict is
+identical with and without text — because the optimisation is only correct for
+as long as that holds.
+
+**What is not fixed.** Face detection still leaks ~84 MB per 100 images inside
+ML Kit, with `PERFORMANCE_MODE_ACCURATE`, `LANDMARK_MODE_ALL` and
+`setMinFaceSize(0.02f)`. Every lever there trades against small-face recall,
+which was deliberately tuned, so none of them is a free change. The remaining
+options are architectural: run scanning in its own `:scoring` process (via
+`androidx.work:work-multiprocess`) so the leak dies with the process, or bound
+the images scored per process lifetime. Neither is attempted here.
 
 ## What is not covered yet
 
@@ -154,9 +190,11 @@ Ordered by the risk each one leaves open.
 4. **The promote/verify invariant under interruption.** 19 rescued files went
    missing once. `op=promocheck` checks it after the fact; a test should kill a
    promote run partway and assert the rows and the files still agree.
-5. **A memory regression test.** Given the ratchet above, a test that scores N
-   photos and asserts the native-heap floor afterwards. Needs the leak fixed
-   first, or it only pins the bug in place.
+5. **A memory regression test.** `op=memprobe` measures this by hand; nothing
+   fails automatically. A test that asserts stage 1 stays flat and stage 3 adds
+   under ~5 MB per 100 images would catch a regression in our own code without
+   pinning ML Kit's leak in place. It needs committed fixture images, and the
+   user's photos must not be used.
 6. **Partial media grants.** Android 14+ `READ_MEDIA_VISUAL_USER_SELECTED` gives
    a library that looks readable and is not. `smoke.sh` asserts
    `ACCESS_MODE=FULL`; nothing tests that the app refuses a partial grant.

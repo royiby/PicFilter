@@ -160,10 +160,22 @@ object Pipeline {
                         db.addFace(itemId, o.origPx, o.sharpness, o.yaw, o.roll, state.name, pid, sim)
                     }
 
-                    val text = Tasks.await(textRec.process(InputImage.fromBitmap(img.bitmap, 0)))
-                    var area = 0f; var blocks = 0
-                    for (b in text.textBlocks) { blocks++; b.boundingBox?.let { area += it.width().toFloat() * it.height() } }
-                    val textFrac = area / (img.bitmap.width.toFloat() * img.bitmap.height)
+                    // Only read text when it can change the answer. decide()
+                    // consults the text signals in exactly one case -- an image
+                    // with NO faces -- because a match, an unjudged face, a
+                    // crowd, or one or two strangers all settle the verdict
+                    // before textHeavy is reached. Running it anyway cost a
+                    // second ML Kit pass over every image: measured at ~44 MB
+                    // of native-heap growth per 100 images, discarded for the
+                    // ~63% of this library that has a face in it.
+                    var textFrac = 0f
+                    var blocks = 0
+                    if (obs.isEmpty()) {
+                        val text = Tasks.await(textRec.process(InputImage.fromBitmap(img.bitmap, 0)))
+                        var area = 0f
+                        for (b in text.textBlocks) { blocks++; b.boundingBox?.let { area += it.width().toFloat() * it.height() } }
+                        textFrac = area / (img.bitmap.width.toFloat() * img.bitmap.height)
+                    }
 
                     db.setDhash(itemId, dhash(img.bitmap))
                     img.bitmap.recycle()
@@ -205,6 +217,59 @@ object Pipeline {
             textHeavy -> Triple(Decision.DISCARD_CANDIDATE, "TEXT_NO_FACE", 0.7f)
             else -> Triple(Decision.REVIEW, "NO_FACE_PLAIN", 0.2f)
         }
+    }
+
+    /**
+     * Localise native-heap growth by stage. Temporary diagnostic.
+     *
+     * Reusing embed()'s direct ByteBuffer did not stop the heap climbing, so
+     * stop guessing and bisect: run the same images through progressively more
+     * of the pipeline and watch where the growth appears.
+     *
+     *   1 decode + recycle only
+     *   2 decode + detect + align + sharpness, but NEVER embed -- an impossible
+     *     minOrigPx gate fails every face, so detection still runs
+     *   3 decode + detect + embed
+     *   4 decode + detect + embed + text recognition
+     */
+    fun memProbe(ctx: Context, stage: Int, n: Int) {
+        val db = Db(ctx)
+        val uris = db.unscoredItems(10_000).take(n).map { it.second }
+        db.close()
+        val centroids = emptyMap<Long, List<FloatArray>>()
+        val textRec = if (stage >= 4)
+            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) else null
+        val gate = if (stage == 2) 999_999 else FaceEngine.MIN_ORIG_PX
+        val base = android.os.Debug.getNativeHeapAllocatedSize()
+        Log.i(TAG, "MEMPROBE stage=$stage n=${uris.size} gate=$gate base_kb=${base / 1024}")
+
+        FaceEngine(ctx, minOrigPx = gate).use { eng ->
+            var done = 0
+            for (u in uris) {
+                try {
+                    val img = eng.decode(ctx, Uri.parse(u)) ?: continue
+                    if (stage >= 2) {
+                        val obs = eng.observe(img)
+                        for (o in obs) eng.match(o, centroids)
+                    }
+                    if (textRec != null) {
+                        Tasks.await(textRec.process(InputImage.fromBitmap(img.bitmap, 0)))
+                    }
+                    img.bitmap.recycle()
+                } catch (e: Exception) { /* a dead row is not what we are measuring */ }
+                done++
+                if (done % 25 == 0) {
+                    val now = android.os.Debug.getNativeHeapAllocatedSize()
+                    Log.i(TAG, "MEMPROBE stage=$stage done=$done " +
+                        "native_kb=${now / 1024} delta_kb=${(now - base) / 1024} " +
+                        "per_img_kb=${(now - base) / 1024 / done}")
+                }
+            }
+        }
+        textRec?.close()
+        val end = android.os.Debug.getNativeHeapAllocatedSize()
+        Log.i(TAG, "MEMPROBE stage=$stage DONE native_kb=${end / 1024} " +
+            "delta_kb=${(end - base) / 1024}")
     }
 
     // ---------------------------------------------------------------- dupes

@@ -117,6 +117,26 @@ class FaceEngine(
         Log.i(TAG, "ENGINE model batch=$batch dim=$dim gate=${minOrigPx}px/${maxPose.toInt()}deg")
     }
 
+    // Scratch, allocated once per engine rather than once per face.
+    //
+    // embed() used to allocate a fresh 294 KB direct ByteBuffer per call, which
+    // looked like the cause of the native heap climbing past 400 MB during a
+    // library scan. It was not: reusing these buffers left the growth curve
+    // unchanged (17 -> 167 -> 266 -> 389 -> 496 MB before, 18 -> 152 -> 267 ->
+    // 366 -> 478 MB after, four passes in one process). A stage bisect put the
+    // growth in ML Kit instead -- see Pipeline.memProbe. Embedding accounts for
+    // under 1 MB per 100 images.
+    //
+    // Keeping the reuse anyway: it avoids ~400 MB of pointless allocation churn
+    // across a scan, and it costs nothing. It does make an engine
+    // single-threaded by contract, which it already was -- a TFLite Interpreter
+    // is not thread-safe.
+    private val inputBuf: ByteBuffer =
+        ByteBuffer.allocateDirect(batch * IN * IN * 3 * 4).order(ByteOrder.nativeOrder())
+    private val outBuf: Array<FloatArray> = Array(batch) { FloatArray(dim) }
+    private val pxScratch = IntArray(IN * IN)
+    private val lumaScratch = DoubleArray(IN * IN)
+
     fun decode(ctx: Context, u: Uri): DecodedImage? {
         val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         val i1 = ctx.contentResolver.openInputStream(u) ?: return null
@@ -209,28 +229,28 @@ class FaceEngine(
     }
 
     private fun embed(bmp: Bitmap): FloatArray {
-        val input = ByteBuffer.allocateDirect(batch * IN * IN * 3 * 4).order(ByteOrder.nativeOrder())
-        val px = IntArray(IN * IN)
-        bmp.getPixels(px, 0, IN, 0, 0, IN, IN)
+        inputBuf.clear()
+        bmp.getPixels(pxScratch, 0, IN, 0, 0, IN, IN)
         repeat(batch) {
-            for (p in px) {
-                input.putFloat(((p shr 16 and 0xFF) - 127.5f) / 128f)
-                input.putFloat(((p shr 8 and 0xFF) - 127.5f) / 128f)
-                input.putFloat(((p and 0xFF) - 127.5f) / 128f)
+            for (p in pxScratch) {
+                inputBuf.putFloat(((p shr 16 and 0xFF) - 127.5f) / 128f)
+                inputBuf.putFloat(((p shr 8 and 0xFF) - 127.5f) / 128f)
+                inputBuf.putFloat(((p and 0xFF) - 127.5f) / 128f)
             }
         }
-        input.rewind()
-        val out = Array(batch) { FloatArray(dim) }
-        interp.run(input, out)
-        return out[0].also { l2(it) }
+        inputBuf.rewind()
+        interp.run(inputBuf, outBuf)
+        // Copy before returning: outBuf is reused on the next call, and the
+        // caller keeps this array for the life of the FaceObs.
+        return outBuf[0].copyOf().also { l2(it) }
     }
 
     /** Variance of the Laplacian over the aligned crop (grayscale). */
     private fun sharpness(bmp: Bitmap): Double {
         val n = IN
-        val px = IntArray(n * n)
+        val px = pxScratch
         bmp.getPixels(px, 0, n, 0, 0, n, n)
-        val g = DoubleArray(n * n)
+        val g = lumaScratch
         for (i in px.indices) {
             val p = px[i]
             g[i] = 0.299 * (p shr 16 and 0xFF) + 0.587 * (p shr 8 and 0xFF) + 0.114 * (p and 0xFF)
