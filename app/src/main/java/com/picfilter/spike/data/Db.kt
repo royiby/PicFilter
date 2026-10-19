@@ -7,8 +7,14 @@ import android.database.sqlite.SQLiteOpenHelper
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/** Phase 1 store. Raw SQLite + typed DAO (Room swap is a later cleanup). */
-class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 6) {
+/**
+ * Phase 1 store. Raw SQLite + typed DAO (Room swap is a later cleanup).
+ *
+ * [name] exists so tests can work on a throwaway database instead of the real
+ * one -- an instrumented test runs as this package and would otherwise scribble
+ * on the user's own scored corpus.
+ */
+class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name, null, 6) {
 
     override fun onCreate(d: SQLiteDatabase) {
         d.execSQL("""CREATE TABLE person(
@@ -242,6 +248,11 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 6) {
     // ---------- faces / scores ----------
 
     /** Rescoring re-detects, so the previous pass's rows have to go first. */
+    fun faceCountFor(itemId: Long): Int =
+        readableDatabase.rawQuery("SELECT COUNT(*) FROM face WHERE item_id=?",
+            arrayOf(itemId.toString())
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
     fun clearFaces(itemId: Long) =
         writableDatabase.execSQL("DELETE FROM face WHERE item_id=?", arrayOf<Any>(itemId))
 
@@ -1034,6 +1045,8 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 6) {
     )
 
     companion object {
+        const val DEFAULT_NAME = "picfilter.db"
+
         fun floatsToBytes(v: FloatArray): ByteArray {
             val b = ByteBuffer.allocate(v.size * 4).order(ByteOrder.LITTLE_ENDIAN)
             for (x in v) b.putFloat(x)
