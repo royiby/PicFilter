@@ -312,6 +312,74 @@ object Promoter {
     }
 
     /** Drop promotion records whose file is gone, so they become eligible again. */
+    /**
+     * Redundant copies of the same photo sitting in the destination folder.
+     *
+     * The folder accumulated them: before the folder became the authority for
+     * what still needed copying, a second promote run wrote the same picture
+     * again, and because MediaStore never overwrites it landed as
+     * "name (1).jpg" -- or, once destName() started avoiding collisions, as
+     * "name_<itemId>.jpg". 174 files turned out to be 111 photos.
+     *
+     * Identity is the file's bytes, not its name, so this cannot mistake two
+     * genuinely different pictures for one. Of each set the shortest name wins,
+     * which is the original promotion rather than either rename.
+     */
+    fun redundantCopies(ctx: Context): List<Pair<Uri, String>> {
+        val byHash = HashMap<String, MutableList<Pair<Uri, String>>>()
+        ctx.contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME),
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?", arrayOf("$DEST%"), null
+        )?.use { c ->
+            val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val iName = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+            while (c.moveToNext()) {
+                val uri = ContentUris.withAppendedId(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(iId))
+                val name = c.getString(iName) ?: continue
+                val hash = try {
+                    val md = java.security.MessageDigest.getInstance("MD5")
+                    ctx.contentResolver.openInputStream(uri)?.use { ins ->
+                        val buf = ByteArray(64 * 1024)
+                        while (true) {
+                            val n = ins.read(buf)
+                            if (n <= 0) break
+                            md.update(buf, 0, n)
+                        }
+                    } ?: continue
+                    md.digest().joinToString("") { "%02x".format(it) }
+                } catch (e: Exception) { continue }
+                byHash.getOrPut(hash) { mutableListOf() } += uri to name
+            }
+        }
+        val out = mutableListOf<Pair<Uri, String>>()
+        for ((_, copies) in byHash) {
+            if (copies.size < 2) continue
+            val keep = copies.minByOrNull { it.second.length }!!
+            out += copies.filter { it !== keep }
+        }
+        return out
+    }
+
+    /**
+     * Report the redundant copies, for a dry run.
+     *
+     * The trashing itself lives in MainActivity, because it needs the activity's
+     * result launcher: setting IS_TRASHED directly works only on entries the app
+     * OWNS, and uninstalling drops that ownership -- after a reinstall every
+     * update silently returns 0, which is exactly what happened here. Files we
+     * no longer own need MediaStore.createTrashRequest and the user's tap, which
+     * is the better consent model for deleting someone's pictures anyway.
+     */
+    fun tidyDest(ctx: Context, dryRun: Boolean = true): Int {
+        val extras = redundantCopies(ctx)
+        Log.i(TAG, "TIDYDEST ${extras.size} redundant copies" +
+            if (dryRun) " (dry run, nothing moved)" else "")
+        for ((_, name) in extras.take(10)) Log.i(TAG, "TIDYDEST   $name")
+        return extras.size
+    }
+
     fun repair(ctx: Context): Int {
         val db = Db(ctx)
         var dropped = 0

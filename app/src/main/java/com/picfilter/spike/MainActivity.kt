@@ -338,6 +338,17 @@ class MainActivity : ComponentActivity() {
                 )
             }.start()
             "repair"    -> Thread { com.picfilter.spike.engine.Promoter.repair(this) }.start()
+            "tidydest"  -> Thread {
+                val live = intent?.getStringExtra("live") == "1"
+                com.picfilter.spike.engine.Promoter.tidyDest(this, dryRun = !live)
+                if (live) {
+                    val extras = com.picfilter.spike.engine.Promoter.redundantCopies(this)
+                    if (extras.isNotEmpty()) runOnUiThread {
+                        Log.i(TAG, "TIDYDEST asking to trash ${extras.size} copies")
+                        trashUris(extras.map { it.first })
+                    }
+                }
+            }.start()
             "unpromote" -> Thread {
                 intent?.getStringExtra("id")?.toLongOrNull()?.let {
                     com.picfilter.spike.engine.Promoter.unpromote(this, it)
@@ -594,6 +605,13 @@ class MainActivity : ComponentActivity() {
         val uris = waUris()
         Log.i(TAG, "SPIKE2 requesting trash for ${uris.size} uris")
         if (uris.isEmpty()) { Log.w(TAG, "nothing to trash"); return }
+        val pi = MediaStore.createTrashRequest(contentResolver, uris, true)
+        trashLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
+    }
+
+    /** One system dialog for a batch; the user confirms, Android keeps them 30 days. */
+    private fun trashUris(uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
         val pi = MediaStore.createTrashRequest(contentResolver, uris, true)
         trashLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
     }
