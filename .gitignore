@@ -22,3 +22,6 @@ app/src/main/assets/*.tflite
 
 # macOS
 .DS_Store
+
+# device database snapshots: real person names and photo filenames
+/backups/
