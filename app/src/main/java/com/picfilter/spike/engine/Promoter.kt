@@ -380,10 +380,81 @@ object Promoter {
         return extras.size
     }
 
+    /** Rescued copies are presumed uploaded once they have sat here this long. */
+    const val SYNC_GRACE_HOURS = 24
+
+    /**
+     * Give every file in the folder a promotion record.
+     *
+     * The record is what stops a photo being copied again -- itemsForPromotion
+     * skips anything with a row. The folder drifted ahead of the table (111
+     * files against 31 rows) because files were written by runs whose records
+     * were later dropped, so without this, reclaiming the files would simply
+     * invite the next pass to copy them all back.
+     */
+    fun reconcileDest(ctx: Context): Int {
+        val db = Db(ctx)
+        val known = db.promotedDests().map { it.second }.toSet()
+        var added = 0
+        for ((name, pair) in existingDest(ctx)) {
+            if (name in known) continue
+            val itemId = db.itemIdByName(name) ?: continue
+            db.recordPromotion(itemId, pair.first.toString(), name, pair.second)
+            added++
+        }
+        Log.i(TAG, "RECONCILE added $added promotion records for files already in the folder")
+        db.close()
+        return added
+    }
+
+    /**
+     * Local copies that have done their job and can be reclaimed.
+     *
+     * We cannot ask Google Photos what it holds -- the API that could answer is
+     * closed to us -- so "synced" is an inference: the folder is backed up
+     * (verified by finding a rescued photo in the cloud, under its original
+     * date), and this file has been sitting in it for at least
+     * [SYNC_GRACE_HOURS]. Marking is therefore the user's assertion, which is
+     * why it needs their confirmation and why the files are trashed rather than
+     * deleted.
+     *
+     * Marking happens whether or not they then clear the files: "this is in the
+     * cloud" is true independently of whether a local copy still exists.
+     */
+    fun reclaimable(ctx: Context, graceHours: Int = SYNC_GRACE_HOURS, dryRun: Boolean = true):
+        List<Pair<Uri, String>> {
+        reconcileDest(ctx)
+        val db = Db(ctx)
+        val cutoff = System.currentTimeMillis() - graceHours * 3_600_000L
+        val out = mutableListOf<Pair<Uri, String>>()
+        val ids = mutableListOf<Long>()
+        var tooNew = 0
+        for ((name, pair) in existingDest(ctx)) {
+            val f = java.io.File("/sdcard/$DEST/$name")
+            if (!f.exists()) continue
+            if (f.lastModified() > cutoff) { tooNew++; continue }
+            val itemId = db.itemIdByName(name) ?: continue
+            out += pair.first to name
+            ids += itemId
+        }
+        val mb = out.sumOf { java.io.File("/sdcard/$DEST/${it.second}").length() } / 1048576.0
+        Log.i(TAG, "RECLAIM ${out.size} copies reclaimable (${"%.1f".format(mb)} MB), " +
+            "$tooNew still within the ${graceHours}h grace period" +
+            if (dryRun) " (dry run)" else "")
+        if (!dryRun) Log.i(TAG, "RECLAIM marked ${db.markSynced(ids)} as synced")
+        db.close()
+        return out
+    }
+
     fun repair(ctx: Context): Int {
         val db = Db(ctx)
         var dropped = 0
+        // A synced copy is MEANT to be gone: its photo is in the cloud and the
+        // local file was reclaimed. Dropping its record here would make the next
+        // pass copy it back, which is the whole trap this guards against.
+        val synced = db.syncedDestNames()
         for ((_, name) in db.promotedDests()) {
+            if (name in synced) continue
             if (!java.io.File("/sdcard/$DEST/$name").exists()) {
                 db.writableDatabase.execSQL(
                     "DELETE FROM promotion WHERE dest_name=?", arrayOf<Any>(name))

@@ -50,6 +50,7 @@ Real SQLite, real WorkManager, on a device.
 |---|---|
 | `ScoreStalenessTest` | Enrolling a person, refitting a threshold, or wiping enrolment invalidates the existing scores. Without this, 638 photos stayed scored against nobody: `KEEP` was 0 and auto-rescue would have woken on every new photo and rescued nothing. Also: rescoring must not accumulate `face` rows. |
 | `DbUpgradeTest` | The v5→v6 migration, on a database shaped like the one on the phone — scores first, people enrolled afterwards. That database *is* the bug, so the upgrade must mark its scores stale. And the migration must keep the scored corpus: rebuilding 638 scores costs two minutes of face detection. |
+| `SyncedReclaimTest` | Reclaiming a local copy must not invite the app to copy it straight back. The folder and the promotion table together decide what still needs rescuing, so a file deliberately removed — because it is in the cloud and the space was reclaimed — has to stay recorded and stay out of the promotion queue. |
 | `WatcherArmingTest` | Re-arming the content trigger never cancels a trigger already waiting. Arming used `REPLACE`, and since every app open re-arms to heal a broken chain, routine use kept resetting the trigger — and cancelled a run in progress during testing. Also: a cancelled slot is re-armable, so a force-stop is recoverable. |
 
 **Every DB test passes an explicit database name.** Instrumented tests run as

@@ -338,6 +338,16 @@ class MainActivity : ComponentActivity() {
                 )
             }.start()
             "repair"    -> Thread { com.picfilter.spike.engine.Promoter.repair(this) }.start()
+            "reclaim"   -> Thread {
+                val live = intent?.getStringExtra("live") == "1"
+                val hrs = intent?.getStringExtra("hours")?.toIntOrNull()
+                    ?: com.picfilter.spike.engine.Promoter.SYNC_GRACE_HOURS
+                val gone = com.picfilter.spike.engine.Promoter.reclaimable(this, hrs, dryRun = !live)
+                if (live && gone.isNotEmpty()) runOnUiThread {
+                    Log.i(TAG, "RECLAIM asking to trash ${gone.size} local copies")
+                    trashUris(gone.map { it.first })
+                }
+            }.start()
             "tidydest"  -> Thread {
                 val live = intent?.getStringExtra("live") == "1"
                 com.picfilter.spike.engine.Promoter.tidyDest(this, dryRun = !live)

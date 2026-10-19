@@ -14,7 +14,7 @@ import java.nio.ByteOrder
  * one -- an instrumented test runs as this package and would otherwise scribble
  * on the user's own scored corpus.
  */
-class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name, null, 6) {
+class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name, null, 7) {
 
     override fun onCreate(d: SQLiteDatabase) {
         d.execSQL("""CREATE TABLE person(
@@ -53,6 +53,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         createV4(d)
         createV5(d)
         createV6(d)
+        createV7(d)
         d.execSQL("CREATE INDEX idx_face_item ON face(item_id)")
         d.execSQL("CREATE INDEX idx_item_bucket ON item(bucket)")
     }
@@ -121,6 +122,13 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         }
     }
 
+    private fun createV7(d: SQLiteDatabase) {
+        // When a rescued copy reached the cloud. Once set, the local file in
+        // Pictures/PicFilter has done its job and can be removed -- and must NOT
+        // be copied again just because it is no longer there.
+        try { d.execSQL("ALTER TABLE promotion ADD COLUMN synced_at INTEGER") } catch (e: Exception) { }
+    }
+
     override fun onUpgrade(d: SQLiteDatabase, old: Int, new: Int) {
         // Additive only — the scored corpus is expensive to rebuild.
         if (old < 2) createV2(d)
@@ -128,6 +136,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         if (old < 4) createV4(d)
         if (old < 5) createV5(d)
         if (old < 6) createV6(d)
+        if (old < 7) createV7(d)
     }
 
     // ---------- centroid revision ----------
@@ -1032,6 +1041,44 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         ).use { c -> while (c.moveToNext()) dupes += "${c.getString(0)} x${c.getInt(1)}" }
         return Triple(rows, distinct, dupes)
     }
+
+    /** The source item a rescued file came from; dest names are the source names. */
+    fun itemIdByName(name: String): Long? =
+        readableDatabase.rawQuery(
+            "SELECT id FROM item WHERE name = ? LIMIT 1", arrayOf(name)
+        ).use { if (it.moveToFirst()) it.getLong(0) else null }
+
+    fun markSynced(itemIds: List<Long>): Int {
+        if (itemIds.isEmpty()) return 0
+        val now = System.currentTimeMillis()
+        var n = 0
+        writableDatabase.beginTransaction()
+        try {
+            for (id in itemIds) {
+                writableDatabase.execSQL(
+                    "UPDATE promotion SET synced_at=? WHERE item_id=? AND synced_at IS NULL",
+                    arrayOf<Any>(now, id))
+                n++
+            }
+            writableDatabase.setTransactionSuccessful()
+        } finally { writableDatabase.endTransaction() }
+        return n
+    }
+
+    /** Rescued files we have already recorded as safely in the cloud. */
+    fun syncedDestNames(): Set<String> {
+        val out = HashSet<String>()
+        readableDatabase.rawQuery(
+            "SELECT dest_name FROM promotion WHERE synced_at IS NOT NULL AND dest_name IS NOT NULL",
+            null
+        ).use { c -> while (c.moveToNext()) out += c.getString(0) }
+        return out
+    }
+
+    fun syncedCount(): Int =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM promotion WHERE synced_at IS NOT NULL", null
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
     fun promotionCount(): Int =
         readableDatabase.rawQuery("SELECT COUNT(*) FROM promotion", null)
