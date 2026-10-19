@@ -183,13 +183,57 @@ It is at least provably behaviour-preserving on the real library, not only in
 the unit test: a full rescore gives `TEXT_NO_FACE = 130` and
 `NO_FACE_PLAIN = 105`, identical to the report from before the change.
 
-**What is not fixed.** Face detection still leaks ~84 MB per 100 images inside
-ML Kit, with `PERFORMANCE_MODE_ACCURATE`, `LANDMARK_MODE_ALL` and
+**Face detection still leaks, and is not fixable from here.** ~84 MB per 100
+images, inside ML Kit, with `PERFORMANCE_MODE_ACCURATE`, `LANDMARK_MODE_ALL` and
 `setMinFaceSize(0.02f)`. Every lever there trades against small-face recall,
-which was deliberately tuned, so none of them is a free change. The remaining
-options are architectural: run scanning in its own `:scoring` process (via
-`androidx.work:work-multiprocess`) so the leak dies with the process, or bound
-the images scored per process lifetime. Neither is attempted here.
+which was deliberately tuned, so none is a free change.
+
+**So it is contained instead.** `ScoringService` runs the pass in a `:scoring`
+process and ends that process when the work drains, which hands the leak back to
+the kernel. Three passes from a clean start, native heap *allocated* per PID:
+
+| pass | images | `:scoring` peak | released | main process |
+|---|---|---|---|---|
+| 1 | 253 | 236 MB | yes | 39.6 → 51.9 MB |
+| 2 | 100 | 189 MB | yes | 61.4 → 69.9 MB |
+| 3 | 100 | 187 MB | yes | 79.7 → 88.6 MB |
+
+453 images scored. `:scoring` absorbed 187–236 MB each time and gave all of it
+back each time. The main process grew ~9 MB per pass **flat with respect to
+image count** — 100 images costs the same as 0 — so what remains is not the
+scoring leak but the home screen decoding thumbnails on every relaunch, which
+the harness triggers twice a pass. Against ~110 MB per 100 images accumulating
+in the user's own process before, that is the problem solved rather than
+reduced.
+
+Details that cost a measurement each:
+
+- `bindService`, not `startService`: a background app may not start a service on
+  Android 8+, but it may bind to one, and the binding keeps `:scoring` alive for
+  exactly as long as the worker waits on it.
+- ML Kit bootstraps from a ContentProvider in its own manifest, and providers are
+  instantiated **only in the default process**. Without an explicit
+  `MlKit.initialize()` every pass in `:scoring` died with "MlKitContext has not
+  been initialized".
+- The process is killed in `onDestroy`, after the client has been answered and
+  has unbound — killing right after the reply races the reply itself.
+- One `:scoring` serves queued passes and exits when the queue drains, rather
+  than respawning per pass.
+- `dumpsys meminfo <package>` is ambiguous once a package has two processes and
+  will report whichever it likes; measure per PID.
+- A stale `:scoring` from an earlier run silently serves the next request on the
+  same handler thread, conflating two passes into one measurement. `pkill` on the
+  harness does not kill the Android service.
+- Worker retries are now bounded: a pass that is broken rather than unlucky
+  otherwise respawns `:scoring` and re-reads the whole library indefinitely.
+
+`picfilter.db` is now opened from two processes. SQLite coordinates with file
+locks so that is safe, but a concurrent UI read can still surface as
+SQLITE_BUSY, in which case WorkManager retries the pass.
+
+**Still in the main process:** the onboarding bootstrap (`Clusterer.bootstrap`,
+600 images) and the adb dev ops. The bootstrap is the other heavy ML Kit user
+and would need the same treatment plus cross-process progress reporting.
 
 ## What is not covered yet
 

@@ -35,5 +35,13 @@
             android:name=".ReviewActivity"
             android:exported="false"
             android:label="@string/title_review" />
+
+        <!-- Its own process on purpose. ML Kit leaks native memory per call and
+             we cannot fix that here, so the pass is contained instead: it runs
+             in :scoring, and :scoring exits when the pass is done. -->
+        <service
+            android:name=".engine.ScoringService"
+            android:exported="false"
+            android:process=":scoring" />
     </application>
 </manifest>

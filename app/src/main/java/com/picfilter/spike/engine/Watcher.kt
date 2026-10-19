@@ -160,57 +160,91 @@ object Watcher {
     }
 }
 
+/** What one pass did, for the digest notification and the logs. */
+data class PassOutcome(
+    val newItems: Int, val scored: Int, val protectedNow: Int, val candidates: Int,
+)
+
+/**
+ * Scan, score whatever is new, copy the keepers.
+ *
+ * A top-level function because it runs in two different processes: normally in
+ * :scoring (see [ScoringService], which exits afterwards to give ML Kit's
+ * leaked native heap back), and in this one only as a fallback when the handoff
+ * cannot be made.
+ */
+fun runRescuePass(ctx: Context): PassOutcome {
+    val db0 = Db(ctx)
+    val before = db0.itemCount()
+    val promotedBefore = db0.promotionCount()
+    db0.close()
+
+    Pipeline.scanMedia(ctx, 5000)
+
+    val db1 = Db(ctx)
+    val newItems = db1.itemCount() - before
+    val pending = db1.unscoredCount()
+    db1.close()
+
+    if (pending == 0) {
+        Log.i(TAG, "WATCH nothing new")
+        return PassOutcome(newItems, 0, 0, 0)
+    }
+
+    Pipeline.score(ctx, 5000)
+    // Auto-promote keepers only. Auto-discard stays off by construction:
+    // the promoter refuses DISCARD_CANDIDATE and nothing here trashes.
+    Promoter.run(ctx, dryRun = false, decisions = listOf("KEEP"))
+
+    val db2 = Db(ctx)
+    val protectedNow = db2.promotionCount() - promotedBefore
+    val candidates = db2.decisionCounts()
+        .firstOrNull { it.first == "DISCARD_CANDIDATE" }?.second ?: 0
+    db2.close()
+
+    Log.i(TAG, "WATCH new=$newItems scored=$pending protected=$protectedNow")
+    if (newItems > 0 || protectedNow > 0) {
+        Watcher.notifyDigest(ctx, newItems, protectedNow, candidates)
+    }
+    return PassOutcome(newItems, pending, protectedNow, candidates)
+}
+
 class WatchWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) {
 
     override fun doWork(): Result {
         // Null for the periodic net and for a manual run; only trigger runs re-arm.
         val slot = inputData.getString(KEY_SLOT)
-        val result = try {
-            scanScorePromote()
-        } catch (e: Exception) {
-            Log.e(TAG, "WATCH failed ${e.javaClass.simpleName}: ${e.message}")
-            // Retry keeps this request, which still carries the slot, so the
-            // chain continues from the eventual success. Do not arm here.
-            return Result.retry()
-        }
-        if (slot != null) Watcher.rearm(applicationContext, slot)
-        return result
-    }
-
-    private fun scanScorePromote(): Result {
         val app = applicationContext
-        val db0 = Db(app)
-        val before = db0.itemCount()
-        val promotedBefore = db0.promotionCount()
-        db0.close()
 
-        Pipeline.scanMedia(app, 5000)
-
-        val db1 = Db(app)
-        val newItems = db1.itemCount() - before
-        val pending = db1.unscoredCount()
-        db1.close()
-
-        if (pending == 0) {
-            Log.i(TAG, "WATCH nothing new")
-            return Result.success()
+        // Hand the work to :scoring so this process never accumulates ML Kit's
+        // leak. null means the handoff itself failed, which must not mean the
+        // rescue quietly stops happening.
+        val ok = when (ScoringClient.runInScoringProcess(app)) {
+            true -> true
+            false -> false
+            null -> {
+                Log.w(TAG, "WATCH handoff unavailable, running the pass in-process")
+                try { runRescuePass(app); true } catch (e: Exception) {
+                    Log.e(TAG, "WATCH failed ${e.javaClass.simpleName}: ${e.message}")
+                    false
+                }
+            }
         }
 
-        Pipeline.score(app, 5000)
-        // Auto-promote keepers only. Auto-discard stays off by construction:
-        // the promoter refuses DISCARD_CANDIDATE and nothing here trashes.
-        Promoter.run(app, dryRun = false, decisions = listOf("KEEP"))
-
-        val db2 = Db(app)
-        val protectedNow = db2.promotionCount() - promotedBefore
-        val candidates = db2.decisionCounts()
-            .firstOrNull { it.first == "DISCARD_CANDIDATE" }?.second ?: 0
-        db2.close()
-
-        Log.i(TAG, "WATCH new=$newItems scored=$pending protected=$protectedNow")
-        if (newItems > 0 || protectedNow > 0) {
-            Watcher.notifyDigest(app, newItems, protectedNow, candidates)
+        // Retry keeps this request, which still carries the slot, so the chain
+        // continues from the eventual success. Do not arm on a failure. Bound
+        // the retries: a pass that is broken rather than unlucky otherwise
+        // respawns :scoring and re-reads the whole library indefinitely.
+        if (!ok) {
+            return if (runAttemptCount >= 3) {
+                Log.e(TAG, "WATCH pass failed ${runAttemptCount + 1}x, giving up on this wake")
+                // Success only in the sense that WorkManager should stop; the
+                // trigger is re-armed so a later change gets another chance.
+                if (slot != null) Watcher.rearm(app, slot)
+                Result.success()
+            } else Result.retry()
         }
+        if (slot != null) Watcher.rearm(app, slot)
         return Result.success()
     }
 }
