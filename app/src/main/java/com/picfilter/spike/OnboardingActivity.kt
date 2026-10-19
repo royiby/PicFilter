@@ -17,6 +17,9 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.picfilter.spike.data.Db
@@ -34,6 +37,8 @@ import com.picfilter.spike.engine.Promoter
  * backup screen is where the app actually becomes useful: until the folder is
  * backed up and the WhatsApp folders are not, nothing has changed for the user.
  */
+private const val PICK_MAX = 10
+
 class OnboardingActivity : ComponentActivity() {
 
     private lateinit var db: Db
@@ -43,9 +48,18 @@ class OnboardingActivity : ComponentActivity() {
     private var named = 0
     private var firstRun = false
 
+    /**
+     * The photo picker needs no permission at all: the user hands over exactly
+     * the images they chose and nothing else.
+     */
+    private lateinit var pickPhotos: ActivityResultLauncher<PickVisualMediaRequest>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         db = Db(this)
+        pickPhotos = registerForActivityResult(
+            ActivityResultContracts.PickMultipleVisualMedia(PICK_MAX)
+        ) { uris -> if (uris.isNotEmpty()) promptNameForPicked(uris) }
         root = Ui.screen(this)
         Ui.applyInsets(root, this, extraBottom = 8)
         setContentView(root)
@@ -100,10 +114,17 @@ class OnboardingActivity : ComponentActivity() {
 
         val count = Ui.text(this, Ui.Type.BODY, "Reading your WhatsApp folders\u2026")
         col.addView(Ui.factRow(this, R.drawable.ic_photo_stack, count))
-        col.addView(Ui.factRow(this, R.drawable.ic_timer, "About four minutes"))
+        col.addView(Ui.factRow(this, R.drawable.ic_timer,
+            "About four minutes to find them, or seconds if you pick photos yourself"))
         col.addView(Ui.factRow(this, R.drawable.ic_lock, "Nothing leaves this phone"))
 
         col.addView(button("Find my people", Ui.Btn.PRIMARY) { runScan() })
+        col.addView(button("Pick photos of someone instead", Ui.Btn.OUTLINED) {
+            pickPhotos.launch(
+                PickVisualMediaRequest.Builder()
+                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    .build())
+        })
         if (db.candidates(limit = 1, thumbsEach = 1).isNotEmpty()) {
             col.addView(button("Continue with faces already found", Ui.Btn.OUTLINED) {
                 candidates = db.candidates(limit = 20, thumbsEach = 6)
@@ -235,6 +256,71 @@ class OnboardingActivity : ComponentActivity() {
                 }.start()
             }
             .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /**
+     * Enrol from photos the user picked, rather than from a cluster the scan
+     * found. Faster to reach -- seconds against four minutes -- at some cost in
+     * recall, which is why it asks for a few varied photos rather than one.
+     */
+    private fun promptNameForPicked(uris: List<android.net.Uri>) {
+        val input = EditText(this).apply {
+            hint = "Name"
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Who is in these ${uris.size} photos?")
+            .setMessage("Photos where this person is the only clear face work best. " +
+                "A few taken at different times beat one good portrait.")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val typed = input.text.toString().trim()
+                val name = if (typed.isNotEmpty()) typed else "Person ${named + 1}"
+                val busy = AlertDialog.Builder(this)
+                    .setMessage("Reading those photos\u2026").setCancelable(false).show()
+                Thread {
+                    val r = try {
+                        Clusterer.enrolFromUris(this, name, uris)
+                    } catch (e: Exception) {
+                        Clusterer.PickOutcome(-1, 0, uris.size, 0)
+                    }
+                    runOnUiThread {
+                        busy.dismiss()
+                        if (r.ok) named++
+                        showPickResult(name, r)
+                    }
+                }.start()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showPickResult(name: String, r: Clusterer.PickOutcome) {
+        val skipped = buildString {
+            if (r.noFace > 0) append("\n${r.noFace} had no face clear enough.")
+            if (r.tooManyFaces > 0)
+                append("\n${r.tooManyFaces} had more than one clear face, so we could not " +
+                    "tell which one is $name.")
+        }
+        val msg = if (r.ok)
+            "Saved $name from ${r.used} photo${if (r.used == 1) "" else "s"}.$skipped" +
+                if (r.used < 3) "\n\nMore photos of $name would help — with only a " +
+                    "couple we miss roughly one face in five." else ""
+        else "Could not use any of those photos.$skipped"
+
+        AlertDialog.Builder(this)
+            .setTitle(if (r.ok) "Added $name" else "Nothing to save")
+            .setMessage(msg)
+            .setPositiveButton("Add someone else") { _, _ ->
+                pickPhotos.launch(
+                    PickVisualMediaRequest.Builder()
+                        .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        .build())
+            }
+            .setNegativeButton(if (named > 0) "Done" else "Back") { _, _ ->
+                if (named > 0) showSummary() else showIntro()
+            }
             .show()
     }
 

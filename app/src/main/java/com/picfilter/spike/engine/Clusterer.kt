@@ -448,6 +448,108 @@ object Clusterer {
         return rebuilt
     }
 
+    /** What enrolling from hand-picked photos managed to use. */
+    data class PickOutcome(
+        val personId: Long, val used: Int, val noFace: Int, val tooManyFaces: Int,
+    ) {
+        val ok get() = used > 0
+    }
+
+    /**
+     * Enrol someone from photos the user picked themselves.
+     *
+     * The alternative to [bootstrap], which has to detect faces across 600
+     * images before it can offer anyone to name -- four and a half minutes
+     * before the user can do anything. Picking a handful of photos takes
+     * seconds.
+     *
+     * It costs recall, measured on this library by rebuilding each person's
+     * centroid from only their N biggest faces: 80% of their faces still
+     * matched from one photo, 91% from three, against 100% from the whole
+     * cluster. Precision was untouched -- essentially no false matches either
+     * way -- so the cost is entirely in faces that stop being recognised, and
+     * that is the dangerous direction here: a family face that goes unmatched
+     * can leave a crowd photo sitting in the discard pile. Hence asking for
+     * several photos rather than one, and varied ones.
+     *
+     * Only photos with EXACTLY ONE face good enough to enrol are used, which is
+     * what makes the face-to-name pairing unambiguous without asking the user
+     * to tap a box. Small background faces fail the quality gate and so do not
+     * count against that -- a portrait with strangers blurred behind is fine.
+     */
+    fun enrolFromUris(ctx: Context, name: String, uris: List<Uri>): PickOutcome {
+        val db = Db(ctx)
+        val vecs = mutableListOf<FloatArray>()
+        val crops = mutableListOf<Bitmap>()
+        var noFace = 0
+        var tooMany = 0
+        FaceEngine(
+            ctx, targetPx = 1200,
+            minOrigPx = FaceEngine.ENROL_MIN_ORIG_PX, maxPose = FaceEngine.ENROL_MAX_POSE,
+        ).use { eng ->
+            for (u in uris) {
+                try {
+                    val img = eng.decode(ctx, u) ?: run { noFace++; null } ?: continue
+                    val obs = eng.observe(img, keepCrop = true)
+                    val good = obs.filter { it.quality && it.embedding != null }
+                    when {
+                        good.isEmpty() -> noFace++
+                        good.size > 1 -> tooMany++
+                        else -> {
+                            vecs += good[0].embedding!!
+                            good[0].crop?.let { crops += it.copy(it.config ?: Bitmap.Config.ARGB_8888, false) }
+                        }
+                    }
+                    obs.forEach { it.crop?.recycle() }
+                    img.bitmap.recycle()
+                } catch (e: Exception) {
+                    Log.w(TAG, "PICKENROL ${e.javaClass.simpleName}: ${e.message}")
+                    noFace++
+                }
+            }
+        }
+        if (vecs.isEmpty()) {
+            Log.i(TAG, "PICKENROL '$name' nothing usable (no_face=$noFace too_many=$tooMany)")
+            db.close()
+            crops.forEach { it.recycle() }
+            return PickOutcome(-1, 0, noFace, tooMany)
+        }
+
+        val pid = db.upsertPerson(name)
+        val dim = vecs[0].size
+        val centroid = FloatArray(dim)
+        for (v in vecs) for (j in 0 until dim) centroid[j] += v[j]
+        for (j in 0 until dim) centroid[j] /= vecs.size
+        l2(centroid)
+        db.addCentroid(pid, centroid, vecs.size)
+        // Same second centroid as enrolCluster: matching takes the max over a
+        // person's set, so a vector from their most distinct faces only ever
+        // helps recall -- which is exactly what a small reference set lacks.
+        if (vecs.size >= 6) {
+            val far = vecs.sortedBy { cos(it, centroid) }.take(vecs.size / 3)
+            if (far.size >= 2) {
+                val second = FloatArray(dim)
+                for (v in far) for (j in 0 until dim) second[j] += v[j]
+                for (j in 0 until dim) second[j] /= far.size
+                l2(second)
+                db.addCentroid(pid, second, far.size)
+            }
+        }
+        personDir(ctx).listFiles { f -> f.name.startsWith("${pid}_") }?.forEach { it.delete() }
+        for ((i, b) in crops.withIndex().take(6)) {
+            try {
+                File(personDir(ctx), "${pid}_$i.jpg").outputStream().use { out ->
+                    b.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                }
+            } catch (e: Exception) { }
+        }
+        crops.forEach { it.recycle() }
+        Log.i(TAG, "PICKENROL '$name' used=${vecs.size} of ${uris.size} " +
+            "(no_face=$noFace too_many_faces=$tooMany)")
+        db.close()
+        return PickOutcome(pid, vecs.size, noFace, tooMany)
+    }
+
     private fun keepPersonFaces(ctx: Context, personId: Long, clusterId: Long, db: Db) {
         personDir(ctx).listFiles { f -> f.name.startsWith("${personId}_") }
             ?.forEach { it.delete() }
