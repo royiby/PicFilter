@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit
 
 private const val TAG = "PICFILTER"
 private const val NET = "picfilter-watch"
+private const val DRAIN = "picfilter-drain"
 private const val KEY_SLOT = "slot"
 private const val SLOT_A = "a"
 private const val SLOT_B = "b"
@@ -68,9 +69,28 @@ object Watcher {
         Log.i(TAG, "WATCH enabled: media trigger + ${hours}h net (battery-not-low)")
     }
 
+    /**
+     * Queue the next chunk of a backlog.
+     *
+     * Delayed on purpose: one :scoring process serves whatever work is already
+     * queued and only exits when the queue drains, so firing the next chunk
+     * immediately would accumulate the leak in that one process and defeat the
+     * containment. The delay lets it exit first.
+     */
+    fun scheduleDrain(ctx: Context, delaySeconds: Long = 90) {
+        val req = OneTimeWorkRequestBuilder<WatchWorker>()
+            .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
+            .setInitialDelay(delaySeconds, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(ctx)
+            .enqueueUniqueWork(DRAIN, ExistingWorkPolicy.KEEP, req)
+        Log.i(TAG, "WATCH drain queued in ${delaySeconds}s")
+    }
+
     fun disable(ctx: Context) {
         val wm = WorkManager.getInstance(ctx)
         wm.cancelUniqueWork(NET)
+        wm.cancelUniqueWork(DRAIN)
         wm.cancelUniqueWork(slotWork(SLOT_A))
         wm.cancelUniqueWork(slotWork(SLOT_B))
         Log.i(TAG, "WATCH disabled")
@@ -160,6 +180,22 @@ object Watcher {
     }
 }
 
+/**
+ * How many images one pass will score.
+ *
+ * Containment does not make a pass cheaper, only disposable -- the peak still
+ * scales with the batch, so the batch is a ceiling. Measured in :scoring:
+ * ~170 MB of fixed cost plus ~0.26 MB per image, so 100 images peaked at 189 MB
+ * and 253 at 236 MB. The code used to ask for 5000 in one go, which
+ * extrapolates to ~1.5 GB: killed, retried, and then abandoned, leaving a large
+ * first-install library permanently unscored. 300 is ~250 MB, which a
+ * throwaway process can afford.
+ *
+ * A pass that hits the cap schedules the next one, so a backlog drains over
+ * several passes instead of dying in one.
+ */
+const val MAX_PER_PASS = 300
+
 /** What one pass did, for the digest notification and the logs. */
 data class PassOutcome(
     val newItems: Int, val scored: Int, val protectedNow: Int, val candidates: Int,
@@ -191,7 +227,7 @@ fun runRescuePass(ctx: Context): PassOutcome {
         return PassOutcome(newItems, 0, 0, 0)
     }
 
-    Pipeline.score(ctx, 5000)
+    Pipeline.score(ctx, MAX_PER_PASS)
     // Auto-promote keepers only. Auto-discard stays off by construction:
     // the promoter refuses DISCARD_CANDIDATE and nothing here trashes.
     Promoter.run(ctx, dryRun = false, decisions = listOf("KEEP"))
@@ -235,6 +271,18 @@ class WatchWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) 
         // continues from the eventual success. Do not arm on a failure. Bound
         // the retries: a pass that is broken rather than unlucky otherwise
         // respawns :scoring and re-reads the whole library indefinitely.
+        if (ok) {
+            // Deliberately in this process. Touching WorkManager from :scoring
+            // would initialise a second copy of it against the same database.
+            val left = try {
+                val d = Db(app); val n = d.unscoredCount(); d.close(); n
+            } catch (e: Exception) { 0 }
+            if (left > 0) {
+                Log.i(TAG, "WATCH $left still unscored, draining across passes")
+                Watcher.scheduleDrain(app)
+            }
+        }
+
         if (!ok) {
             return if (runAttemptCount >= 3) {
                 Log.e(TAG, "WATCH pass failed ${runAttemptCount + 1}x, giving up on this wake")

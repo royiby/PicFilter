@@ -114,3 +114,39 @@ class MatchFaceTest {
         assertEquals(0.70f, FaceEngine.MATCH_THRESHOLD, 1e-6f)
     }
 }
+
+/**
+ * The failure that made the guard in [Pipeline.score] necessary.
+ *
+ * With people enrolled but an empty centroid set, every face reads as a clean
+ * miss rather than as "cannot tell" -- so a crowd shot of the user's own family
+ * becomes CROWD_NO_MATCH, a discard candidate. 290 images were mislabelled this
+ * way before the guard existed. These tests pin the two halves of the reasoning:
+ * matching really does return NO_MATCH on an empty set, and the decision rules
+ * really do turn that into a discard. Neither is wrong on its own; together they
+ * are why the scorer must refuse to run at all.
+ */
+class EmptyCentroidsTest {
+
+    private fun vec(vararg f: Float) = f.copyOf().also { l2(it) }
+
+    private fun obs(embedding: FloatArray?) =
+        FaceObs(origPx = 120, sharpness = 50.0, yaw = 0f, roll = 0f,
+            embedding = embedding, quality = true)
+
+    @org.junit.Test
+    fun `an empty centroid set reads as a clean miss, not as uncertainty`() {
+        val (state, pid, sim) = matchFace(obs(vec(1f, 0f, 0f)), emptyMap())
+        org.junit.Assert.assertEquals(MatchState.NO_MATCH, state)
+        org.junit.Assert.assertNull(pid)
+        org.junit.Assert.assertNull(sim)
+    }
+
+    @org.junit.Test
+    fun `and a clean miss on a crowd is a discard candidate`() {
+        val (decision, reason, _) = Pipeline.decide(
+            faces = 3, matched = 0, indet = 0, textFrac = 0f, blocks = 0)
+        org.junit.Assert.assertEquals(Decision.DISCARD_CANDIDATE, decision)
+        org.junit.Assert.assertEquals("CROWD_NO_MATCH", reason)
+    }
+}

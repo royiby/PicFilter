@@ -231,6 +231,51 @@ Details that cost a measurement each:
 locks so that is safe, but a concurrent UI read can still surface as
 SQLITE_BUSY, in which case WorkManager retries the pass.
 
+**A pass scores at most `MAX_PER_PASS` = 300 images** and schedules the next one
+if a backlog remains. Containment makes a pass disposable, not cheap: the peak
+still scales with the batch (~170 MB fixed plus ~0.26 MB per image, so 100
+images peaked at 189 MB and 253 at 236 MB). The code used to ask for 5000 in one
+go, which extrapolates to ~1.5 GB — killed, retried, then abandoned, leaving a
+large first-install library permanently unscored. The continuation is delayed,
+because one `:scoring` serves whatever is already queued and only exits when the
+queue drains.
+
+### The library version is not a way out
+
+Both version-level levers were measured and neither helps:
+
+- `com.google.mlkit:face-detection` is already at its latest, **16.1.7**. There
+  is nothing to upgrade to.
+- The unbundled `com.google.android.gms:play-services-mlkit-face-detection:17.1.0`
+  loads its model *from* Play Services but still runs inference in our process,
+  so the allocations land in our heap regardless: **+94.9 MB** per 100 images
+  against the bundled **+87.9 MB**, i.e. no better and possibly slightly worse.
+  Not worth a Play Services runtime dependency and a first-run model download.
+
+### Scoring against nobody: 290 photos mislabelled
+
+One window scored 290 images with **every face detected normally and every
+single one recorded NO_MATCH**, because the centroid set came back empty while
+five people were enrolled. 17 of the user's keepers silently became REVIEW or
+DISCARD_CANDIDATE — family photos moved toward the junk pile. Proven by diffing
+two snapshots: on the affected items, faces 44 → 44 and indeterminate 15 → 15,
+but matched **18 → 0**.
+
+The root cause is not established and did not reproduce: scoring the same 100
+images in `:scoring` and in the main process gives byte-identical verdicts — 0
+decision changes, same 258 faces, same 9 matches, same 97 indeterminates — so
+process isolation is not responsible.
+
+The defect that *is* established, and is independent of the cause: the scorer
+could not tell "nobody matched" from "nobody to match against", and wrote 290
+confident wrong answers. `Pipeline.score` now refuses to run when people are
+enrolled and no centroids load, and `EmptyCentroidsTest` pins the two halves of
+why that matters — an empty set reads as a clean miss, and a clean miss on a
+crowd is a discard candidate. Neither is wrong alone; together they are the bug.
+
+Scoring with nobody enrolled at all stays legal: that is a new install, where
+"we do not know yet" is the honest answer.
+
 **Still in the main process:** the onboarding bootstrap (`Clusterer.bootstrap`,
 600 images) and the adb dev ops. The bootstrap is the other heavy ML Kit user
 and would need the same treatment plus cross-process progress reporting.

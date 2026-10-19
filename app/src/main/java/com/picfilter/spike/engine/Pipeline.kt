@@ -136,6 +136,26 @@ object Pipeline {
         Log.i(TAG, "SCORE enrolled_people=${centroids.size} ${names.values} " +
             "centroid_rev=${db.centroidRev()} stale=${db.staleScoreCount()}")
 
+        // Refuse to score people's photos against nobody.
+        //
+        // This happened: 290 images were scored in one window with every face
+        // detected normally and every single one recorded NO_MATCH, because the
+        // centroid set came back empty while five people were enrolled. 17 of
+        // the user's keepers silently became REVIEW or DISCARD_CANDIDATE -- the
+        // scorer cannot tell "nobody matched" from "nobody to match against",
+        // so it wrote 290 confident wrong answers.
+        //
+        // Scoring with nobody enrolled at all is legitimate: that is a new
+        // install, and the verdicts are honestly "we do not know yet". Scoring
+        // with people enrolled and no centroids for them is not, and the right
+        // move is to do nothing and let the pass be retried.
+        val enrolled = db.enrolledCount()
+        if (enrolled > 0 && centroids.isEmpty()) {
+            db.close()
+            throw IllegalStateException(
+                "refusing to score: $enrolled people enrolled but no centroids loaded")
+        }
+
         val textRec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
         var done = 0; var dead = 0; var failed = 0
         val t0 = System.currentTimeMillis()
