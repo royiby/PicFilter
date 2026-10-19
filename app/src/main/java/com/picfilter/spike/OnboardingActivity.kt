@@ -59,49 +59,38 @@ class OnboardingActivity : ComponentActivity() {
     private fun dp(v: Int) = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
-    private fun title(t: String) = Ui.title(this, t, 26f)
+    private fun title(t: String) = Ui.title(this, t)
+
+    /** Onboarding headlines are the one place the display size is used. */
+    private fun headline(t: String) = Ui.title(this, t, Ui.Type.DISPLAY)
 
     private fun body(t: String) = Ui.body(this, t)
 
-    /** Colour names are kept at call sites; map them onto the Material palette. */
-    private fun button(t: String, colour: String, onClick: () -> Unit) = Ui.wideButton(
-        this, t,
-        when (colour) {
-            "#2F7D53" -> Ui.GREEN
-            "#2F6FD0", "#3A6EA5" -> Ui.PRIMARY
-            "#8A5A2B" -> "#5C4433"
-            else -> Ui.NEUTRAL
-        },
-        when (colour) {
-            "#2F7D53" -> Ui.ON_GREEN
-            "#2F6FD0", "#3A6EA5" -> Ui.ON_PRIMARY
-            else -> Ui.ON_SURFACE
-        },
-        onClick,
-    )
+    private fun button(t: String, role: Ui.Btn, onClick: () -> Unit) =
+        Ui.wideButton(this, t, role, onClick)
 
     // ------------------------------------------------------------- 1. intro
 
     private fun showIntro() {
         root.removeAllViews()
-        root.addView(title("Who matters to you?"))
+        root.addView(headline("Who matters to you?"))
         root.addView(body(
-            "PicFilter will look through about ${Clusterer.SAMPLE_SIZE} of your recent photos " +
+            "PixKin will look through about ${Clusterer.SAMPLE_SIZE} of your recent photos " +
             "and find the faces that keep appearing.\n\n" +
             "You tell it which ones are family and friends. Photos of those people are then " +
             "protected and never suggested for deletion.\n\n" +
             "This takes about four minutes. Everything happens on this phone — no photos are " +
             "uploaded anywhere."
         ))
-        root.addView(button("Start", "#2F6FD0") { runScan() })
+        root.addView(button("Start", Ui.Btn.PRIMARY) { runScan() })
         if (db.candidates(limit = 1, thumbsEach = 1).isNotEmpty()) {
-            root.addView(button("Continue with faces already found", "#3A6EA5") {
+            root.addView(button("Continue with faces already found", Ui.Btn.OUTLINED) {
                 candidates = db.candidates(limit = 20, thumbsEach = 6)
                 idx = 0
                 if (candidates.isEmpty()) showNoFaces() else showCandidate()
             })
         }
-        root.addView(button("Cancel", "#3A4150") { finish() })
+        root.addView(button("Cancel", Ui.Btn.TEXT) { finish() })
     }
 
     // -------------------------------------------------------------- 2. scan
@@ -114,7 +103,8 @@ class OnboardingActivity : ComponentActivity() {
             isIndeterminate = false
             max = 100
             trackCornerRadius = dp(4)
-            setIndicatorColor(Color.parseColor(Ui.PRIMARY))
+            setIndicatorColor(Ui.primary(this@OnboardingActivity))
+            trackColor = Ui.surfaceVariant(this@OnboardingActivity)
             trackThickness = dp(8)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -148,7 +138,7 @@ class OnboardingActivity : ComponentActivity() {
             "That usually means the sample was mostly forwarded images rather than your own " +
             "camera photos. You can try again, or enrol people manually later."
         ))
-        root.addView(button("Done", "#3A4150") { finish() })
+        root.addView(button("Done", Ui.Btn.TEXT) { finish() })
     }
 
     // --------------------------------------------------------- 3. candidates
@@ -157,9 +147,10 @@ class OnboardingActivity : ComponentActivity() {
         if (idx >= candidates.size) { showSummary(); return }
         val c = candidates[idx]
         root.removeAllViews()
-        root.addView(TextView(this).apply {
-            text = "${idx + 1} of ${candidates.size}   ·   $named named"
-            textSize = 13f; setTextColor(Color.parseColor("#9FB0C8"))
+        root.addView(Ui.text(this, Ui.Type.CAPTION,
+            "${idx + 1} of ${candidates.size}   ·   $named named",
+            R.color.pk_on_surface_variant).apply {
+            setPadding(dp(Ui.MD), dp(Ui.MD), dp(Ui.MD), 0)
         })
         root.addView(title("Do you know this person?"))
 
@@ -172,9 +163,9 @@ class OnboardingActivity : ComponentActivity() {
         root.addView(scroll)
 
         root.addView(body("Appears in ${c.size} photos in the sample."))
-        root.addView(button("This is someone I care about", "#2F7D53") { promptName(c) })
-        root.addView(button("Not important", "#3A4150") { decide(c, "SKIPPED") })
-        root.addView(button("These aren't the same person", "#8A5A2B") { decide(c, "MIXED") })
+        root.addView(button("This is someone I care about", Ui.Btn.PRIMARY) { promptName(c) })
+        root.addView(button("Not important", Ui.Btn.OUTLINED) { decide(c, "SKIPPED") })
+        root.addView(button("These aren't the same person", Ui.Btn.TEXT) { decide(c, "MIXED") })
     }
 
     private fun promptName(c: Db.Candidate) {
@@ -218,11 +209,9 @@ class OnboardingActivity : ComponentActivity() {
         // The part that matters: who did they NOT claim?
         val skipped = db.skippedClusters(minSize = 5)
         if (skipped.isNotEmpty()) {
-            col.addView(TextView(this).apply {
-                text = "Worth a second look"
-                textSize = 18f; setTextColor(Color.parseColor("#E8B84B"))
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, dp(10), 0, dp(6))
+            col.addView(Ui.text(this, Ui.Type.TITLE_SMALL, "Worth a second look",
+                R.color.pk_warning).apply {
+                setPadding(dp(Ui.MD), dp(Ui.SM), dp(Ui.MD), dp(Ui.XXS))
             })
             col.addView(body(
                 "These faces keep appearing but you didn't claim them. Photos of them can be " +
@@ -239,14 +228,12 @@ class OnboardingActivity : ComponentActivity() {
                         .apply { setMargins(0, 0, dp(8), 0) }
                 }
                 cell.addView(Ui.thumb(this, 80).apply { setImageBitmap(bmp) })
-                cell.addView(TextView(this).apply {
-                    text = "${s.size} photos"; textSize = 11f
-                    setTextColor(Color.parseColor("#9FB0C8"))
-                })
+                cell.addView(Ui.text(this, Ui.Type.CAPTION, "${s.size} photos",
+                    R.color.pk_on_surface_variant))
                 strip.addView(cell)
             }
             col.addView(android.widget.HorizontalScrollView(this).apply { addView(strip) })
-            col.addView(button("Go back and add someone", "#2F6FD0") {
+            col.addView(button("Go back and add someone", Ui.Btn.PRIMARY) {
                 candidates = db.candidates(limit = 20, thumbsEach = 6)
                 idx = 0
                 if (candidates.isEmpty()) showSummary() else showCandidate()
@@ -263,7 +250,7 @@ class OnboardingActivity : ComponentActivity() {
             ))
         }
 
-        col.addView(button("Done", "#3A4150") { finish() })
+        col.addView(button("Done", Ui.Btn.TEXT) { finish() })
         root.addView(scroll)
     }
 

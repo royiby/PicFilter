@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PixKin</string>
+    <string name="title_setup">PixKin setup</string>
+    <string name="title_review">PixKin review</string>
+    <string name="tagline">Only your people’s photos, saved.</string>
+    <string name="logo_description">PixKin</string>
+</resources>

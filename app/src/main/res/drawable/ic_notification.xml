@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status bar icon: the mark as a silhouette, since Android tints notification
+  icons flat white. Same paths as ic_launcher_monochrome, scaled to fill 24dp.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <group android:scaleX="0.1507" android:scaleY="0.1507"
+        android:translateX="-3.07" android:translateY="-2.77">
+        <path android:pathData="M100,44 C92,70 80,92 70,108" android:strokeColor="#FF000000" android:strokeWidth="6" android:strokeLineCap="round" android:fillColor="#00000000"/>
+        <path android:pathData="M100,44 C112,72 126,94 132,114" android:strokeColor="#FF000000" android:strokeWidth="6" android:strokeLineCap="round" android:fillColor="#00000000"/>
+        <path android:pathData="M100,44 C114,28 138,28 148,36 C134,50 112,52 100,44 Z" android:fillColor="#FF000000"/>
+        <path android:pathData="M34,130 a34,34 0 1,0 68,0 a34,34 0 1,0 -68,0 Z" android:fillColor="#FF000000"/>
+        <path android:pathData="M102,136 a32,32 0 1,0 64,0 a32,32 0 1,0 -64,0 Z" android:fillColor="#FF000000"/>
+    </group>
+</vector>

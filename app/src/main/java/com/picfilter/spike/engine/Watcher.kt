@@ -136,7 +136,7 @@ object Watcher {
     fun notifyDigest(ctx: Context, newItems: Int, protectedNow: Int, candidates: Int) {
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannel(
-            NotificationChannel(CHANNEL, "PicFilter", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL, "PixKin", NotificationManager.IMPORTANCE_LOW)
         )
         val tap = PendingIntent.getActivity(
             ctx, 0, Intent(ctx, MainActivity::class.java),
@@ -150,8 +150,8 @@ object Watcher {
         nm.notify(
             1001,
             NotificationCompat.Builder(ctx, CHANNEL)
-                .setSmallIcon(android.R.drawable.ic_menu_gallery)
-                .setContentTitle("PicFilter")
+                .setSmallIcon(com.picfilter.spike.R.drawable.ic_notification)
+                .setContentTitle("PixKin")
                 .setContentText(text)
                 .setContentIntent(tap)
                 .setAutoCancel(true)

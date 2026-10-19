@@ -119,7 +119,6 @@ class MainActivity : ComponentActivity() {
         val keep = counts["KEEP"] ?: 0
 
         val col = Ui.screen(this)
-        col.addView(Ui.title(this, "PicFilter"))
         val managePeople = {
             startActivity(android.content.Intent().apply {
                 component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
@@ -132,7 +131,7 @@ class MainActivity : ComponentActivity() {
             }, managePeople))
             col.addView(Ui.body(this, "Photos of these people are kept automatically."))
         } else {
-            col.addView(Ui.body(this, "Start by telling PicFilter who matters to you."))
+            col.addView(Ui.body(this, "Start by telling PixKin who matters to you."))
         }
         col.addView(Ui.statRow(this, listOf(
             "$promoted" to "backed up",
@@ -148,7 +147,7 @@ class MainActivity : ComponentActivity() {
         }
         col.addView(Ui.actionCard(this,
             if (watchOn) "Auto-rescue is on" else "Auto-rescue is off",
-            if (watchOn) "New WhatsApp photos of your people are backed up for you"
+            if (watchOn) "New WhatsApp photos of your people are saved for you"
             else "Turn on to protect new photos automatically",
             accent = watchOn) {
             if (watchOn) com.picfilter.spike.engine.Watcher.disable(this)
@@ -180,13 +179,18 @@ class MainActivity : ComponentActivity() {
             else "$dupeGroups ${if (dupeGroups == 1) "group" else "groups"} of near-identical copies",
             "dupes", dupeThumbs, col)
 
-        val scroll = android.widget.ScrollView(this).apply {
+        // The logo lockup is the home screen's top bar: it carries the brand,
+        // so there is no title text and no colored bar.
+        val root = Ui.screen(this)
+        root.addView(Ui.logoBar(this))
+        root.addView(android.widget.ScrollView(this).apply {
             addView(col)
-            setBackgroundColor(android.graphics.Color.parseColor(Ui.SURFACE))
-        }
-        Ui.applyInsets(scroll, this, extraBottom = 12)
+            layoutParams = LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+        })
+        Ui.applyInsets(root, this, extraBottom = Ui.SM)
         tv.visibility = android.view.View.GONE
-        return scroll
+        return root
     }
 
     /** A card that previews what is inside it, so junk and duplicates are

@@ -36,6 +36,7 @@ class ReviewActivity : ComponentActivity() {
 
     private lateinit var db: Db
     private lateinit var image: ImageView
+    private lateinit var empty: LinearLayout
     private lateinit var strip: LinearLayout
     private lateinit var info: TextView
     private lateinit var counter: TextView
@@ -66,13 +67,22 @@ class ReviewActivity : ComponentActivity() {
     private fun dp(v: Int) = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
+    /** What this queue is, for the top bar. Inner screens get a text title. */
+    private fun screenTitle() = when (mode) {
+        "dupes" -> "Suspected duplicates"
+        "junk" -> "Suspected junk"
+        "verify" -> "Saved photos"
+        "rescue" -> "More family photos"
+        "noface" -> "Photos with no faces"
+        else -> "Review"
+    }
+
     private fun buildUi(): View {
         val root = Ui.screen(this)
+        root.addView(Ui.titleBar(this, screenTitle()) { finish() })
 
-        counter = TextView(this).apply {
-            setTextColor(Color.parseColor(Ui.ON_SURFACE_VARIANT)); textSize = 12f
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setPadding(dp(24), dp(14), dp(24), dp(6))
+        counter = Ui.text(this, Ui.Type.CAPTION, "", R.color.pk_on_surface_variant).apply {
+            setPadding(dp(Ui.MD), dp(Ui.XS), dp(Ui.MD), dp(Ui.XXS))
         }
         root.addView(counter)
 
@@ -80,67 +90,70 @@ class ReviewActivity : ComponentActivity() {
             scaleType = ImageView.ScaleType.FIT_CENTER
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-            ).apply { setMargins(dp(16), 0, dp(16), 0) }
+            ).apply { setMargins(dp(Ui.MD), 0, dp(Ui.MD), 0) }
         }
         root.addView(image)
 
+        empty = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+            ).apply { setMargins(dp(Ui.MD), 0, dp(Ui.MD), 0) }
+            visibility = View.GONE
+        }
+        root.addView(empty)
+
         strip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(16), dp(10), dp(16), 0)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(104))
+            setPadding(dp(Ui.MD), dp(Ui.SM), dp(Ui.MD), 0)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(104))
             visibility = View.GONE
         }
         root.addView(strip)
 
-        info = TextView(this).apply {
-            setTextColor(Color.parseColor(Ui.ON_SURFACE)); textSize = 14f
-            setLineSpacing(0f, 1.3f)
-            setPadding(dp(24), dp(14), dp(24), dp(12))
+        info = Ui.text(this, Ui.Type.BODY_SMALL).apply {
+            setPadding(dp(Ui.MD), dp(Ui.SM), dp(Ui.MD), dp(Ui.SM))
         }
         root.addView(info)
 
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(12), 0, dp(12), dp(6))
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52))
+            setPadding(dp(Ui.SM), 0, dp(Ui.SM), dp(Ui.XXS))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(Ui.TOUCH))
         }
         when (mode) {
             "dupes" -> {
-                buttons.addView(Ui.filled(this, "Different", Ui.NEUTRAL, Ui.ON_SURFACE) { verdict("DIFFERENT") })
-                buttons.addView(Ui.filled(this, "Same photo", Ui.GREEN, Ui.ON_GREEN) { verdict("SAME") })
+                buttons.addView(Ui.filled(this, "Different", Ui.Btn.OUTLINED) { verdict("DIFFERENT") })
+                buttons.addView(Ui.filled(this, "Same photo", Ui.Btn.PRIMARY) { verdict("SAME") })
             }
             "verify" -> {
-                buttons.addView(Ui.filled(this, "Not mine", Ui.RED, Ui.ON_RED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE) { label("SKIP") })
-                buttons.addView(Ui.filled(this, "Correct", Ui.GREEN, Ui.ON_GREEN) { label("KEEP") })
+                buttons.addView(Ui.filled(this, "Not mine", Ui.Btn.OUTLINED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, "Skip", Ui.Btn.TEXT) { label("SKIP") })
+                buttons.addView(Ui.filled(this, "Correct", Ui.Btn.PRIMARY) { label("KEEP") })
             }
             "junk" -> {
-                buttons.addView(Ui.filled(this, "It's junk", Ui.RED, Ui.ON_RED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE) { label("SKIP") })
-                buttons.addView(Ui.filled(this, "Keep", Ui.GREEN, Ui.ON_GREEN) { label("KEEP") })
+                buttons.addView(Ui.filled(this, "It's junk", Ui.Btn.OUTLINED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, "Skip", Ui.Btn.TEXT) { label("SKIP") })
+                buttons.addView(Ui.filled(this, "Keep", Ui.Btn.PRIMARY) { label("KEEP") })
             }
             "rescue", "noface" -> {
-                buttons.addView(Ui.filled(this, "Not mine", Ui.NEUTRAL, Ui.ON_SURFACE) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE_VARIANT) { label("SKIP") })
-                buttons.addView(Ui.filled(this, "Keep", Ui.GREEN, Ui.ON_GREEN) { label("KEEP") })
+                buttons.addView(Ui.filled(this, "Not mine", Ui.Btn.OUTLINED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, "Skip", Ui.Btn.TEXT) { label("SKIP") })
+                buttons.addView(Ui.filled(this, "Keep", Ui.Btn.PRIMARY) { label("KEEP") })
             }
             else -> {
-                buttons.addView(Ui.filled(this, "Discard", Ui.RED, Ui.ON_RED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE) { label("SKIP") })
-                buttons.addView(Ui.filled(this, "Keep", Ui.GREEN, Ui.ON_GREEN) { label("KEEP") })
+                buttons.addView(Ui.filled(this, "Discard", Ui.Btn.OUTLINED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, "Skip", Ui.Btn.TEXT) { label("SKIP") })
+                buttons.addView(Ui.filled(this, "Keep", Ui.Btn.PRIMARY) { label("KEEP") })
             }
         }
         actionBar = buttons
         root.addView(buttons)
 
-        undoBtn = MaterialButton(this, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            text = "Undo last"
-            isAllCaps = false
-            setTextColor(Color.parseColor(Ui.PRIMARY))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(44))
-            setOnClickListener { undo() }
-        }
+        undoBtn = Ui.wideButton(this, "Undo last", Ui.Btn.LINK) { undo() }
         root.addView(undoBtn)
 
         Ui.applyInsets(root, this, extraBottom = 4)
@@ -163,16 +176,23 @@ class ReviewActivity : ComponentActivity() {
 
     private fun render() {
         if (idx >= queue.size) {
+            // Empty state: the mark, one line, nothing to decide.
             image.setImageDrawable(null); strip.visibility = View.GONE
             actionBar.visibility = View.GONE
             undoBtn.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
+            if (empty.childCount == 0) empty.addView(Ui.emptyState(this,
+                if (history.isEmpty()) "Nothing here to look at." else "All done here."))
+            empty.visibility = View.VISIBLE
+            image.visibility = View.GONE
             val summary = if (mode == "dupes")
                 db.dupeVerdictCounts().joinToString("  ") { "${it.first}=${it.second}" }
             else db.labelCounts().joinToString("  ") { "${it.first}=${it.second}" }
-            info.text = "Done.\n$summary"
-            counter.text = "queue empty"
+            info.text = summary
+            counter.text = ""
             return
         }
+        empty.visibility = View.GONE
+        image.visibility = View.VISIBLE
         actionBar.visibility = View.VISIBLE
         undoBtn.visibility = View.VISIBLE
         counter.text = "${idx + 1} of ${queue.size}"
@@ -185,7 +205,7 @@ class ReviewActivity : ComponentActivity() {
             strip.removeAllViews()
             image.setImageBitmap(thumb(Uri.parse(members[0].second), 1400))
             for ((_, u) in members) {
-                strip.addView(Ui.thumb(this, 88).apply { setImageBitmap(quickThumb(u)) })
+                strip.addView(Ui.thumb(this, 80).apply { setImageBitmap(quickThumb(u)) })
             }
             info.text = "group $gid · ${members.size} members\nAre these the same picture?"
         } else if (card is RescueCard) {
@@ -193,7 +213,7 @@ class ReviewActivity : ComponentActivity() {
             strip.visibility = View.GONE
             image.setImageBitmap(thumb(Uri.parse(r.uri), 1400))
             if (mode == "verify") {
-                info.text = "PicFilter backed this up as family" +
+                info.text = "PixKin saved this as family" +
                     (r.nearName?.let { n -> ", matching $n" } ?: "") +
                     (r.nearSim?.let { v -> " at ${"%.3f".format(v)}" } ?: "") +
                     ".\nIs that right?"
@@ -246,7 +266,7 @@ class ReviewActivity : ComponentActivity() {
         for ((offset, card) in next.withIndex()) {
             val uri = (card as? RescueCard)?.row?.uri ?: continue
             val at = idx + 1 + offset
-            strip.addView(Ui.thumb(this, 88).apply {
+            strip.addView(Ui.thumb(this, 80).apply {
                 setImageBitmap(quickThumb(uri))
                 setOnClickListener { idx = at; render() }
             })

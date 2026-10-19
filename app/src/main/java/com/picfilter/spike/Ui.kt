@@ -3,12 +3,19 @@ package com.picfilter.spike
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.annotation.ColorRes
+import androidx.core.content.ContextCompat
+import androidx.core.content.res.ResourcesCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.button.MaterialButton
@@ -17,27 +24,109 @@ import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.shape.CornerFamily
 import com.google.android.material.shape.ShapeAppearanceModel
 
-/** Shared Material 3 pieces so every screen looks like one product. */
+/**
+ * PixKin's design system: the tokens from design-tokens.json and the handful of
+ * components every screen is built from.
+ *
+ * No screen names a color. The pk_* resources resolve to the light palette or
+ * the dark one for us, so a view built here is correct in both. Red is the
+ * brand, so it reaches the UI only as [primary]: one main action per screen,
+ * plus selection states.
+ */
 object Ui {
 
-    const val SURFACE = "#131314"
-    const val SURFACE_VARIANT = "#1E1F20"
-    const val ON_SURFACE = "#E3E3E3"
-    const val ON_SURFACE_VARIANT = "#9AA0A6"
-    const val PRIMARY = "#A8C7FA"
-    const val ON_PRIMARY = "#0A305F"
-    const val GREEN = "#6DD58C"
-    const val ON_GREEN = "#003917"
-    const val RED = "#F2B8B5"
-    const val ON_RED = "#601410"
-    const val NEUTRAL = "#2D2F31"
+    // ---------- spacing (4dp grid) ----------
+
+    const val XXS = 4
+    const val XS = 8
+    const val SM = 12
+    const val MD = 16          // screen side margin
+    const val LG = 24
+    const val XL = 32
+    const val XXL = 48
+
+    // ---------- radius ----------
+
+    const val R_SM = 8         // chips, small thumbnails
+    const val R_MD = 12        // cards, photo tiles
+    const val R_LG = 16        // sheets, banners
+    const val R_XL = 28        // dialogs
+
+    // ---------- sizes ----------
+
+    const val TOP_BAR = 64
+    const val LOGO = 28
+    const val TOUCH = 48       // minimum touch target
+    const val ICON = 24
+    const val AVATAR = 40
+    const val GRID_GAP = 2
 
     fun Context.dp(v: Int) = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
+    // ---------- color roles ----------
+
+    fun color(ctx: Context, @ColorRes id: Int) = ContextCompat.getColor(ctx, id)
+
+    fun primary(ctx: Context) = color(ctx, R.color.pk_primary)
+    fun onPrimary(ctx: Context) = color(ctx, R.color.pk_on_primary)
+    fun primaryContainer(ctx: Context) = color(ctx, R.color.pk_primary_container)
+    fun onPrimaryContainer(ctx: Context) = color(ctx, R.color.pk_on_primary_container)
+    fun secondary(ctx: Context) = color(ctx, R.color.pk_secondary)
+    fun onSecondary(ctx: Context) = color(ctx, R.color.pk_on_secondary)
+    fun secondaryContainer(ctx: Context) = color(ctx, R.color.pk_secondary_container)
+    fun onSecondaryContainer(ctx: Context) = color(ctx, R.color.pk_on_secondary_container)
+    fun background(ctx: Context) = color(ctx, R.color.pk_background)
+    fun surface(ctx: Context) = color(ctx, R.color.pk_surface)
+    fun onSurface(ctx: Context) = color(ctx, R.color.pk_on_surface)
+    fun surfaceVariant(ctx: Context) = color(ctx, R.color.pk_surface_variant)
+    fun onSurfaceVariant(ctx: Context) = color(ctx, R.color.pk_on_surface_variant)
+    fun outline(ctx: Context) = color(ctx, R.color.pk_outline)
+    fun outlineVariant(ctx: Context) = color(ctx, R.color.pk_outline_variant)
+    fun warning(ctx: Context) = color(ctx, R.color.pk_warning)
+
+    // ---------- type ----------
+
+    /** The scale from the style guide. Sizes are sp; [line] is the line height. */
+    enum class Type(val size: Float, val line: Float, val weight: Int, val tracking: Float) {
+        DISPLAY(32f, 40f, 800, -0.5f),
+        HEADLINE(24f, 32f, 800, -0.25f),
+        TITLE(20f, 28f, 700, 0f),
+        TITLE_SMALL(16f, 24f, 700, 0f),
+        BODY(16f, 24f, 400, 0f),
+        BODY_SMALL(14f, 20f, 400, 0f),
+        LABEL(14f, 20f, 600, 0.1f),
+        CAPTION(12f, 16f, 600, 0.2f),
+    }
+
+    private val fonts = HashMap<Int, Typeface>()
+
+    /** Nunito at [weight]. One variable font, so the weights are instances of it. */
+    fun font(ctx: Context, weight: Int): Typeface = fonts.getOrPut(weight) {
+        val base = try {
+            ResourcesCompat.getFont(ctx, R.font.nunito)
+        } catch (e: Exception) { null } ?: Typeface.SANS_SERIF
+        Typeface.create(base, weight, false)
+    }
+
+    /** A TextView carrying one step of the scale. Sentence case, never all-caps. */
+    fun text(
+        ctx: Context, style: Type, t: CharSequence = "",
+        @ColorRes colour: Int = R.color.pk_on_surface,
+    ): TextView = TextView(ctx).apply {
+        text = t
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, style.size)
+        setLineSpacing(0f, style.line / style.size)
+        letterSpacing = style.tracking / style.size
+        typeface = font(ctx, style.weight)
+        setTextColor(color(ctx, colour))
+    }
+
+    // ---------- screen scaffolding ----------
+
     fun screen(ctx: Context): LinearLayout = LinearLayout(ctx).apply {
         orientation = LinearLayout.VERTICAL
-        setBackgroundColor(Color.parseColor(SURFACE))
+        setBackgroundColor(background(ctx))
     }
 
     /** Edge-to-edge without letting system bars eat the controls. */
@@ -52,22 +141,73 @@ object Ui {
         }
     }
 
-    fun title(ctx: Context, t: String, size: Float = 28f): TextView = TextView(ctx).apply {
-        text = t; textSize = size
-        setTextColor(Color.parseColor(ON_SURFACE))
-        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-        letterSpacing = -0.01f
-        with(ctx) { setPadding(dp(24), dp(16), dp(24), dp(8)) }
+    /**
+     * Home top bar: the logo lockup carries the brand, so there is no title and
+     * no colored bar. The drawable switches itself in dark mode.
+     */
+    fun logoBar(ctx: Context): View = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setBackgroundColor(surface(ctx))
+        with(ctx) {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(TOP_BAR))
+            setPadding(dp(MD), 0, dp(MD), 0)
+            addView(ImageView(ctx).apply {
+                setImageResource(R.drawable.ic_logo_wordmark)
+                adjustViewBounds = true
+                contentDescription = ctx.getString(R.string.logo_description)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(LOGO))
+            })
+        }
     }
 
-    fun body(ctx: Context, t: String, muted: Boolean = true): TextView = TextView(ctx).apply {
-        text = t; textSize = 14f
-        setTextColor(Color.parseColor(if (muted) ON_SURFACE_VARIANT else ON_SURFACE))
-        setLineSpacing(0f, 1.25f)
-        with(ctx) { setPadding(dp(24), 0, dp(24), dp(16)) }
+    /** Inner screens: back arrow and a title, no logo. */
+    fun titleBar(ctx: Context, title: String, onBack: () -> Unit): View = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setBackgroundColor(surface(ctx))
+        with(ctx) {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(TOP_BAR))
+            setPadding(dp(XS), 0, dp(MD), 0)
+            addView(ImageView(ctx).apply {
+                setImageResource(R.drawable.ic_arrow_back)
+                imageTintList = android.content.res.ColorStateList.valueOf(onSurfaceVariant(ctx))
+                contentDescription = "Back"
+                layoutParams = LinearLayout.LayoutParams(dp(TOUCH), dp(TOUCH))
+                val p = (dp(TOUCH) - dp(ICON)) / 2
+                setPadding(p, p, p, p)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { onBack() }
+            })
+            addView(text(ctx, Type.TITLE, title).apply {
+                setPadding(dp(XS), 0, 0, 0)
+            })
+        }
     }
 
-    /** Google-Photos-style row: title, supporting line, whole card tappable. */
+    // ---------- text blocks ----------
+
+    fun title(ctx: Context, t: String, style: Type = Type.HEADLINE): TextView =
+        text(ctx, style, t).apply {
+            with(ctx) { setPadding(dp(MD), dp(MD), dp(MD), dp(XS)) }
+        }
+
+    fun body(ctx: Context, t: String, muted: Boolean = true): TextView =
+        text(ctx, Type.BODY, t,
+            if (muted) R.color.pk_on_surface_variant else R.color.pk_on_surface).apply {
+            with(ctx) { setPadding(dp(MD), 0, dp(MD), dp(MD)) }
+        }
+
+    // ---------- cards ----------
+
+    /**
+     * A whole-card tap target. Tonal surface with an outlineVariant border
+     * rather than a shadow; [accent] marks the one highlighted row on a screen.
+     */
     fun actionCard(
         ctx: Context, label: String, supporting: String, accent: Boolean = false,
         onClick: () -> Unit,
@@ -75,92 +215,26 @@ object Ui {
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(16), dp(5), dp(16), dp(5)) }
-            radius = dp(20).toFloat()
+            ).apply { setMargins(dp(MD), dp(XXS), dp(MD), dp(XXS)) }
+            radius = dp(R_MD).toFloat()
             cardElevation = 0f
-            setCardBackgroundColor(
-                Color.parseColor(if (accent) "#284777" else SURFACE_VARIANT))
+            strokeWidth = if (accent) 0 else dp(1)
+            strokeColor = outlineVariant(ctx)
+            setCardBackgroundColor(if (accent) primaryContainer(ctx) else surface(ctx))
             isClickable = true
             isFocusable = true
             addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(20), dp(18), dp(20), dp(18))
-                addView(TextView(ctx).apply {
-                    text = label; textSize = 16f
-                    setTextColor(Color.parseColor(if (accent) "#D7E3FF" else ON_SURFACE))
-                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                })
-                if (supporting.isNotEmpty()) addView(TextView(ctx).apply {
-                    text = supporting; textSize = 13f
-                    setTextColor(Color.parseColor(ON_SURFACE_VARIANT))
-                    setPadding(0, dp(3), 0, 0)
-                })
+                setPadding(dp(MD), dp(MD), dp(MD), dp(MD))
+                addView(text(ctx, Type.TITLE_SMALL, label,
+                    if (accent) R.color.pk_on_primary_container else R.color.pk_on_surface))
+                if (supporting.isNotEmpty()) addView(text(ctx, Type.BODY_SMALL, supporting,
+                    if (accent) R.color.pk_on_primary_container
+                    else R.color.pk_on_surface_variant
+                ).apply { setPadding(0, dp(XXS), 0, 0) })
             })
         }
         setOnClickListener { onClick() }
-    }
-
-    fun filled(ctx: Context, label: String, bg: String, fg: String, onClick: () -> Unit) =
-        MaterialButton(ctx).apply {
-            text = label
-            textSize = 14f
-            isAllCaps = false
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(Color.parseColor(fg))
-            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor(bg))
-            with(ctx) {
-                cornerRadius = dp(20)
-                insetTop = 0; insetBottom = 0
-                layoutParams = LinearLayout.LayoutParams(0, dp(52), 1f)
-                    .apply { setMargins(dp(4), 0, dp(4), 0) }
-            }
-            setOnClickListener { onClick() }
-        }
-
-    fun wideButton(ctx: Context, label: String, bg: String, fg: String, onClick: () -> Unit) =
-        MaterialButton(ctx).apply {
-            text = label
-            textSize = 15f
-            isAllCaps = false
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(Color.parseColor(fg))
-            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.parseColor(bg))
-            with(ctx) {
-                cornerRadius = dp(24)
-                insetTop = 0; insetBottom = 0
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
-                ).apply { setMargins(dp(24), dp(6), dp(24), dp(6)) }
-            }
-            setOnClickListener { onClick() }
-        }
-
-    fun photo(ctx: Context): ShapeableImageView = ShapeableImageView(ctx).apply {
-        with(ctx) {
-            shapeAppearanceModel = ShapeAppearanceModel.builder()
-                .setAllCorners(CornerFamily.ROUNDED, dp(18).toFloat()).build()
-        }
-        scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-        setBackgroundColor(Color.parseColor(SURFACE_VARIANT))
-    }
-
-    fun thumb(ctx: Context, sizeDp: Int): ShapeableImageView = photo(ctx).apply {
-        with(ctx) {
-            layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
-                .apply { setMargins(0, 0, dp(8), 0) }
-            shapeAppearanceModel = ShapeAppearanceModel.builder()
-                .setAllCorners(CornerFamily.ROUNDED, dp(14).toFloat()).build()
-        }
-    }
-
-    /** Square tile that shares the row width evenly with its siblings. */
-    fun previewTile(ctx: Context): ShapeableImageView = photo(ctx).apply {
-        with(ctx) {
-            layoutParams = LinearLayout.LayoutParams(0, dp(66), 1f)
-                .apply { setMargins(0, 0, dp(6), 0) }
-            shapeAppearanceModel = ShapeAppearanceModel.builder()
-                .setAllCorners(CornerFamily.ROUNDED, dp(12).toFloat()).build()
-        }
     }
 
     /** An [actionCard] with an empty thumbnail row the caller fills in later. */
@@ -176,7 +250,7 @@ object Ui {
             with(ctx) {
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(0, dp(12), 0, 0) }
+                ).apply { setMargins(0, dp(SM), 0, 0) }
             }
             visibility = View.GONE          // stays hidden until a thumbnail lands
         }
@@ -184,9 +258,162 @@ object Ui {
         return Preview(card, strip)
     }
 
-    // ---------- people row ----------
+    /** Pills showing a count each, like the stats block in the guide. */
+    fun statRow(ctx: Context, pairs: List<Pair<String, String>>): View = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        with(ctx) { setPadding(dp(MD), dp(XXS), dp(MD), dp(SM)) }
+        for ((i, p) in pairs.withIndex()) {
+            val (value, caption) = p
+            addView(MaterialCardView(ctx).apply {
+                with(ctx) {
+                    layoutParams = LinearLayout.LayoutParams(
+                        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                    ).apply {
+                        setMargins(if (i == 0) 0 else dp(XXS), 0,
+                            if (i == pairs.size - 1) 0 else dp(XXS), 0)
+                    }
+                    radius = dp(R_MD).toFloat()
+                    cardElevation = 0f
+                    strokeWidth = dp(1)
+                    strokeColor = outlineVariant(ctx)
+                    setCardBackgroundColor(surfaceVariant(ctx))
+                    addView(LinearLayout(ctx).apply {
+                        orientation = LinearLayout.VERTICAL
+                        gravity = Gravity.CENTER
+                        setPadding(dp(XS), dp(SM), dp(XS), dp(SM))
+                        addView(text(ctx, Type.HEADLINE, value).apply {
+                            gravity = Gravity.CENTER
+                        })
+                        addView(text(ctx, Type.CAPTION, caption,
+                            R.color.pk_on_surface_variant).apply {
+                            gravity = Gravity.CENTER
+                        })
+                    })
+                }
+            })
+        }
+    }
 
-    private val AVATAR_BG = listOf("#3B4A6B", "#4A3B5C", "#2F5248", "#5C4433", "#3E4A5C")
+    // ---------- buttons ----------
+
+    /**
+     * Which role a button plays. Only one [Btn.PRIMARY] per screen. [Btn.TEXT]
+     * is the quiet way out of a decision (skip); [Btn.LINK] is the guide's text
+     * button, a primary-colored label with no container.
+     */
+    enum class Btn { PRIMARY, SECONDARY, OUTLINED, TEXT, LINK }
+
+    private fun pill(ctx: Context, label: String, role: Btn, onClick: () -> Unit) =
+        MaterialButton(ctx).apply {
+            text = label
+            isAllCaps = false
+            typeface = font(ctx, Type.LABEL.weight)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, Type.LABEL.size)
+            letterSpacing = Type.LABEL.tracking / Type.LABEL.size
+            with(ctx) {
+                cornerRadius = dp(TOUCH) / 2
+                insetTop = 0; insetBottom = 0
+                setPadding(dp(SM), 0, dp(SM), 0)
+            }
+            when (role) {
+                Btn.PRIMARY -> {
+                    setTextColor(onPrimary(ctx))
+                    backgroundTintList =
+                        android.content.res.ColorStateList.valueOf(primary(ctx))
+                }
+                Btn.SECONDARY -> {
+                    setTextColor(onSecondaryContainer(ctx))
+                    backgroundTintList =
+                        android.content.res.ColorStateList.valueOf(secondaryContainer(ctx))
+                }
+                Btn.OUTLINED -> {
+                    setTextColor(onSurface(ctx))
+                    backgroundTintList =
+                        android.content.res.ColorStateList.valueOf(Color.TRANSPARENT)
+                    strokeColor = android.content.res.ColorStateList.valueOf(outline(ctx))
+                    with(ctx) { strokeWidth = dp(1) }
+                }
+                Btn.TEXT -> {
+                    setTextColor(onSurfaceVariant(ctx))
+                    backgroundTintList =
+                        android.content.res.ColorStateList.valueOf(Color.TRANSPARENT)
+                }
+                Btn.LINK -> {
+                    setTextColor(primary(ctx))
+                    backgroundTintList =
+                        android.content.res.ColorStateList.valueOf(Color.TRANSPARENT)
+                }
+            }
+            setOnClickListener { onClick() }
+        }
+
+    /** One of several buttons sharing a row. */
+    fun filled(ctx: Context, label: String, role: Btn, onClick: () -> Unit) =
+        pill(ctx, label, role, onClick).apply {
+            with(ctx) {
+                layoutParams = LinearLayout.LayoutParams(0, dp(TOUCH), 1f)
+                    .apply { setMargins(dp(XXS), 0, dp(XXS), 0) }
+            }
+        }
+
+    /** Full-width button, for the one decision a screen is asking for. */
+    fun wideButton(ctx: Context, label: String, role: Btn, onClick: () -> Unit) =
+        pill(ctx, label, role, onClick).apply {
+            with(ctx) {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(TOUCH)
+                ).apply { setMargins(dp(MD), dp(XXS), dp(MD), dp(XXS)) }
+            }
+        }
+
+    // ---------- photos ----------
+
+    fun photo(ctx: Context): ShapeableImageView = ShapeableImageView(ctx).apply {
+        with(ctx) {
+            shapeAppearanceModel = ShapeAppearanceModel.builder()
+                .setAllCorners(CornerFamily.ROUNDED, dp(R_MD).toFloat()).build()
+        }
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        setBackgroundColor(surfaceVariant(ctx))
+    }
+
+    fun thumb(ctx: Context, sizeDp: Int): ShapeableImageView = photo(ctx).apply {
+        with(ctx) {
+            layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+                .apply { setMargins(0, 0, dp(XS), 0) }
+            shapeAppearanceModel = ShapeAppearanceModel.builder()
+                .setAllCorners(CornerFamily.ROUNDED, dp(R_SM).toFloat()).build()
+        }
+    }
+
+    /** Square tile that shares the row width evenly with its siblings. */
+    fun previewTile(ctx: Context): ShapeableImageView = photo(ctx).apply {
+        with(ctx) {
+            layoutParams = LinearLayout.LayoutParams(0, dp(64), 1f)
+                .apply { setMargins(0, 0, dp(XS), 0) }
+            shapeAppearanceModel = ShapeAppearanceModel.builder()
+                .setAllCorners(CornerFamily.ROUNDED, dp(R_SM).toFloat()).build()
+        }
+    }
+
+    /** A photo PixKin kept: a check on secondaryContainer, bottom-right. */
+    fun keptBadge(ctx: Context): View = ImageView(ctx).apply {
+        setImageResource(R.drawable.ic_check)
+        imageTintList = android.content.res.ColorStateList.valueOf(onSecondaryContainer(ctx))
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(secondaryContainer(ctx))
+        }
+        with(ctx) {
+            val s = dp(20)
+            layoutParams = FrameLayout.LayoutParams(s, s, Gravity.END or Gravity.BOTTOM)
+                .apply { setMargins(0, 0, dp(XXS), dp(XXS)) }
+            val p = dp(XXS) / 2
+            setPadding(p, p, p, p)
+        }
+    }
+
+    // ---------- people ("Kin") ----------
 
     /** Circular image, for a face crop. */
     fun circle(ctx: Context, sizeDp: Int): ShapeableImageView = ShapeableImageView(ctx).apply {
@@ -195,42 +422,39 @@ object Ui {
             shapeAppearanceModel = ShapeAppearanceModel.builder()
                 .setAllCorners(CornerFamily.ROUNDED, dp(sizeDp) / 2f).build()
         }
-        scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+        scaleType = ImageView.ScaleType.CENTER_CROP
     }
 
-    /** Initials in a coloured disc — what a person without a face crop gets. */
-    fun monogram(ctx: Context, sizeDp: Int, name: String): TextView = TextView(ctx).apply {
-        val initial = name.trim().firstOrNull()?.uppercase() ?: "?"
-        text = initial
-        textSize = sizeDp / 2.6f
-        gravity = Gravity.CENTER
-        setTextColor(Color.parseColor(ON_SURFACE))
-        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        background = android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.OVAL
-            setColor(Color.parseColor(AVATAR_BG[Math.floorMod(name.hashCode(), AVATAR_BG.size)]))
+    /** Initials in a disc — what a person without a face crop gets. */
+    fun monogram(ctx: Context, sizeDp: Int, name: String): TextView =
+        text(ctx, Type.TITLE, name.trim().firstOrNull()?.uppercase() ?: "?",
+            R.color.pk_on_primary_container).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(primaryContainer(ctx))
+            }
+            with(ctx) { layoutParams = ViewGroup.LayoutParams(dp(sizeDp), dp(sizeDp)) }
         }
-        with(ctx) { layoutParams = ViewGroup.LayoutParams(dp(sizeDp), dp(sizeDp)) }
-    }
 
     /** One entry in the people row. [thumbPaths] are face crops on disk,
      *  biggest first; the cleanest of them becomes the avatar. */
     data class Face(val name: String, val caption: String, val thumbPaths: List<String>)
 
     /**
-     * Photos-style row of face circles — the people whose photos are being
-     * saved. Face crops are decoded off the main thread; until one arrives (or
-     * if there is none) the circle shows the person's initial.
+     * The people whose photos PixKin keeps, as face circles. Crops are decoded
+     * off the main thread; until one arrives (or if there is none) the circle
+     * shows the person's initial.
      */
     fun peopleRow(ctx: Context, faces: List<Face>, onClick: () -> Unit): View {
         val strip = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
-            with(ctx) { setPadding(dp(24), dp(4), dp(24), dp(8)) }
+            with(ctx) { setPadding(dp(MD), dp(XXS), dp(MD), dp(XS)) }
         }
         for (f in faces) strip.addView(personCell(ctx, f, onClick))
         strip.addView(addCell(ctx, onClick))
-        return android.widget.HorizontalScrollView(ctx).apply {
+        return HorizontalScrollView(ctx).apply {
             isHorizontalScrollBarEnabled = false
             addView(strip)
         }
@@ -240,27 +464,24 @@ object Ui {
         orientation = LinearLayout.VERTICAL
         gravity = Gravity.CENTER_HORIZONTAL
         with(ctx) {
-            layoutParams = LinearLayout.LayoutParams(dp(76), ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(0, 0, dp(6), 0) }
+            layoutParams = LinearLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.WRAP_CONTENT)
+                .apply { setMargins(0, 0, dp(XS), 0) }
         }
         isClickable = true
         isFocusable = true
     }
 
-    private fun caption(ctx: Context, t: String, colour: String): TextView = TextView(ctx).apply {
-        text = t; textSize = 11f
-        setTextColor(Color.parseColor(colour))
-        gravity = Gravity.CENTER
-        maxLines = 1
-        ellipsize = android.text.TextUtils.TruncateAt.END
-    }
+    private fun caption(ctx: Context, t: String, @ColorRes colour: Int): TextView =
+        text(ctx, Type.CAPTION, t, colour).apply {
+            gravity = Gravity.CENTER
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        }
 
     private fun personCell(ctx: Context, f: Face, onClick: () -> Unit): View {
-        val size = 64
-        val stack = android.widget.FrameLayout(ctx).apply {
-            with(ctx) {
-                layoutParams = LinearLayout.LayoutParams(dp(size), dp(size))
-            }
+        val size = 56
+        val stack = FrameLayout(ctx).apply {
+            with(ctx) { layoutParams = LinearLayout.LayoutParams(dp(size), dp(size)) }
             addView(monogram(ctx, size, f.name))
         }
         val img = circle(ctx, size)
@@ -272,11 +493,35 @@ object Ui {
 
         return cellColumn(ctx).apply {
             addView(stack)
-            addView(caption(ctx, f.name, ON_SURFACE).apply {
-                with(ctx) { setPadding(0, dp(6), 0, 0) }
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            addView(text(ctx, Type.TITLE_SMALL, f.name).apply {
+                gravity = Gravity.CENTER
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                with(ctx) { setPadding(0, dp(XXS), 0, 0) }
             })
-            if (f.caption.isNotEmpty()) addView(caption(ctx, f.caption, ON_SURFACE_VARIANT))
+            if (f.caption.isNotEmpty())
+                addView(caption(ctx, f.caption, R.color.pk_on_surface_variant))
+            setOnClickListener { onClick() }
+        }
+    }
+
+    private fun addCell(ctx: Context, onClick: () -> Unit): View {
+        val size = 56
+        val plus = text(ctx, Type.HEADLINE, "+", R.color.pk_primary).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(surfaceVariant(ctx))
+            }
+            with(ctx) { layoutParams = ViewGroup.LayoutParams(dp(size), dp(size)) }
+        }
+        return cellColumn(ctx).apply {
+            addView(plus)
+            addView(text(ctx, Type.TITLE_SMALL, "Add",
+                R.color.pk_on_surface_variant).apply {
+                gravity = Gravity.CENTER
+                with(ctx) { setPadding(0, dp(XXS), 0, 0) }
+            })
             setOnClickListener { onClick() }
         }
     }
@@ -324,57 +569,27 @@ object Ui {
         return if (seen == 0) 1f else dark.toFloat() / seen
     }
 
-    private fun addCell(ctx: Context, onClick: () -> Unit): View {
-        val size = 64
-        val plus = TextView(ctx).apply {
-            text = "+"
-            textSize = 26f
-            gravity = Gravity.CENTER
-            setTextColor(Color.parseColor(PRIMARY))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL
-                setColor(Color.parseColor(SURFACE_VARIANT))
-            }
-            with(ctx) { layoutParams = ViewGroup.LayoutParams(dp(size), dp(size)) }
-        }
-        return cellColumn(ctx).apply {
-            addView(plus)
-            addView(caption(ctx, "Add", ON_SURFACE_VARIANT).apply {
-                with(ctx) { setPadding(0, dp(6), 0, 0) }
-            })
-            setOnClickListener { onClick() }
-        }
-    }
+    // ---------- empty state ----------
 
-    /** Pill showing a stat, like Photos' storage chips. */
-    fun statRow(ctx: Context, pairs: List<Pair<String, String>>): View = LinearLayout(ctx).apply {
-        orientation = LinearLayout.HORIZONTAL
-        with(ctx) { setPadding(dp(16), dp(4), dp(16), dp(12)) }
-        for ((value, caption) in pairs) {
-            addView(MaterialCardView(ctx).apply {
-                with(ctx) {
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                        .apply { setMargins(dp(4), 0, dp(4), 0) }
-                    radius = dp(16).toFloat()
-                }
-                cardElevation = 0f
-                setCardBackgroundColor(Color.parseColor(SURFACE_VARIANT))
-                addView(LinearLayout(ctx).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER
-                    with(ctx) { setPadding(dp(8), dp(14), dp(8), dp(14)) }
-                    addView(TextView(ctx).apply {
-                        text = value; textSize = 20f
-                        setTextColor(Color.parseColor(PRIMARY))
-                        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                        gravity = Gravity.CENTER
-                    })
-                    addView(TextView(ctx).apply {
-                        text = caption; textSize = 11f
-                        setTextColor(Color.parseColor(ON_SURFACE_VARIANT))
-                        gravity = Gravity.CENTER
-                    })
-                })
+    /** The mark, a line of text and one action — the guide's empty state. */
+    fun emptyState(
+        ctx: Context, line: String, action: String? = null, onAction: () -> Unit = {},
+    ): View = LinearLayout(ctx).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER
+        setBackgroundColor(surfaceVariant(ctx))
+        with(ctx) {
+            setPadding(dp(LG), dp(XL), dp(LG), dp(XL))
+            addView(ImageView(ctx).apply {
+                setImageResource(R.drawable.ic_logo_mark)
+                layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
+            })
+            addView(text(ctx, Type.TITLE_SMALL, line).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(MD), 0, 0)
+            })
+            if (action != null) addView(wideButton(ctx, action, Btn.PRIMARY, onAction).apply {
+                (layoutParams as LinearLayout.LayoutParams).setMargins(0, dp(MD), 0, 0)
             })
         }
     }

@@ -1,17 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.PicFilter" parent="Theme.Material3.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/pf_primary</item>
-        <item name="colorOnPrimary">@color/pf_on_primary</item>
-        <item name="colorPrimaryContainer">@color/pf_primary_container</item>
-        <item name="colorOnPrimaryContainer">@color/pf_on_primary_container</item>
-        <item name="colorSurface">@color/pf_surface</item>
-        <item name="colorOnSurface">@color/pf_on_surface</item>
-        <item name="colorSurfaceVariant">@color/pf_surface_variant</item>
-        <item name="colorOnSurfaceVariant">@color/pf_on_surface_variant</item>
-        <item name="android:windowBackground">@color/pf_surface</item>
+    <!--
+      PixKin. Colors are the theme roles from design-tokens.json; the pk_*
+      names resolve to the light palette here and the dark one in values-night.
+      Red is the brand, so it reaches the UI only through colorPrimary: one
+      primary action per screen, plus selection states.
+    -->
+    <style name="Theme.PixKin" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/pk_primary</item>
+        <item name="colorOnPrimary">@color/pk_on_primary</item>
+        <item name="colorPrimaryContainer">@color/pk_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/pk_on_primary_container</item>
+        <item name="colorSecondary">@color/pk_secondary</item>
+        <item name="colorOnSecondary">@color/pk_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/pk_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/pk_on_secondary_container</item>
+        <item name="android:colorBackground">@color/pk_background</item>
+        <item name="colorOnBackground">@color/pk_on_background</item>
+        <item name="colorSurface">@color/pk_surface</item>
+        <item name="colorOnSurface">@color/pk_on_surface</item>
+        <item name="colorSurfaceVariant">@color/pk_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/pk_on_surface_variant</item>
+        <item name="colorOutline">@color/pk_outline</item>
+        <item name="colorOutlineVariant">@color/pk_outline_variant</item>
+        <item name="colorError">@color/pk_error</item>
+        <item name="colorOnError">@color/pk_on_error</item>
+
+        <item name="android:fontFamily">@font/nunito</item>
+        <item name="fontFamily">@font/nunito</item>
+
+        <item name="android:windowBackground">@color/pk_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- Dark icons on the light background; values-night flips both. -->
+        <item name="android:windowLightStatusBar">@bool/pk_light_system_bars</item>
+        <item name="android:windowLightNavigationBar">@bool/pk_light_system_bars</item>
     </style>
 </resources>

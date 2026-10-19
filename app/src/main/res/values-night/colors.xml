@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PixKin color roles — dark theme. Generated from design-tokens.json -->
+<resources>
+    <color name="pk_primary">#FFFF6B7D</color>
+    <color name="pk_on_primary">#FF3B0010</color>
+    <color name="pk_primary_container">#FF8E0F23</color>
+    <color name="pk_on_primary_container">#FFFFDADC</color>
+    <color name="pk_secondary">#FF6FD39A</color>
+    <color name="pk_on_secondary">#FF00391D</color>
+    <color name="pk_secondary_container">#FF0F5132</color>
+    <color name="pk_on_secondary_container">#FFC9F0D6</color>
+    <color name="pk_background">#FF161312</color>
+    <color name="pk_on_background">#FFF5EFEA</color>
+    <color name="pk_surface">#FF221D1B</color>
+    <color name="pk_on_surface">#FFF5EFEA</color>
+    <color name="pk_surface_variant">#FF2E2725</color>
+    <color name="pk_on_surface_variant">#FFB8AFA8</color>
+    <color name="pk_outline">#FF8C847D</color>
+    <color name="pk_outline_variant">#FF3D3532</color>
+    <color name="pk_error">#FFFFB59E</color>
+    <color name="pk_on_error">#FF5C1A06</color>
+    <color name="pk_success">#FF6FD39A</color>
+    <color name="pk_warning">#FFF5A524</color>
+</resources>

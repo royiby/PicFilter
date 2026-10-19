@@ -1,16 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- PixKin color roles — light theme. Generated from design-tokens.json -->
 <resources>
-    <!-- Google Photos-ish: near-black surfaces, blue accent, soft tonal containers -->
-    <color name="pf_primary">#A8C7FA</color>
-    <color name="pf_on_primary">#0A305F</color>
-    <color name="pf_primary_container">#284777</color>
-    <color name="pf_on_primary_container">#D7E3FF</color>
-    <color name="pf_surface">#131314</color>
-    <color name="pf_on_surface">#E3E3E3</color>
-    <color name="pf_surface_variant">#1E1F20</color>
-    <color name="pf_on_surface_variant">#C4C7C5</color>
-    <color name="pf_green">#6DD58C</color>
-    <color name="pf_on_green">#003917</color>
-    <color name="pf_red">#F2B8B5</color>
-    <color name="pf_on_red">#601410</color>
+    <!-- Brand (logo and illustrations only) -->
+    <color name="brand_cherry">#FFD7263D</color>
+    <color name="brand_stem">#FF2E8B57</color>
+    <color name="brand_leaf">#FF3FA66B</color>
+    <color name="brand_cream">#FFFFF1E6</color>
+
+    <!-- Theme roles -->
+    <color name="pk_primary">#FFD7263D</color>
+    <color name="pk_on_primary">#FFFFFFFF</color>
+    <color name="pk_primary_container">#FFFFDADC</color>
+    <color name="pk_on_primary_container">#FF40000B</color>
+    <color name="pk_secondary">#FF237247</color>
+    <color name="pk_on_secondary">#FFFFFFFF</color>
+    <color name="pk_secondary_container">#FFC9F0D6</color>
+    <color name="pk_on_secondary_container">#FF002110</color>
+    <color name="pk_background">#FFFFFAF6</color>
+    <color name="pk_on_background">#FF1D1B19</color>
+    <color name="pk_surface">#FFFFFFFF</color>
+    <color name="pk_on_surface">#FF1D1B19</color>
+    <color name="pk_surface_variant">#FFFFF1E6</color>
+    <color name="pk_on_surface_variant">#FF5F5A55</color>
+    <color name="pk_outline">#FF8C847D</color>
+    <color name="pk_outline_variant">#FFE7E2DC</color>
+    <color name="pk_error">#FF9A3412</color>
+    <color name="pk_on_error">#FFFFFFFF</color>
+    <color name="pk_success">#FF237247</color>
+    <color name="pk_warning">#FFB45309</color>
 </resources>
