@@ -699,6 +699,22 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
     }
 
     /** A person's face crops, biggest first. */
+    /**
+     * Photos this person was matched in, biggest face first.
+     *
+     * For rebuilding an avatar from the library when the stored crops are gone.
+     */
+    fun matchedItemsFor(personId: Long, limit: Int): List<Pair<Long, String>> {
+        val out = mutableListOf<Pair<Long, String>>()
+        readableDatabase.rawQuery(
+            """SELECT i.id, i.uri FROM face f JOIN item i ON i.id = f.item_id
+               WHERE f.person_id = ? AND f.state = 'MATCH'
+               ORDER BY f.orig_px DESC LIMIT ?""",
+            arrayOf(personId.toString(), limit.toString())
+        ).use { c -> while (c.moveToNext()) out += c.getLong(0) to c.getString(1) }
+        return out
+    }
+
     private fun personThumbs(personId: Long, limit: Int): List<String> {
         val out = mutableListOf<String>()
         readableDatabase.rawQuery(

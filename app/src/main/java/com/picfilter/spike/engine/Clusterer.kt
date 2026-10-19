@@ -378,6 +378,76 @@ object Clusterer {
         return fixed
     }
 
+    /**
+     * Rebuild avatars from the photos the people were matched in.
+     *
+     * [relinkFaces] borrows crops from the current clusters, which only helps
+     * while those crop FILES still exist. They live in the app's own storage, so
+     * clearing app data or reinstalling takes them while the database -- and the
+     * paths in it -- comes back from a backup intact. Every avatar then silently
+     * falls back to an initial, and nothing is obviously broken.
+     *
+     * The library is the durable source. Re-detect in a photo the person matched
+     * in and keep the crop whose embedding sits closest to their centroid, which
+     * is also the right face in a group shot.
+     *
+     * Only touches people who have no avatar, so it is safe to run at any time.
+     */
+    fun rebuildAvatars(ctx: Context, perPerson: Int = 4, force: Boolean = false): Int {
+        val db = Db(ctx)
+        val centroids = db.centroidsByPerson()
+        val names = db.personNames()
+        val thresholds = db.personThresholds()
+        var rebuilt = 0
+        FaceEngine(
+            ctx, targetPx = 1200,
+            minOrigPx = FaceEngine.ENROL_MIN_ORIG_PX, maxPose = FaceEngine.ENROL_MAX_POSE,
+        ).use { eng ->
+            for ((pid, vecs) in centroids) {
+                val existing = personFaces(ctx, pid)
+                if (existing.isNotEmpty() && !force) continue
+                if (force) existing.forEach { File(it).delete() }
+                // A picture of this person has to actually look like them. The
+                // first version of this took the closest face in the photo with
+                // no floor at all, and the enrolment gate only keeps faces of
+                // 80px or more -- so in a group shot where the person's own face
+                // was too small to qualify, "closest of whatever is left" was a
+                // stranger, and it got saved as their portrait.
+                val bar = thresholds[pid] ?: FaceEngine.MATCH_THRESHOLD
+                var saved = 0
+                var rejected = 0
+                for ((_, uriStr) in db.matchedItemsFor(pid, perPerson * 6)) {
+                    if (saved >= perPerson) break
+                    try {
+                        val img = eng.decode(ctx, Uri.parse(uriStr)) ?: continue
+                        val obs = eng.observe(img, keepCrop = true)
+                        val scored = obs.filter { it.crop != null && it.embedding != null }
+                            .map { o -> o to vecs.maxOf { cos(it, o.embedding!!) } }
+                        val best = scored.maxByOrNull { it.second }
+                        if (best != null && best.second >= bar) {
+                            File(personDir(ctx), "${pid}_$saved.jpg").outputStream().use { out ->
+                                best.first.crop!!.compress(Bitmap.CompressFormat.JPEG, 95, out)
+                            }
+                            saved++
+                        } else if (best != null) {
+                            rejected++
+                        }
+                        obs.forEach { it.crop?.recycle() }
+                        img.bitmap.recycle()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "AVATAR ${names[pid]}: ${e.javaClass.simpleName}")
+                    }
+                }
+                if (saved > 0) rebuilt++
+                Log.i(TAG, "AVATAR ${names[pid]} saved=$saved rejected=$rejected " +
+                    "bar=${"%.2f".format(bar)}")
+            }
+        }
+        db.close()
+        Log.i(TAG, "AVATAR done people_fixed=$rebuilt")
+        return rebuilt
+    }
+
     private fun keepPersonFaces(ctx: Context, personId: Long, clusterId: Long, db: Db) {
         personDir(ctx).listFiles { f -> f.name.startsWith("${personId}_") }
             ?.forEach { it.delete() }

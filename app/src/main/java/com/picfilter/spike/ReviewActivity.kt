@@ -141,8 +141,13 @@ class ReviewActivity : ComponentActivity() {
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(Ui.SM), 0, dp(Ui.SM), dp(Ui.XXS))
+            // WRAP_CONTENT, not TOUCH. The buttons are themselves TOUCH tall
+            // (Ui.filled), so a row fixed at TOUCH with XXS of bottom padding
+            // left them 4dp short and sliced the bottom off every one of them --
+            // the rounded edge of the pill simply ended in a straight line.
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(Ui.TOUCH))
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT)
         }
         when (mode) {
             "dupes" -> {

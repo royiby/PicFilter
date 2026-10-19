@@ -316,6 +316,10 @@ class MainActivity : ComponentActivity() {
             "watchoff"  -> Thread { com.picfilter.spike.engine.Watcher.disable(this) }.start()
             "watchnow"  -> Thread { com.picfilter.spike.engine.Watcher.runNow(this) }.start()
             "watchstat" -> Thread { com.picfilter.spike.engine.Watcher.status(this) }.start()
+            "avatars"   -> Thread {
+                com.picfilter.spike.engine.Clusterer.rebuildAvatars(
+                    this, force = intent?.getStringExtra("force") == "1")
+            }.start()
             "memprobe"  -> Thread {
                 Pipeline.memProbe(
                     this,
