@@ -88,6 +88,43 @@ class MainActivity : ComponentActivity() {
      * deliberately enrolled no one is not dragged back in on every launch.
      */
     private var onboardChecked = false
+    private var avatarsChecked = false
+
+    /**
+     * Put a face back on anyone showing an initial.
+     *
+     * The crops live in the app's own storage while the database only holds
+     * their paths, so clearing app data or reinstalling takes the files and
+     * leaves the paths — and the people row quietly falls back to initials with
+     * nothing appearing broken. Rebuilding reads the library, which survives
+     * all of that.
+     *
+     * Only for people who have no face AND have photos to rebuild it from, so
+     * someone with no matches yet does not make every launch pay for a face
+     * detector. Once per process, off the main thread, and the home screen is
+     * rebuilt only if something was actually recovered.
+     */
+    private fun maybeRebuildAvatars(persons: List<com.picfilter.spike.data.Db.PersonChip>) {
+        if (avatarsChecked) return
+        avatarsChecked = true
+        Thread {
+            try {
+                val db = com.picfilter.spike.data.Db(this)
+                val missing = persons.count { p ->
+                    com.picfilter.spike.engine.Clusterer.personFaces(this, p.id).isEmpty() &&
+                        db.matchedItemsFor(p.id, 1).isNotEmpty()
+                }
+                db.close()
+                if (missing == 0) return@Thread
+                Log.i(TAG, "AVATAR $missing of ${persons.size} have no face to show; rebuilding")
+                if (com.picfilter.spike.engine.Clusterer.rebuildAvatars(this) > 0) {
+                    runOnUiThread { if (!isFinishing) setContentView(buildHome()) }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "AVATAR rebuild: ${e.javaClass.simpleName}: ${e.message}")
+            }
+        }.start()
+    }
 
     private fun maybeOnboard() {
         if (onboardChecked) return
@@ -173,6 +210,7 @@ class MainActivity : ComponentActivity() {
             })
         }
         if (people > 0) {
+            maybeRebuildAvatars(persons)
             col.addView(Ui.peopleRow(this, persons.map {
                 Ui.Face(it.name, if (it.photos > 0) "${it.photos} photos" else "",
                     // A re-scan wipes the cluster crops, so prefer the copies
