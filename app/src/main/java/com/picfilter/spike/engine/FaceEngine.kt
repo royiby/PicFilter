@@ -167,22 +167,7 @@ class FaceEngine(
         obs: FaceObs,
         centroids: Map<Long, List<FloatArray>>,
         thresholds: Map<Long, Float> = emptyMap(),
-    ): Triple<MatchState, Long?, Float?> {
-        if (!obs.quality || obs.embedding == null) return Triple(MatchState.INDETERMINATE, null, null)
-        if (centroids.isEmpty()) return Triple(MatchState.NO_MATCH, null, null)
-        var bestPerson: Long? = null
-        var best = -1f
-        for ((pid, vecs) in centroids) for (v in vecs) {
-            val s = cos(obs.embedding, v)
-            if (s > best) { best = s; bestPerson = pid }
-        }
-        // Keep bestPerson even on a miss: a face at 0.52 against a known person
-        // is a strong "probably family" hint for the rescue review, and it is
-        // exactly the band where MATCH_THRESHOLD is doing contested work.
-        val bar = thresholds[bestPerson] ?: MATCH_THRESHOLD
-        return if (best >= bar) Triple(MatchState.MATCH, bestPerson, best)
-               else Triple(MatchState.NO_MATCH, bestPerson, best)
-    }
+    ): Triple<MatchState, Long?, Float?> = matchFace(obs, centroids, thresholds)
 
     // ---- alignment: falls back to a box crop rather than failing ----
     // The spike's align() returned null on missing landmarks / small eye distance,
@@ -262,6 +247,33 @@ class FaceEngine(
     }
 
     override fun close() { interp.close(); detector.close() }
+}
+
+/**
+ * The three-state decision, lifted out of [FaceEngine] so it can be tested
+ * without a TFLite interpreter: this is pure arithmetic, and it is the single
+ * most consequential rule in the app -- it decides whose photos survive.
+ */
+fun matchFace(
+    obs: FaceObs,
+    centroids: Map<Long, List<FloatArray>>,
+    thresholds: Map<Long, Float> = emptyMap(),
+    default: Float = FaceEngine.MATCH_THRESHOLD,
+): Triple<MatchState, Long?, Float?> {
+    if (!obs.quality || obs.embedding == null) return Triple(MatchState.INDETERMINATE, null, null)
+    if (centroids.isEmpty()) return Triple(MatchState.NO_MATCH, null, null)
+    var bestPerson: Long? = null
+    var best = -1f
+    for ((pid, vecs) in centroids) for (v in vecs) {
+        val s = cos(obs.embedding, v)
+        if (s > best) { best = s; bestPerson = pid }
+    }
+    // Keep bestPerson even on a miss: a face at 0.52 against a known person is a
+    // strong "probably family" hint for the rescue review, and it is exactly the
+    // band where MATCH_THRESHOLD is doing contested work.
+    val bar = thresholds[bestPerson] ?: default
+    return if (best >= bar) Triple(MatchState.MATCH, bestPerson, best)
+           else Triple(MatchState.NO_MATCH, bestPerson, best)
 }
 
 fun l2(v: FloatArray) {
