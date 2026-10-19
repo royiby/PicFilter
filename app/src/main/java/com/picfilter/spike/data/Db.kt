@@ -574,6 +574,99 @@ class Db(ctx: Context) : SQLiteOpenHelper(ctx, "picfilter.db", null, 5) {
         readableDatabase.rawQuery("SELECT COUNT(*) FROM person", null)
             .use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
+    // ---------- home screen surfaces ----------
+
+    data class PersonChip(
+        val id: Long, val name: String, val thumbs: List<String>, val photos: Int,
+    )
+
+    /**
+     * Enrolled people for the people row: face crops to choose an avatar from
+     * and how many photos that person protects. Several crops, biggest first,
+     * because an aligned crop that ran off the edge of its photo is stored with
+     * a black band — the caller picks the cleanest one. A person enrolled from
+     * a dropped folder has no cluster behind them, so the list can be empty and
+     * the caller draws initials instead.
+     */
+    fun enrolledPeople(thumbsEach: Int = 6): List<PersonChip> {
+        val out = mutableListOf<PersonChip>()
+        readableDatabase.rawQuery(
+            """SELECT p.id, p.name,
+                      (SELECT COUNT(DISTINCT f.item_id) FROM face f
+                       WHERE f.person_id = p.id AND f.state = 'MATCH')
+               FROM person p ORDER BY 3 DESC, p.name""", null
+        ).use { c ->
+            while (c.moveToNext()) out += PersonChip(
+                c.getLong(0), c.getString(1), emptyList(), c.getInt(2))
+        }
+        return out.map { it.copy(thumbs = personThumbs(it.id, thumbsEach)) }
+    }
+
+    /** A person's face crops, biggest first. */
+    private fun personThumbs(personId: Long, limit: Int): List<String> {
+        val out = mutableListOf<String>()
+        readableDatabase.rawQuery(
+            """SELECT cf.thumb_path FROM cluster_face cf
+               JOIN cluster c ON c.id = cf.cluster_id
+               WHERE c.person_id = ? AND cf.thumb_path IS NOT NULL
+               ORDER BY cf.orig_px DESC LIMIT ?""",
+            arrayOf(personId.toString(), limit.toString())
+        ).use { c -> while (c.moveToNext()) out += c.getString(0) }
+        return out
+    }
+
+    /** Suspected junk: DISCARD_CANDIDATE items the human has not judged yet. */
+    fun junkQueue(limit: Int = -1): List<RescueRow> {
+        val out = mutableListOf<RescueRow>()
+        readableDatabase.rawQuery(
+            """SELECT i.id, i.uri, s.reason, s.faces, s.indet,
+                      (SELECT p.name FROM face f LEFT JOIN person p ON p.id=f.person_id
+                       WHERE f.item_id=i.id AND f.similarity IS NOT NULL
+                       ORDER BY f.similarity DESC LIMIT 1),
+                      (SELECT MAX(f.similarity) FROM face f WHERE f.item_id=i.id)
+               FROM item i
+               JOIN score s ON s.item_id = i.id
+               LEFT JOIN label l ON l.item_id = i.id
+               WHERE s.decision = 'DISCARD_CANDIDATE' AND l.item_id IS NULL
+               ORDER BY i.date_added DESC LIMIT ?""",
+            arrayOf(limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) out += RescueRow(
+                c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getInt(4),
+                c.getString(5), if (c.isNull(6)) null else c.getFloat(6))
+        }
+        return out
+    }
+
+    /** One photo per undecided near-duplicate group, newest group first. */
+    fun dupePreview(limit: Int): List<String> {
+        val out = mutableListOf<String>()
+        readableDatabase.rawQuery(
+            """SELECT MAX(i.date_added) AS d,
+                      (SELECT i2.uri FROM item i2 JOIN score s2 ON s2.item_id = i2.id
+                       WHERE s2.dupe_group = s.dupe_group
+                       ORDER BY i2.date_added DESC LIMIT 1)
+               FROM score s
+               JOIN item i ON i.id = s.item_id
+               LEFT JOIN dupe_verdict v ON v.group_id = s.dupe_group
+               WHERE s.dupe_group IS NOT NULL AND v.group_id IS NULL
+               GROUP BY s.dupe_group HAVING COUNT(*) >= 2
+               ORDER BY d DESC LIMIT ?""",
+            arrayOf(limit.toString())
+        ).use { c -> while (c.moveToNext()) if (!c.isNull(1)) out += c.getString(1) }
+        return out
+    }
+
+    /** Near-duplicate groups still awaiting a verdict. */
+    fun dupeGroupCount(): Int =
+        readableDatabase.rawQuery(
+            """SELECT COUNT(*) FROM (
+                 SELECT s.dupe_group FROM score s
+                 LEFT JOIN dupe_verdict v ON v.group_id = s.dupe_group
+                 WHERE s.dupe_group IS NOT NULL AND v.group_id IS NULL
+                 GROUP BY s.dupe_group HAVING COUNT(*) >= 2)""", null
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
     /** Full scoring detail for one item — used to check specific photos. */
     fun itemDetail(itemId: Long): String {
         val sb = StringBuilder()

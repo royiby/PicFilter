@@ -75,6 +75,18 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * Enrolling happens in another activity, so the home built in onCreate is
+     * already stale by the time the user comes back — no people row, and a
+     * "Set up" card for people they just added. Rebuild on every return.
+     */
+    private var homeBuilt = false
+
+    override fun onResume() {
+        super.onResume()
+        if (homeBuilt) setContentView(buildHome()) else homeBuilt = true
+    }
+
+    /**
      * adb-driven runs often target an already-running instance, in which case
      * Android delivers the intent here instead of calling onCreate — so without
      * this the "op" extra is silently dropped and the default op runs.
@@ -89,22 +101,39 @@ class MainActivity : ComponentActivity() {
         dispatch(op)
     }
 
-    /** Home. Photos-style: a stat row, then tappable cards. */
+    /** Home. Photos-style: the people row, a stat row, then tappable cards. */
     private fun buildHome(): android.view.View {
         val db = com.picfilter.spike.data.Db(this)
         val promoted = try { db.promotionCount() } catch (e: Exception) { 0 }
-        val people = try { db.enrolledCount() } catch (e: Exception) { 0 }
+        val persons = try { db.enrolledPeople() } catch (e: Exception) { emptyList() }
         val counts = try { db.decisionCounts().toMap() } catch (e: Exception) { emptyMap() }
+        val dupeGroups = try { db.dupeGroupCount() } catch (e: Exception) { 0 }
+        // Thumbnail sources are read now, while the db is open; the bitmaps
+        // themselves are decoded off the main thread further down.
+        val junkThumbs = try { db.junkQueue(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
+        val dupeThumbs = try { db.dupePreview(limit = 5) } catch (e: Exception) { emptyList() }
         db.close()
+        val people = persons.size
         val review = counts["REVIEW"] ?: 0
         val discard = counts["DISCARD_CANDIDATE"] ?: 0
         val keep = counts["KEEP"] ?: 0
 
         val col = Ui.screen(this)
         col.addView(Ui.title(this, "PicFilter"))
-        col.addView(Ui.body(this, if (people == 0)
-            "Start by telling PicFilter who matters to you."
-        else "$people people enrolled · protecting photos of them automatically"))
+        val managePeople = {
+            startActivity(android.content.Intent().apply {
+                component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
+                putExtra("resume", if (people == 0) "0" else "1")
+            })
+        }
+        if (people > 0) {
+            col.addView(Ui.peopleRow(this, persons.map {
+                Ui.Face(it.name, if (it.photos > 0) "${it.photos} photos" else "", it.thumbs)
+            }, managePeople))
+            col.addView(Ui.body(this, "Photos of these people are kept automatically."))
+        } else {
+            col.addView(Ui.body(this, "Start by telling PicFilter who matters to you."))
+        }
         col.addView(Ui.statRow(this, listOf(
             "$promoted" to "backed up",
             "$review" to "to review",
@@ -133,15 +162,18 @@ class MainActivity : ComponentActivity() {
         col.addView(Ui.actionCard(this,
             if (people == 0) "Set up — find your people" else "Manage people",
             if (people == 0) "Scans your library and finds recurring faces"
-            else "$people enrolled · add or re-scan") {
-            startActivity(android.content.Intent().apply {
-                component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
-            })
-        })
+            else "$people enrolled · add or re-scan") { managePeople() })
         open("Check what was backed up", "Catch photos saved by mistake", "verify")
         open("Find more family photos", "Photos we were unsure about", "rescue")
         open("Photos with no faces", "Places, drawings, documents", "noface")
-        open("Duplicates", "Near-identical copies, grouped", "dupes")
+        preview("Suspected junk",
+            if (discard == 0) "Nothing flagged yet"
+            else "$discard look like forwards, memes or screenshots",
+            "junk", junkThumbs, col)
+        preview("Suspected duplicates",
+            if (dupeGroups == 0) "No near-identical copies found"
+            else "$dupeGroups ${if (dupeGroups == 1) "group" else "groups"} of near-identical copies",
+            "dupes", dupeThumbs, col)
 
         val scroll = android.widget.ScrollView(this).apply {
             addView(col)
@@ -151,6 +183,38 @@ class MainActivity : ComponentActivity() {
         tv.visibility = android.view.View.GONE
         return scroll
     }
+
+    /** A card that previews what is inside it, so junk and duplicates are
+     *  visible without opening the review screen first. */
+    private fun preview(
+        label: String, supporting: String, mode: String,
+        uris: List<String>, col: LinearLayout,
+    ) {
+        val card = Ui.previewCard(this, label, supporting) {
+            startActivity(android.content.Intent().apply {
+                component = ComponentName(this@MainActivity, ReviewActivity::class.java)
+                putExtra("mode", mode)
+            })
+        }
+        col.addView(card.view)
+        if (uris.isEmpty()) return
+        val tiles = uris.map { Ui.previewTile(this).also { t -> card.strip.addView(t) } }
+        Thread {
+            for ((i, u) in uris.withIndex()) {
+                val bmp = mediaThumb(u) ?: continue
+                val tile = tiles[i]
+                tile.post {
+                    tile.setImageBitmap(bmp)
+                    card.strip.visibility = android.view.View.VISIBLE
+                }
+            }
+        }.start()
+    }
+
+    /** MediaStore's own thumbnail — cheap, and already the right size. */
+    private fun mediaThumb(uri: String): android.graphics.Bitmap? = try {
+        contentResolver.loadThumbnail(Uri.parse(uri), android.util.Size(256, 256), null)
+    } catch (e: Exception) { null }
 
     private fun dispatch(op: String) {
         when (op) {

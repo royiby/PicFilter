@@ -114,6 +114,11 @@ class ReviewActivity : ComponentActivity() {
                 buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE) { label("SKIP") })
                 buttons.addView(Ui.filled(this, "Correct", Ui.GREEN, Ui.ON_GREEN) { label("KEEP") })
             }
+            "junk" -> {
+                buttons.addView(Ui.filled(this, "It's junk", Ui.RED, Ui.ON_RED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE) { label("SKIP") })
+                buttons.addView(Ui.filled(this, "Keep", Ui.GREEN, Ui.ON_GREEN) { label("KEEP") })
+            }
             "rescue", "noface" -> {
                 buttons.addView(Ui.filled(this, "Not mine", Ui.NEUTRAL, Ui.ON_SURFACE) { label("DISCARD") })
                 buttons.addView(Ui.filled(this, "Skip", Ui.NEUTRAL, Ui.ON_SURFACE_VARIANT) { label("SKIP") })
@@ -150,6 +155,7 @@ class ReviewActivity : ComponentActivity() {
             "rescue" -> db.rescueQueue().map { RescueCard(it) }
             "noface" -> db.rescueQueue(listOf("NO_FACE_PLAIN")).map { RescueCard(it) }
             "verify" -> db.promotedForReview().map { RescueCard(it) }
+            "junk" -> db.junkQueue().map { RescueCard(it) }
             else -> db.goldenQueue(perReason = 40).map { ItemCard(it) }
         }
         idx = 0
@@ -179,7 +185,7 @@ class ReviewActivity : ComponentActivity() {
             strip.removeAllViews()
             image.setImageBitmap(thumb(Uri.parse(members[0].second), 1400))
             for ((_, u) in members) {
-                strip.addView(Ui.thumb(this, 88).apply { setImageBitmap(thumb(Uri.parse(u), 240)) })
+                strip.addView(Ui.thumb(this, 88).apply { setImageBitmap(quickThumb(u)) })
             }
             info.text = "group $gid · ${members.size} members\nAre these the same picture?"
         } else if (card is RescueCard) {
@@ -191,6 +197,14 @@ class ReviewActivity : ComponentActivity() {
                     (r.nearName?.let { n -> ", matching $n" } ?: "") +
                     (r.nearSim?.let { v -> " at ${"%.3f".format(v)}" } ?: "") +
                     ".\nIs that right?"
+                return
+            }
+            if (mode == "junk") {
+                showUpcoming()
+                info.text = "No one you enrolled is in this photo" +
+                    (r.nearName?.let { n -> ", closest was $n" } ?: "") +
+                    (r.nearSim?.let { v -> " at ${"%.3f".format(v)}" } ?: "") +
+                    ".\nfaces=${r.faces}  unidentifiable=${r.indet}  \u00b7  ${r.reason}"
                 return
             }
             if (mode == "noface") {
@@ -214,6 +228,28 @@ class ReviewActivity : ComponentActivity() {
                 "faces=${r.faces}  matched=${r.matched}  indeterminate=${r.indet}  " +
                 "text=${"%.3f".format(r.textFrac)}" +
                 (r.dupeGroup?.let { "  dupe_group=$it" } ?: "")
+        }
+    }
+
+    /** MediaStore's own thumbnail — fast enough to fill a strip on the fly. */
+    private fun quickThumb(uri: String) = try {
+        contentResolver.loadThumbnail(Uri.parse(uri), android.util.Size(256, 256), null)
+    } catch (e: Exception) { null }
+
+    /** The next few items in the queue, so the screen shows more than one
+     *  suspect at a time. Tapping one jumps straight to it. */
+    private fun showUpcoming() {
+        strip.removeAllViews()
+        val next = queue.drop(idx + 1).take(8)
+        if (next.isEmpty()) { strip.visibility = View.GONE; return }
+        strip.visibility = View.VISIBLE
+        for ((offset, card) in next.withIndex()) {
+            val uri = (card as? RescueCard)?.row?.uri ?: continue
+            val at = idx + 1 + offset
+            strip.addView(Ui.thumb(this, 88).apply {
+                setImageBitmap(quickThumb(uri))
+                setOnClickListener { idx = at; render() }
+            })
         }
     }
 
