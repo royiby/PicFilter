@@ -141,6 +141,11 @@ class MainActivity : ComponentActivity() {
         )))
 
         val watchOn = try { com.picfilter.spike.engine.Watcher.isEnabled(this) } catch (e: Exception) { false }
+        // A force-stop or a failed run can break the content-trigger chain while
+        // the periodic net keeps going. Re-arm it whenever the app is opened.
+        if (watchOn && !com.picfilter.spike.engine.Watcher.isArmed(this)) {
+            com.picfilter.spike.engine.Watcher.enable(this)
+        }
         col.addView(Ui.actionCard(this,
             if (watchOn) "Auto-rescue is on" else "Auto-rescue is off",
             if (watchOn) "New WhatsApp photos of your people are backed up for you"
@@ -253,6 +258,7 @@ class MainActivity : ComponentActivity() {
             "watchon"   -> Thread { com.picfilter.spike.engine.Watcher.enable(this) }.start()
             "watchoff"  -> Thread { com.picfilter.spike.engine.Watcher.disable(this) }.start()
             "watchnow"  -> Thread { com.picfilter.spike.engine.Watcher.runNow(this) }.start()
+            "watchstat" -> Thread { com.picfilter.spike.engine.Watcher.status(this) }.start()
             "unscore"   -> Thread {
                 val d = com.picfilter.spike.data.Db(this)
                 Log.i(TAG, "UNSCORE cleared ${d.unscoreRecent(intent?.getStringExtra("n")?.toIntOrNull() ?: 3)}")
