@@ -30,6 +30,7 @@ object Clusterer {
     /** Measured: ~600 images is enough to surface the head, at ~80s. */
     const val SAMPLE_SIZE = 600
     private const val THUMB_DIR = "face_thumbs"
+    private const val PERSON_DIR = "person_faces"
 
     fun interface Progress { fun onProgress(done: Int, total: Int, phase: String) }
 
@@ -38,8 +39,6 @@ object Clusterer {
         db.clearClusters()
         clearThumbs(ctx)
 
-        // Draw from the WHOLE library, not just WhatsApp: a user's own camera
-        // photos are far better enrolment material than forwarded group shots.
         val uris = sampleUris(ctx, sample)
         Log.i(TAG, "BOOTSTRAP sampling=${uris.size} images (strict gate)")
 
@@ -55,7 +54,7 @@ object Clusterer {
             maxPose = FaceEngine.ENROL_MAX_POSE,
         ).use { eng ->
             for ((i, u) in uris.withIndex()) {
-                progress?.onProgress(i, uris.size, "Scanning your photos")
+                progress?.onProgress(i, uris.size, "Looking through your photos")
                 try {
                     val img = eng.decode(ctx, u) ?: continue
                     val obs = eng.observe(img, keepCrop = true)
@@ -248,22 +247,148 @@ object Clusterer {
 
     // ---------------------------------------------------------------- misc
 
-    private fun sampleUris(ctx: Context, limit: Int): List<Uri> {
-        val out = mutableListOf<Uri>()
+    /**
+     * WhatsApp has used several folder shapes over the years — Android/media/
+     * com.whatsapp/..., Pictures/WhatsApp, a bare WhatsApp/Media tree — and the
+     * bucket names differ again ("WhatsApp Images", "Whatsapp"). Matching the
+     * word in either covers all of them, and nothing else on a phone is called
+     * WhatsApp. Matching only "com.whatsapp", as the spike did, misses the
+     * Pictures/Whatsapp folder that a restore or a file manager leaves behind.
+     */
+    fun isWhatsAppFolder(relativePath: String?, bucket: String?): Boolean {
+        val p = relativePath?.lowercase() ?: ""
+        val b = bucket?.lowercase() ?: ""
+        return p.contains("whatsapp") || b.contains("whatsapp")
+    }
+
+    /**
+     * How many photos sit in the WhatsApp folders, and a few of them to show.
+     * Onboarding opens with the user's own pictures rather than a paragraph
+     * about them: the point lands faster when it is their group chat on screen.
+     */
+    fun whatsAppPreview(ctx: Context, previews: Int): Pair<Int, List<Uri>> {
+        var count = 0
+        val sample = mutableListOf<Uri>()
         ctx.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            arrayOf(MediaStore.MediaColumns._ID), null, null,
+            arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.RELATIVE_PATH,
+                MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
+            ), null, null,
             "${MediaStore.MediaColumns.DATE_ADDED} DESC"
         )?.use { c ->
-            val i = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
-            while (c.moveToNext() && out.size < limit) {
-                out += ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(i))
+            val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val iPath = c.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH)
+            val iBucket = c.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+            while (c.moveToNext()) {
+                if (!isWhatsAppFolder(c.getString(iPath), c.getString(iBucket))) continue
+                count++
+                if (sample.size < previews) sample += ContentUris.withAppendedId(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(iId))
             }
         }
-        return out
+        return count to sample
+    }
+
+    /**
+     * Onboarding samples the WhatsApp folders first. Those are the photos
+     * PixKin will be judging, so the people who keep appearing there are the
+     * people worth enrolling — a colleague who only shows up in camera photos
+     * is not what this question is about.
+     *
+     * Camera photos are still better enrolment material face for face (closer,
+     * sharper, more frontal), so they top the sample up when the WhatsApp
+     * folders cannot fill it on their own.
+     */
+    private fun sampleUris(ctx: Context, limit: Int): List<Uri> {
+        val wa = mutableListOf<Uri>()
+        val rest = mutableListOf<Uri>()
+        ctx.contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.RELATIVE_PATH,
+                MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
+            ), null, null,
+            "${MediaStore.MediaColumns.DATE_ADDED} DESC"
+        )?.use { c ->
+            val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val iPath = c.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH)
+            val iBucket = c.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
+            while (c.moveToNext()) {
+                if (wa.size >= limit) break
+                val u = ContentUris.withAppendedId(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(iId))
+                if (isWhatsAppFolder(c.getString(iPath), c.getString(iBucket))) wa += u
+                else if (rest.size < limit) rest += u
+            }
+        }
+        val topUp = if (wa.size >= limit) emptyList() else rest.take(limit - wa.size)
+        Log.i(TAG, "BOOTSTRAP sample whatsapp=${wa.size} other=${topUp.size}")
+        return wa + topUp
     }
 
     private fun thumbDir(ctx: Context) = File(ctx.filesDir, THUMB_DIR).apply { mkdirs() }
+
+    private fun personDir(ctx: Context) = File(ctx.filesDir, PERSON_DIR).apply { mkdirs() }
+
+    /**
+     * An enrolled person's own face crops, biggest first.
+     *
+     * The cluster crops cannot serve this: every scan calls clearClusters and
+     * clearThumbs, so re-running setup would leave everyone who was already
+     * enrolled with no face to show. Enrolment takes its own copies.
+     */
+    fun personFaces(ctx: Context, personId: Long): List<String> =
+        personDir(ctx).listFiles { f -> f.name.startsWith("${personId}_") }
+            ?.sortedBy { it.name }
+            ?.map { it.absolutePath }
+            ?: emptyList()
+
+    /**
+     * Give an already-enrolled person their face back after a re-scan.
+     *
+     * Running setup again clears every cluster, which orphans the crops the
+     * people row shows. The person's centroid still describes the same face,
+     * so match it against the new clusters and borrow their crops. Anyone with
+     * no close cluster keeps their initials.
+     */
+    fun relinkFaces(ctx: Context): Int {
+        val db = Db(ctx)
+        val clusters = db.clusterCentroids()
+        var fixed = 0
+        if (clusters.isNotEmpty()) {
+            for ((pid, vecs) in db.centroidsByPerson()) {
+                if (personFaces(ctx, pid).isNotEmpty()) continue
+                var best = -1f
+                var bestId = -1L
+                for ((cid, cvec) in clusters) {
+                    val sim = vecs.maxOf { cos(it, cvec) }
+                    if (sim > best) { best = sim; bestId = cid }
+                }
+                if (bestId > 0 && best >= 0.6f) {
+                    keepPersonFaces(ctx, pid, bestId, db)
+                    fixed++
+                    Log.i(TAG, "RELINK person=$pid cluster=$bestId sim=${"%.3f".format(best)}")
+                }
+            }
+        }
+        db.close()
+        return fixed
+    }
+
+    private fun keepPersonFaces(ctx: Context, personId: Long, clusterId: Long, db: Db) {
+        personDir(ctx).listFiles { f -> f.name.startsWith("${personId}_") }
+            ?.forEach { it.delete() }
+        for ((i, src) in db.clusterThumbs(clusterId, 6).withIndex()) {
+            try {
+                File(src).copyTo(File(personDir(ctx), "${personId}_$i.jpg"), overwrite = true)
+            } catch (e: Exception) {
+                Log.w(TAG, "PERSONFACE copy failed: ${e.javaClass.simpleName}")
+            }
+        }
+    }
 
     private fun saveThumb(ctx: Context, bmp: Bitmap, name: String): String? = try {
         val f = File(thumbDir(ctx), "$name.jpg")
@@ -308,6 +433,7 @@ object Clusterer {
             Log.i(TAG, "ENROL '$name' centroids=1 (${vecs.size} faces)")
         }
         db.setClusterStatus(clusterId, "NAMED", pid)
+        keepPersonFaces(ctx, pid, clusterId, db)
         db.close()
     }
 }

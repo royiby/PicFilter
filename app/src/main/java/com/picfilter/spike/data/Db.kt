@@ -511,6 +511,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
      */
     fun rescueQueue(
         reasons: List<String> = listOf("INDETERMINATE_FACE", "FEW_FACES_NO_MATCH"),
+        limit: Int = -1,
     ): List<RescueRow> {
         val marks = reasons.joinToString(",") { "?" }
         val out = mutableListOf<RescueRow>()
@@ -527,7 +528,8 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
                WHERE s.decision='REVIEW'
                  AND s.reason IN ($marks)
                  AND l.item_id IS NULL AND pr.item_id IS NULL
-               ORDER BY 7 DESC, s.faces DESC""", reasons.toTypedArray()
+               ORDER BY 7 DESC, s.faces DESC LIMIT ?""",
+            (reasons + limit.toString()).toTypedArray()
         ).use { c ->
             while (c.moveToNext()) out += RescueRow(
                 c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getInt(4),
@@ -605,6 +607,15 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         return n
     }
 
+    /** Every cluster's centroid, for matching people back to a fresh scan. */
+    fun clusterCentroids(): List<Pair<Long, FloatArray>> {
+        val out = mutableListOf<Pair<Long, FloatArray>>()
+        readableDatabase.rawQuery("SELECT id, centroid FROM cluster", null).use { c ->
+            while (c.moveToNext()) out += c.getLong(0) to bytesToFloats(c.getBlob(1))
+        }
+        return out
+    }
+
     fun clusterVectors(clusterId: Long): List<FloatArray> {
         val out = mutableListOf<FloatArray>()
         readableDatabase.rawQuery(
@@ -673,6 +684,18 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
                 c.getLong(0), c.getString(1), emptyList(), c.getInt(2))
         }
         return out.map { it.copy(thumbs = personThumbs(it.id, thumbsEach)) }
+    }
+
+    /** A cluster's face crops, biggest first. */
+    fun clusterThumbs(clusterId: Long, limit: Int): List<String> {
+        val out = mutableListOf<String>()
+        readableDatabase.rawQuery(
+            """SELECT thumb_path FROM cluster_face
+               WHERE cluster_id = ? AND thumb_path IS NOT NULL
+               ORDER BY orig_px DESC LIMIT ?""",
+            arrayOf(clusterId.toString(), limit.toString())
+        ).use { c -> while (c.moveToNext()) out += c.getString(0) }
+        return out
     }
 
     /** A person's face crops, biggest first. */
@@ -860,7 +883,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
     }
 
     /** Promoted items awaiting human confirmation that they really are family. */
-    fun promotedForReview(): List<RescueRow> {
+    fun promotedForReview(limit: Int = -1): List<RescueRow> {
         val out = mutableListOf<RescueRow>()
         readableDatabase.rawQuery(
             """SELECT i.id, i.uri, s.reason, s.faces, s.indet,
@@ -873,7 +896,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
                JOIN score s ON s.item_id = i.id
                LEFT JOIN label l ON l.item_id = i.id
                WHERE l.item_id IS NULL
-               ORDER BY 7 ASC""", null
+               ORDER BY 7 ASC LIMIT ?""", arrayOf(limit.toString())
         ).use { c ->
             while (c.moveToNext()) out += RescueRow(
                 c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getInt(4),

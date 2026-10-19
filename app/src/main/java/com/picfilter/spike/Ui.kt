@@ -116,7 +116,11 @@ object Ui {
     ): TextView = TextView(ctx).apply {
         text = t
         setTextSize(TypedValue.COMPLEX_UNIT_SP, style.size)
-        setLineSpacing(0f, style.line / style.size)
+        // The token is an exact line height, not a multiplier: multiplying would
+        // compound with Nunito's own generous leading and the text would drift
+        // off the 4dp grid.
+        setLineHeight(TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP, style.line, resources.displayMetrics).toInt())
         letterSpacing = style.tracking / style.size
         typeface = font(ctx, style.weight)
         setTextColor(color(ctx, colour))
@@ -163,8 +167,11 @@ object Ui {
         }
     }
 
-    /** Inner screens: back arrow and a title, no logo. */
-    fun titleBar(ctx: Context, title: String, onBack: () -> Unit): View = LinearLayout(ctx).apply {
+    /** Inner screens: back arrow, a title, and at most one action on the right. */
+    fun titleBar(
+        ctx: Context, title: String, actionIcon: Int? = null,
+        onAction: () -> Unit = {}, onBack: () -> Unit,
+    ): View = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         setBackgroundColor(surface(ctx))
@@ -185,9 +192,44 @@ object Ui {
             })
             addView(text(ctx, Type.TITLE, title).apply {
                 setPadding(dp(XS), 0, 0, 0)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                layoutParams = LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            if (actionIcon != null) addView(ImageView(ctx).apply {
+                setImageResource(actionIcon)
+                imageTintList = android.content.res.ColorStateList.valueOf(onSurfaceVariant(ctx))
+                layoutParams = LinearLayout.LayoutParams(dp(TOUCH), dp(TOUCH))
+                val p = (dp(TOUCH) - dp(ICON)) / 2
+                setPadding(p, p, p, p)
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { onAction() }
             })
         }
     }
+
+    /**
+     * A square tile in the photo grid: no rounding inside the grid, a kept
+     * badge when PixKin saved it, and dimmed when it is one of the ones being
+     * left behind — never red, which would read as an error.
+     */
+    fun gridTile(ctx: Context, side: Int, kept: Boolean, dimmed: Boolean): FrameLayout =
+        FrameLayout(ctx).apply {
+            // A row of the grid is a LinearLayout, and the caller sets the gap
+            // as a margin — so these have to be LinearLayout params.
+            layoutParams = LinearLayout.LayoutParams(side, side)
+            addView(ImageView(ctx).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(surfaceVariant(ctx))
+                layoutParams = FrameLayout.LayoutParams(side, side)
+                alpha = if (dimmed) 0.4f else 1f
+            })
+            if (kept) addView(keptBadge(ctx))
+            isClickable = true
+            isFocusable = true
+        }
 
     // ---------- text blocks ----------
 
@@ -567,6 +609,91 @@ object Ui {
             }
         }
         return if (seen == 0) 1f else dark.toFloat() / seen
+    }
+
+    // ---------- facts and states ----------
+
+    /**
+     * An icon and one line. Three of these say what a paragraph was saying,
+     * and the eye can skip the ones it already knows.
+     */
+    fun factRow(
+        ctx: Context, icon: Int, t: CharSequence,
+        @ColorRes tint: Int = R.color.pk_on_surface_variant,
+    ): View = factRow(ctx, icon, text(ctx, Type.BODY, t), tint)
+
+    /** The same row, with a line the caller keeps a handle on and fills in later. */
+    fun factRow(
+        ctx: Context, icon: Int, line: TextView,
+        @ColorRes tint: Int = R.color.pk_on_surface_variant,
+    ): View = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        with(ctx) {
+            setPadding(dp(MD), dp(XS), dp(MD), dp(XS))
+            addView(ImageView(ctx).apply {
+                setImageResource(icon)
+                imageTintList = android.content.res.ColorStateList.valueOf(color(ctx, tint))
+                layoutParams = LinearLayout.LayoutParams(dp(ICON), dp(ICON))
+                    .apply { marginEnd = dp(SM) }
+            })
+            addView(line)
+        }
+    }
+
+    /**
+     * One folder and what happens to it, as a row: the backup step is two
+     * states to compare, not five sentences to read.
+     */
+    fun stateRow(
+        ctx: Context, icon: Int, name: String, state: String, good: Boolean,
+        tintIcon: Boolean = true,
+    ): View = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        with(ctx) {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(dp(MD), dp(XXS), dp(MD), dp(XXS)) }
+            setPadding(dp(SM), dp(SM), dp(SM), dp(SM))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(R_MD).toFloat()
+                setColor(if (good) secondaryContainer(ctx) else surfaceVariant(ctx))
+            }
+            val on = if (good) onSecondaryContainer(ctx) else onSurfaceVariant(ctx)
+            addView(ImageView(ctx).apply {
+                setImageResource(icon)
+                // The mark is three brand colors; tinting it would flatten it.
+                if (tintIcon) imageTintList =
+                    android.content.res.ColorStateList.valueOf(on)
+                layoutParams = LinearLayout.LayoutParams(dp(ICON), dp(ICON))
+                    .apply { marginEnd = dp(SM) }
+            })
+            addView(text(ctx, Type.TITLE_SMALL, name,
+                if (good) R.color.pk_on_secondary_container else R.color.pk_on_surface).apply {
+                layoutParams = LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            addView(text(ctx, Type.LABEL, state,
+                if (good) R.color.pk_on_secondary_container
+                else R.color.pk_on_surface_variant))
+            addView(ImageView(ctx).apply {
+                setImageResource(if (good) R.drawable.ic_check else R.drawable.ic_block)
+                imageTintList = android.content.res.ColorStateList.valueOf(on)
+                layoutParams = LinearLayout.LayoutParams(dp(ICON), dp(ICON))
+                    .apply { marginStart = dp(XS) }
+            })
+        }
+    }
+
+    /** The mark on its own, for the top of a step. */
+    fun mark(ctx: Context, sizeDp: Int = 72): View = ImageView(ctx).apply {
+        setImageResource(R.drawable.ic_logo_mark)
+        with(ctx) {
+            layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+                .apply { setMargins(dp(MD), dp(XS), dp(MD), dp(XS)) }
+        }
     }
 
     // ---------- empty state ----------

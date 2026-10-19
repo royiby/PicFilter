@@ -26,6 +26,8 @@ import java.io.FileNotFoundException
 
 private const val TAG = "PICFILTER"
 private const val WA_FILTER = "%com.whatsapp%"
+const val PREFS = "pixkin"
+const val KEY_ONBOARDED = "onboarding_done"
 
 class MainActivity : ComponentActivity() {
 
@@ -51,6 +53,7 @@ class MainActivity : ComponentActivity() {
         ) { grants ->
             grants.forEach { (k, v) -> Log.i(TAG, "PERM_RESULT $k=$v") }
             reportPermissions()
+            if (hasFullImageAccess()) maybeOnboard()
             dispatch(pendingOp)
         }
 
@@ -70,8 +73,38 @@ class MainActivity : ComponentActivity() {
                 )
             )
         } else {
+            maybeOnboard()
+            relinkFaces()
             dispatch(pendingOp)
         }
+    }
+
+    /**
+     * With nobody enrolled there is nothing for PixKin to protect, so the home
+     * screen has nothing to say — the app is new, whatever the install date.
+     * Send the user to setup instead of a screen of zeroes.
+     *
+     * Once they have been through it the flag stays set, so someone who
+     * deliberately enrolled no one is not dragged back in on every launch.
+     */
+    private var onboardChecked = false
+
+    private fun maybeOnboard() {
+        if (onboardChecked) return
+        onboardChecked = true
+        // adb-driven ops are not a user opening the app; never hijack those.
+        if (pendingOp != "scan") return
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_ONBOARDED, false)) return
+        val db = com.picfilter.spike.data.Db(this)
+        val people = try { db.enrolledCount() } catch (e: Exception) { 0 }
+        db.close()
+        if (people > 0) return
+        Log.i(TAG, "FIRSTRUN nobody enrolled - starting onboarding")
+        startActivity(android.content.Intent().apply {
+            component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
+            putExtra("first_run", "1")
+        })
     }
 
     /**
@@ -85,6 +118,15 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         if (homeBuilt) setContentView(buildHome()) else homeBuilt = true
     }
+
+    /** Once per launch: anyone whose face crops a re-scan orphaned gets them
+     *  back from the new clusters, and the people row redraws if that worked. */
+    private fun relinkFaces() = Thread {
+        val fixed = try {
+            com.picfilter.spike.engine.Clusterer.relinkFaces(this)
+        } catch (e: Exception) { 0 }
+        if (fixed > 0) runOnUiThread { setContentView(buildHome()) }
+    }.start()
 
     /**
      * adb-driven runs often target an already-running instance, in which case
@@ -112,6 +154,11 @@ class MainActivity : ComponentActivity() {
         // themselves are decoded off the main thread further down.
         val junkThumbs = try { db.junkQueue(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
         val dupeThumbs = try { db.dupePreview(limit = 5) } catch (e: Exception) { emptyList() }
+        val savedThumbs = try { db.promotedForReview(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
+        val rescueThumbs = try { db.rescueQueue(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
+        val nofaceThumbs = try {
+            db.rescueQueue(listOf("NO_FACE_PLAIN"), limit = 5).map { it.uri }
+        } catch (e: Exception) { emptyList() }
         db.close()
         val people = persons.size
         val review = counts["REVIEW"] ?: 0
@@ -127,7 +174,11 @@ class MainActivity : ComponentActivity() {
         }
         if (people > 0) {
             col.addView(Ui.peopleRow(this, persons.map {
-                Ui.Face(it.name, if (it.photos > 0) "${it.photos} photos" else "", it.thumbs)
+                Ui.Face(it.name, if (it.photos > 0) "${it.photos} photos" else "",
+                    // A re-scan wipes the cluster crops, so prefer the copies
+                    // enrolment kept; fall back for people enrolled before that.
+                    com.picfilter.spike.engine.Clusterer.personFaces(this, it.id)
+                        .ifEmpty { it.thumbs })
             }, managePeople))
             col.addView(Ui.body(this, "Photos of these people are kept automatically."))
         } else {
@@ -155,21 +206,16 @@ class MainActivity : ComponentActivity() {
             setContentView(buildHome())
         })
 
-        fun open(label: String, supporting: String, mode: String) =
-            col.addView(Ui.actionCard(this, label, supporting) {
-                startActivity(android.content.Intent().apply {
-                    component = ComponentName(this@MainActivity, ReviewActivity::class.java)
-                    putExtra("mode", mode)
-                })
-            })
-
         col.addView(Ui.actionCard(this,
             if (people == 0) "Set up — find your people" else "Manage people",
             if (people == 0) "Scans your library and finds recurring faces"
             else "$people enrolled · add or re-scan") { managePeople() })
-        open("Check what was backed up", "Catch photos saved by mistake", "verify")
-        open("Find more family photos", "Photos we were unsure about", "rescue")
-        open("Photos with no faces", "Places, drawings, documents", "noface")
+        preview("Saved for you", "$promoted photos PixKin kept \u00b7 check for mistakes",
+            "verify", savedThumbs, col)
+        preview("Find more family photos", "Photos we were unsure about",
+            "rescue", rescueThumbs, col)
+        preview("Photos with no faces", "Places, drawings, documents",
+            "noface", nofaceThumbs, col)
         preview("Suspected junk",
             if (discard == 0) "Nothing flagged yet"
             else "$discard look like forwards, memes or screenshots",
@@ -259,6 +305,13 @@ class MainActivity : ComponentActivity() {
                     com.picfilter.spike.engine.Promoter.unpromote(this, it)
                 }
             }.start()
+            // Setup only opens itself on a first run, so these are the way back
+            // in to look at it without clearing anyone's enrolment.
+            "onboard"   -> startActivity(android.content.Intent().apply {
+                component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
+                putExtra("first_run", "1")
+                intent?.getStringExtra("step")?.let { putExtra("step", it) }
+            })
             "watchon"   -> Thread { com.picfilter.spike.engine.Watcher.enable(this) }.start()
             "watchoff"  -> Thread { com.picfilter.spike.engine.Watcher.disable(this) }.start()
             "watchnow"  -> Thread { com.picfilter.spike.engine.Watcher.runNow(this) }.start()

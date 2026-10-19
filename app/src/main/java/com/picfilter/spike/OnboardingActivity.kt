@@ -21,15 +21,18 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.picfilter.spike.data.Db
 import com.picfilter.spike.engine.Clusterer
+import com.picfilter.spike.engine.Promoter
 
 /**
- * End-to-end enrolment. The app finds the recurring faces in the user's own
- * library and asks which of them matter, instead of asking the user to assemble
- * folders of photos by hand.
+ * First run, end to end: look through the WhatsApp folders, group the faces
+ * that keep coming back, let the user claim the ones that are family, then
+ * hand over to Google Photos.
  *
- * The final screen is the important one: it warns about recurring people the
+ * Two screens carry the weight. The summary warns about recurring people the
  * user did NOT claim, because photos of those people will score as discard
- * candidates. That is the ice-cream-photo failure, surfaced before it can bite.
+ * candidates — the ice-cream-photo failure, surfaced before it can bite. The
+ * backup screen is where the app actually becomes useful: until the folder is
+ * backed up and the WhatsApp folders are not, nothing has changed for the user.
  */
 class OnboardingActivity : ComponentActivity() {
 
@@ -38,6 +41,7 @@ class OnboardingActivity : ComponentActivity() {
     private var candidates: List<Db.Candidate> = emptyList()
     private var idx = 0
     private var named = 0
+    private var firstRun = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,9 +49,14 @@ class OnboardingActivity : ComponentActivity() {
         root = Ui.screen(this)
         Ui.applyInsets(root, this, extraBottom = 8)
         setContentView(root)
+        firstRun = intent?.getStringExtra("first_run") == "1"
+        // "step" jumps straight to one screen, for looking at it in isolation.
+        val step = intent?.getStringExtra("step")
         // "resume" skips the scan and works from clusters already extracted —
         // used for adding people later, and for re-grouping experiments.
-        if (intent?.getStringExtra("resume") == "1") {
+        if (step == "backup") {
+            showBackup()
+        } else if (intent?.getStringExtra("resume") == "1") {
             candidates = db.candidates(limit = 20, thumbsEach = 6)
             idx = 0
             if (candidates.isEmpty()) showNoFaces() else showCandidate()
@@ -73,31 +82,69 @@ class OnboardingActivity : ComponentActivity() {
 
     private fun showIntro() {
         root.removeAllViews()
-        root.addView(headline("Who matters to you?"))
-        root.addView(body(
-            "PixKin will look through about ${Clusterer.SAMPLE_SIZE} of your recent photos " +
-            "and find the faces that keep appearing.\n\n" +
-            "You tell it which ones are family and friends. Photos of those people are then " +
-            "protected and never suggested for deletion.\n\n" +
-            "This takes about four minutes. Everything happens on this phone — no photos are " +
-            "uploaded anywhere."
-        ))
-        root.addView(button("Start", Ui.Btn.PRIMARY) { runScan() })
+        val scroll = ScrollView(this)
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(col)
+
+        // Their own group-chat photos, not a paragraph about them.
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(Ui.MD), dp(Ui.MD), dp(Ui.MD), 0)
+            visibility = View.GONE
+        }
+        col.addView(hero)
+
+        col.addView(headline("Who matters to you?"))
+        col.addView(body("Group chats fill your phone with other people's photos. " +
+            "PixKin keeps the ones your people are in."))
+
+        val count = Ui.text(this, Ui.Type.BODY, "Reading your WhatsApp folders\u2026")
+        col.addView(Ui.factRow(this, R.drawable.ic_photo_stack, count))
+        col.addView(Ui.factRow(this, R.drawable.ic_timer, "About four minutes"))
+        col.addView(Ui.factRow(this, R.drawable.ic_lock, "Nothing leaves this phone"))
+
+        col.addView(button("Find my people", Ui.Btn.PRIMARY) { runScan() })
         if (db.candidates(limit = 1, thumbsEach = 1).isNotEmpty()) {
-            root.addView(button("Continue with faces already found", Ui.Btn.OUTLINED) {
+            col.addView(button("Continue with faces already found", Ui.Btn.OUTLINED) {
                 candidates = db.candidates(limit = 20, thumbsEach = 6)
                 idx = 0
                 if (candidates.isEmpty()) showNoFaces() else showCandidate()
             })
         }
-        root.addView(button("Cancel", Ui.Btn.TEXT) { finish() })
+        col.addView(button("Not now", Ui.Btn.TEXT) { done() })
+        root.addView(scroll)
+
+        Thread {
+            val (n, uris) = Clusterer.whatsAppPreview(this, 4)
+            val bmps = uris.mapNotNull { u ->
+                try {
+                    contentResolver.loadThumbnail(u, android.util.Size(256, 256), null)
+                } catch (e: Exception) { null }
+            }
+            runOnUiThread {
+                count.text = if (n > 0) "$n photos from WhatsApp on this phone"
+                             else "No WhatsApp photos found on this phone"
+                for (b in bmps) hero.addView(Ui.previewTile(this).apply { setImageBitmap(b) })
+                if (bmps.isNotEmpty()) hero.visibility = View.VISIBLE
+            }
+        }.start()
+    }
+
+    /**
+     * Leaving setup counts as having seen it, however little was enrolled —
+     * otherwise opening the app again drops the user straight back in here.
+     */
+    private fun done() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+            .putBoolean(KEY_ONBOARDED, true).apply()
+        finish()
     }
 
     // -------------------------------------------------------------- 2. scan
 
     private fun runScan() {
         root.removeAllViews()
-        root.addView(title("Finding faces"))
+        root.addView(title("Looking for faces"))
         val status = body("Starting…")
         val bar = com.google.android.material.progressindicator.LinearProgressIndicator(this).apply {
             isIndeterminate = false
@@ -112,7 +159,7 @@ class OnboardingActivity : ComponentActivity() {
         }
         root.addView(bar)
         root.addView(status)
-        root.addView(body("Keep the screen on until this finishes."))
+        root.addView(body("Keep the screen on until this finishes. Nothing leaves the phone."))
 
         Thread {
             Clusterer.bootstrap(this, Clusterer.SAMPLE_SIZE) { done, total, phase ->
@@ -135,10 +182,10 @@ class OnboardingActivity : ComponentActivity() {
         root.addView(title("No recurring faces found"))
         root.addView(body(
             "Nothing in the sample had enough clear, front-facing photos of the same person.\n\n" +
-            "That usually means the sample was mostly forwarded images rather than your own " +
-            "camera photos. You can try again, or enrol people manually later."
+            "That usually means these folders are mostly forwarded pictures rather than photos " +
+            "of people you know. You can try again later, once there are more."
         ))
-        root.addView(button("Done", Ui.Btn.TEXT) { finish() })
+        root.addView(button("Done", Ui.Btn.TEXT) { done() })
     }
 
     // --------------------------------------------------------- 3. candidates
@@ -162,7 +209,9 @@ class OnboardingActivity : ComponentActivity() {
         val scroll = android.widget.HorizontalScrollView(this).apply { addView(strip) }
         root.addView(scroll)
 
-        root.addView(body("Appears in ${c.size} photos in the sample."))
+        root.addView(Ui.factRow(this, R.drawable.ic_photo_stack, "In ${c.size} of your photos"))
+        root.addView(Ui.factRow(this, R.drawable.ic_lock,
+            "Claim them and their photos are always kept"))
         root.addView(button("This is someone I care about", Ui.Btn.PRIMARY) { promptName(c) })
         root.addView(button("Not important", Ui.Btn.OUTLINED) { decide(c, "SKIPPED") })
         root.addView(button("These aren't the same person", Ui.Btn.TEXT) { decide(c, "MIXED") })
@@ -250,7 +299,60 @@ class OnboardingActivity : ComponentActivity() {
             ))
         }
 
-        col.addView(button("Done", Ui.Btn.TEXT) { finish() })
+        col.addView(button(
+            if (named > 0) "Next: where the photos go" else "Finish setup", Ui.Btn.PRIMARY
+        ) { showBackup() })
+        if (!firstRun) col.addView(button("Done", Ui.Btn.TEXT) { done() })
+        root.addView(scroll)
+    }
+
+    // ------------------------------------------------- 5. hand to the backup
+
+    /**
+     * The last step, and the one that makes any of this matter: Google Photos
+     * backs up the folders you pick, so PixKin's folder has to be one of them
+     * and the WhatsApp folders have to stop being one.
+     */
+    private fun showBackup() {
+        root.removeAllViews()
+        val scroll = ScrollView(this)
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(col)
+
+        col.addView(headline("Two switches, and you're set"))
+        col.addView(body("In Google Photos, back up the folder PixKin saves to and stop " +
+            "backing up the WhatsApp ones."))
+
+        // Name the folders the way Google Photos lists them, not the way PixKin
+        // thinks of them: the user is about to look for these exact rows.
+        col.addView(Ui.stateRow(this, R.drawable.ic_logo_mark, "PicFilter",
+            "Back up", good = true, tintIcon = false))
+        col.addView(Ui.stateRow(this, R.drawable.ic_folder, "WhatsApp Images",
+            "Don't", good = false))
+
+        col.addView(Ui.factRow(this, R.drawable.ic_photo_stack,
+            "Photos settings \u203a Backup \u203a Back up device folders"))
+
+        val status = Ui.text(this, Ui.Type.BODY,
+            "Making the ${Promoter.DEST_LABEL} folder\u2026")
+        col.addView(Ui.factRow(this, R.drawable.ic_folder, status))
+        // Google Photos only lists a folder that exists, and on a fresh install
+        // nothing has been rescued into it yet.
+        Thread {
+            val ok = Promoter.ensureDestFolder(this)
+            runOnUiThread {
+                status.text = if (ok) "${Promoter.DEST_LABEL} exists, so it will be in that list"
+                              else "PixKin makes that folder with the first photo it saves"
+            }
+        }.start()
+
+        col.addView(body("Photos already backed up stay where they are."))
+
+        val photos = packageManager.getLaunchIntentForPackage("com.google.android.apps.photos")
+        if (photos != null) col.addView(button("Open Google Photos", Ui.Btn.PRIMARY) {
+            startActivity(photos)
+        })
+        col.addView(button("Done", if (photos == null) Ui.Btn.PRIMARY else Ui.Btn.TEXT) { done() })
         root.addView(scroll)
     }
 

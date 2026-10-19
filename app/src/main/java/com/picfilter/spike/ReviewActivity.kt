@@ -37,6 +37,11 @@ class ReviewActivity : ComponentActivity() {
     private lateinit var db: Db
     private lateinit var image: ImageView
     private lateinit var empty: LinearLayout
+    private lateinit var bar: android.widget.FrameLayout
+    private lateinit var gridScroll: android.widget.ScrollView
+    private val gridRows by lazy {
+        LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+    }
     private lateinit var strip: LinearLayout
     private lateinit var info: TextView
     private lateinit var counter: TextView
@@ -49,6 +54,10 @@ class ReviewActivity : ComponentActivity() {
     private data class RescueCard(val row: Db.RescueRow) : Card
 
     private var mode = "golden"
+    /** Grid first for the screens you come to look at; card first for the ones
+     *  you come to decide. Either way the toggle in the bar switches. */
+    private var grid = false
+    private var gridGeneration = 0
     private var queue: List<Card> = emptyList()
     private var idx = 0
     private val history = ArrayDeque<Pair<Int, Long>>()   // (index, id) for undo
@@ -57,6 +66,7 @@ class ReviewActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         db = Db(this)
         mode = intent?.getStringExtra("mode") ?: "golden"
+        grid = mode == "verify"
         setContentView(buildUi())
         loadQueue()
         render()
@@ -79,7 +89,9 @@ class ReviewActivity : ComponentActivity() {
 
     private fun buildUi(): View {
         val root = Ui.screen(this)
-        root.addView(Ui.titleBar(this, screenTitle()) { finish() })
+        bar = android.widget.FrameLayout(this)
+        root.addView(bar)
+        buildBar()
 
         counter = Ui.text(this, Ui.Type.CAPTION, "", R.color.pk_on_surface_variant).apply {
             setPadding(dp(Ui.MD), dp(Ui.XS), dp(Ui.MD), dp(Ui.XXS))
@@ -103,6 +115,14 @@ class ReviewActivity : ComponentActivity() {
             visibility = View.GONE
         }
         root.addView(empty)
+
+        gridScroll = android.widget.ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
+            visibility = View.GONE
+            addView(gridRows)
+        }
+        root.addView(gridScroll)
 
         strip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -174,7 +194,90 @@ class ReviewActivity : ComponentActivity() {
         idx = 0
     }
 
+    private fun buildBar() {
+        bar.removeAllViews()
+        bar.addView(Ui.titleBar(
+            this, screenTitle(),
+            actionIcon = if (grid) R.drawable.ic_single_photo else R.drawable.ic_grid,
+            onAction = { grid = !grid; buildBar(); render() },
+        ) { finish() })
+    }
+
+    /** The uri a card shows in the grid — for a dupe group, its first member. */
+    private fun uriOf(card: Card): String? = when (card) {
+        is ItemCard -> card.row.uri
+        is RescueCard -> card.row.uri
+        is DupeCard -> card.members.firstOrNull()?.second
+    }
+
+    /**
+     * Three columns, 2dp gaps, square tiles, nothing rounded inside the grid.
+     * Thumbnails arrive off the main thread; [gridGeneration] stops a stale
+     * pass from drawing into a grid that has already been rebuilt.
+     */
+    private fun buildGrid() {
+        gridRows.removeAllViews()
+        val gen = ++gridGeneration
+        val cols = 3
+        val gap = dp(Ui.GRID_GAP)
+        val side = (resources.displayMetrics.widthPixels - gap * (cols - 1)) / cols
+        val kept = mode == "verify"          // everything here is already saved
+        val dimmed = mode == "junk"          // and everything here is not
+        val tiles = ArrayList<ImageView>(queue.size)
+
+        var row: LinearLayout? = null
+        for ((i, card) in queue.withIndex()) {
+            if (i % cols == 0) {
+                row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply { bottomMargin = gap }
+                }
+                gridRows.addView(row)
+            }
+            val tile = Ui.gridTile(this, side, kept, dimmed).apply {
+                if (i % cols != 0) (layoutParams as LinearLayout.LayoutParams).marginStart = gap
+                setOnClickListener { idx = i; grid = false; buildBar(); render() }
+            }
+            row!!.addView(tile)
+            tiles += tile.getChildAt(0) as ImageView
+        }
+
+        Thread {
+            for ((i, card) in queue.withIndex()) {
+                if (gen != gridGeneration) return@Thread
+                val u = uriOf(card) ?: continue
+                val bmp = quickThumb(u) ?: continue
+                val v = tiles[i]
+                v.post { if (gen == gridGeneration) v.setImageBitmap(bmp) }
+            }
+        }.start()
+    }
+
     private fun render() {
+        if (grid && queue.isNotEmpty()) {
+            if (gridRows.childCount == 0) buildGrid()
+            gridScroll.visibility = View.VISIBLE
+            image.visibility = View.GONE
+            empty.visibility = View.GONE
+            strip.visibility = View.GONE
+            actionBar.visibility = View.GONE
+            undoBtn.visibility = View.GONE
+            counter.text = "${queue.size} photos"
+            info.text = when (mode) {
+                "verify" -> "Tap one to check it."
+                "junk" -> "Tap one to decide."
+                else -> "Tap one to look at it."
+            }
+            return
+        }
+        gridScroll.visibility = View.GONE
+        renderCard()
+    }
+
+    private fun renderCard() {
         if (idx >= queue.size) {
             // Empty state: the mark, one line, nothing to decide.
             image.setImageDrawable(null); strip.visibility = View.GONE
@@ -296,6 +399,7 @@ class ReviewActivity : ComponentActivity() {
             null -> return
         }
         db.putLabel(id, v)
+        gridRows.removeAllViews()        // the queue changed under the grid
         if (mode == "verify" && v == "DISCARD") {
             Thread { com.picfilter.spike.engine.Promoter.unpromote(this, id) }.start()
         }
