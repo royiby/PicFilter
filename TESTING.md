@@ -9,11 +9,20 @@ made.
 ## Running it
 
 ```bash
-./gradlew :app:testDebugUnitTest        # 27 JVM tests, ~5s, no device
+./gradlew :app:testDebugUnitTest         # 27 JVM tests, ~5s, no device
+scripts/db-backup.sh save                # ALWAYS, before the next line
 ./gradlew :app:connectedDebugAndroidTest # 14 instrumented tests, ~10s, needs a phone
 scripts/smoke.sh static                  # repo checks, no device
 scripts/smoke.sh                         # full device walk-through
 ```
+
+> **Gradle uninstalls the app after an instrumented run, and uninstalling wipes
+> `/data/data`** — enrolled people, clusters, scores, promotion rows, human
+> labels, all of it. This is not hypothetical: it destroyed a hand-tagged
+> enrolment of five people and a 4.5-minute bootstrap, and the only reason it
+> was noticed was an unrelated command failing with "Activity class does not
+> exist". Rescued photos live on external storage and survive; nothing else
+> does. Run `scripts/db-backup.sh save` first, every time.
 
 Only the first and third can run in CI. The instrumented tests need a device or
 emulator; `smoke.sh` needs a phone with a real WhatsApp library, so it is a
@@ -163,6 +172,8 @@ Ordered by the risk each one leaves open.
   respect to the user's photos; the heaviest thing it does is score photos
   already on the phone.
 - **Never trust a device result without checking which APK is installed.**
+- **Back up the database before any instrumented run.** See the warning above.
+  The enrolment is the user's own manual work and cannot be regenerated.
 - **A check that cries wolf gets ignored.** A first version of the gitignore
   check fired on every new file; it was narrowed until it fired only on the real
   bug.
