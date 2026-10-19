@@ -98,6 +98,7 @@ Full capacity on this device is ~5040 mAh.
 | Content-trigger wake, nothing new | 30–31 s latency | 0.009 mAh | Three consecutive wakes: 31 s, 30 s, 30 s, against a 30 s settle delay. Slots alternated b → a → b as designed. |
 | Score 100 photos cold | 14.5 s (6.9 img/s) | 4.18 mAh | 0.042 mAh per photo. Temperature moved 29.8 → 30.0 °C. |
 | Score 200 photos | 28.3 s (7.1 img/s) | — | Throughput is flat with batch size. |
+| Score all 638 cold | 115.9 s (5.5 img/s) | — | The whole library, fresh process. 118.5 s before the text gating. |
 
 Extrapolating: 50 new WhatsApp photos a day costs about **2 mAh of scoring plus
 well under 1 mAh of wakes — roughly 0.05% of this battery.** A full 638-photo
@@ -148,16 +149,39 @@ recognition for ~44 MB. Embedding accounts for under 1 MB** — two orders of
 magnitude off the hypothesis. Closing the detector reclaims only ~18 MB of
 ~106 MB, so recreating it periodically is not a remedy either.
 
-**What was fixed.** `decide()` consults the text signals in exactly one case, an
-image with no faces: a match, an unjudged face, a crowd, or one or two strangers
-all settle the verdict before `textHeavy` is reached. Scoring ran text
-recognition on every image regardless and discarded the result for the ~63% of
-this library that contains a face. It is now skipped unless the detector found
-nothing, which removes most of the 44 MB and a whole ML Kit pass from the
-majority of images. `DecisionRulesTest` pins the invariant that makes this safe —
-exhaustively, for every image shape with at least one face, the verdict is
-identical with and without text — because the optimisation is only correct for
-as long as that holds.
+**What was changed, and how little it bought.** `decide()` consults the text
+signals in exactly one case, an image with no faces: a match, an unjudged face,
+a crowd, or one or two strangers all settle the verdict before `textHeavy` is
+reached. Scoring ran text recognition on every image regardless and discarded
+the result for the ~63% of this library that contains a face. It now runs only
+when the detector found nothing. `DecisionRulesTest` pins the invariant that
+makes this safe — exhaustively, for every image shape with at least one face,
+the verdict is identical with and without text — because the optimisation is
+correct only for as long as that holds.
+
+Measured end to end, all 638 images, fresh process, same images both times:
+
+| | original | text gated |
+|---|---|---|
+| floor before | 17,096 kb | 18,268 kb |
+| floor after | 167,572 kb | 161,732 kb |
+| growth | **+147 MB** | **+140 MB** |
+| wall | 118,540 ms | 115,894 ms |
+| rate | 5.4 img/s | 5.5 img/s |
+
+**−4.7% heap and −2% wall time.** The stage table above predicts far more, and
+the gap is the lesson: those per-100-image rates were measured in a process
+whose heap was already hundreds of MB, and they do not extrapolate to the first
+pass in a fresh process, where the GC reclaims most transient allocation. A rate
+measured at one heap level is not a rate.
+
+So the text gating is correct, removes a whole ML Kit pass from most images, and
+is worth keeping — and it is **not** a fix for this problem. Face detection is
+the dominant term and is untouched.
+
+It is at least provably behaviour-preserving on the real library, not only in
+the unit test: a full rescore gives `TEXT_NO_FACE = 130` and
+`NO_FACE_PLAIN = 105`, identical to the report from before the change.
 
 **What is not fixed.** Face detection still leaks ~84 MB per 100 images inside
 ML Kit, with `PERFORMANCE_MODE_ACCURATE`, `LANDMARK_MODE_ALL` and
