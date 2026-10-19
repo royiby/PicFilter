@@ -1,5 +1,6 @@
 package com.picfilter.spike.engine
 
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
@@ -28,7 +29,97 @@ private const val TAG = "PICFILTER"
 object Promoter {
 
     private const val DEST = "Pictures/PicFilter"
+
+    /**
+     * Google Photos only lists a device folder once it exists, and the folder
+     * is created by the first promotion — which is weeks of waiting if nothing
+     * has been rescued yet. Onboarding asks the user to switch backup on there
+     * and then, so write a marker file to bring the folder into being and
+     * delete it again; the directory outlives it.
+     *
+     * Deleting our own MediaStore entry needs no dialog (SPIKES.md), so this
+     * leaves nothing behind in the user's library.
+     */
+    fun ensureDestFolder(ctx: Context): Boolean {
+        val dir = java.io.File("/sdcard/$DEST")
+        if (dir.isDirectory) return true
+        return try {
+            val values = android.content.ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, ".pixkin-folder-marker.jpg")
+                put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, DEST)
+            }
+            val uri = ctx.contentResolver.insert(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
+            ctx.contentResolver.openOutputStream(uri)?.use { out ->
+                android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+                    .compress(android.graphics.Bitmap.CompressFormat.JPEG, 50, out)
+            }
+            ctx.contentResolver.delete(uri, null, null)
+            val ok = dir.isDirectory
+            Log.i(TAG, "DESTFOLDER created=$ok path=$dir")
+            ok
+        } catch (e: Exception) {
+            Log.e(TAG, "DESTFOLDER failed ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
+    }
+
+    /** Where rescued photos land, for the backup instructions. */
+    const val DEST_LABEL = "Pictures/PicFilter"
     private val WA_DATE = Regex("""IMG-(\d{8})-WA""")
+
+    /**
+     * What is in the destination folder right now: display name -> size, plus
+     * the uri so a skipped file can be recorded without copying it again.
+     */
+    private fun existingDest(ctx: Context): Map<String, Pair<Uri, Long>> {
+        val out = HashMap<String, Pair<Uri, Long>>()
+        ctx.contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(
+                MediaStore.MediaColumns._ID,
+                MediaStore.MediaColumns.DISPLAY_NAME,
+                MediaStore.MediaColumns.SIZE,
+            ),
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?", arrayOf("$DEST%"), null
+        )?.use { c ->
+            val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+            val iName = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
+            val iSize = c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+            while (c.moveToNext()) {
+                val name = c.getString(iName) ?: continue
+                out[name] = ContentUris.withAppendedId(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(iId)
+                ) to c.getLong(iSize)
+            }
+        }
+        return out
+    }
+
+    /**
+     * What to write a photo as, or null when the folder already has it.
+     *
+     * The promotion table says what PixKin believes it copied; the folder says
+     * what is actually there. Those drift apart — clearing app data empties the
+     * table while the files stay — and then a run copies everything a second
+     * time, because MediaStore does not overwrite: it writes "name (1).jpg".
+     * So the folder is the authority here.
+     *
+     * Same name and same size is the same photo, so skip it. Same name and a
+     * different size is a genuine collision — one filename, two pictures — and
+     * the second one gets a name of its own rather than being dropped.
+     */
+    fun destName(
+        sourceName: String?, itemId: Long, bytes: Long, existing: Map<String, Long>,
+    ): String? {
+        val base = sourceName?.takeIf { it.isNotBlank() } ?: "picfilter_$itemId.jpg"
+        val there = existing[base] ?: return base
+        if (there == bytes) return null
+        val dot = base.lastIndexOf('.')
+        return if (dot > 0) "${base.substring(0, dot)}_$itemId${base.substring(dot)}"
+               else "${base}_$itemId"
+    }
 
     fun run(
         ctx: Context, dryRun: Boolean,
@@ -53,15 +144,33 @@ object Promoter {
         for ((r, n) in byReason) Log.i(TAG, "PROMOTE   reason $r = $n")
         for (r in rows.take(5)) Log.i(TAG, "PROMOTE   e.g. ${r.name}")
 
+        // The folder, not the promotion table, decides what still needs copying.
+        val existing = existingDest(ctx)
+        val sizes = existing.mapValues { it.value.second }
+        val alreadyThere = rows.count { destName(it.name, it.id, it.bytes, sizes) == null }
+        Log.i(TAG, "PROMOTE folder holds ${existing.size} files; $alreadyThere of the " +
+            "${rows.size} candidates are already among them")
+
         if (dryRun) {
             Log.i(TAG, "PROMOTE dry run complete — nothing was copied")
             db.close(); return
         }
 
-        var ok = 0; var failed = 0; var bytes = 0L
+        var ok = 0; var failed = 0; var bytes = 0L; var skipped = 0
         for (r in rows) {
             try {
-                val name = r.name ?: "picfilter_${r.id}.jpg"
+                val name = destName(r.name, r.id, r.bytes, sizes)
+                if (name == null) {
+                    // Already in the folder. Record it so the table catches up
+                    // with the folder and the next run has nothing to do.
+                    val (uri, size) = existing[r.name]!!
+                    db.recordPromotion(r.id, uri.toString(), r.name!!, size)
+                    skipped++
+                    continue
+                }
+                if (name != r.name) Log.w(TAG,
+                    "PROMOTE name collision: ${r.name} is taken by another photo, " +
+                    "writing $name instead")
                 val taken = originalDateMs(name, r.dateAdded)
                 val values = ContentValues().apply {
                     put(MediaStore.MediaColumns.DISPLAY_NAME, name)
@@ -110,7 +219,8 @@ object Promoter {
                 if (failed <= 3) Log.w(TAG, "PROMOTE err ${e.javaClass.simpleName}: ${e.message}")
             }
         }
-        Log.i(TAG, "PROMOTE copied=$ok failed=$failed ${"%.1f".format(bytes / 1048576.0)} MB -> $DEST")
+        Log.i(TAG, "PROMOTE copied=$ok skipped=$skipped (already in the folder) " +
+            "failed=$failed ${"%.1f".format(bytes / 1048576.0)} MB -> $DEST")
         Log.i(TAG, "PROMOTE total promoted to date: ${db.promotionSummary()}")
         Log.i(TAG, "PROMOTE source files untouched — this only copies")
         db.close()
