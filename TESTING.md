@@ -9,9 +9,9 @@ made.
 ## Running it
 
 ```bash
-./gradlew :app:testDebugUnitTest         # 43 JVM tests, ~5s, no device
+./gradlew :app:testDebugUnitTest         # 56 JVM tests, ~5s, no device
 scripts/db-backup.sh save                # ALWAYS, before the next line
-./gradlew :app:connectedDebugAndroidTest # 26 instrumented tests, needs a phone
+./gradlew :app:connectedDebugAndroidTest # 34 instrumented tests, needs a phone
 scripts/smoke.sh static                  # repo checks, no device
 scripts/smoke.sh                         # full device walk-through
 ```
@@ -40,6 +40,7 @@ Pure logic, no device. These run in seconds and should stay that way.
 | `VecMathTest` | `l2` and `cos` — including `l2` on a zero vector, which must not divide by zero. |
 | `EmptyCentroidsTest` *(in `MatchFaceTest.kt`)* | The 290-mislabelled-photo bug, in two halves: an empty centroid set really does read as a clean miss rather than as uncertainty, and a clean miss on a crowd really does become a discard candidate. Neither is wrong alone; together they are why `Pipeline.score` refuses to run when people are enrolled and no centroids load. |
 | `DestNameTest` | Promotion is safe to re-run. The promotion table is what PixKin *believes* it copied and the folder is what is *there*; clearing app data drifts them apart, and MediaStore writes "name (1).jpg" rather than overwriting. Pins that the folder is the authority, and that same-name-different-size is a real collision rather than a skip. |
+| `FitThresholdTest` | Where a person's threshold may land. The defect: fitting from matched faces alone sees only points above the bar, so it could rise and never fall — three fitted thresholds (0.55, 0.63, 0.65) became unreachable that way. Pins that a bar comes down only on enough confirmed evidence below it, never under the 0.55 floor, that strangers below the bar keep it where it is, and that sub-threshold evidence alone holds the bar instead of triggering the 0.85 fail-safe. |
 | `WhatsAppFolderTest` | Which folders onboarding samples. WhatsApp has used several folder shapes over the years and the bucket names differ again; getting this wrong is quiet — the scan still runs, it just learns the wrong faces. |
 
 `matchFace` was lifted out of `FaceEngine` to make this possible: it is pure
@@ -55,6 +56,7 @@ Real SQLite, real WorkManager, on a device.
 | `DbUpgradeTest` | The v5→v6 migration, on a database shaped like the one on the phone — scores first, people enrolled afterwards. That database *is* the bug, so the upgrade must mark its scores stale. And the migration must keep the scored corpus: rebuilding 638 scores costs two minutes of face detection. |
 | `SyncedReclaimTest` | Reclaiming a local copy must not invite the app to copy it straight back. The folder and the promotion table together decide what still needs rescuing, so a file deliberately removed — because it is in the cloud and the space was reclaimed — has to stay recorded and stay out of the promotion queue. |
 | `VouchedExtensionTest` | Attribution for `extendFromLabels`, clause by clause: a keep explained by an existing match teaches nothing, two near misses in one photo are ambiguous, a distant face is not a near miss, and a discard teaches nothing. A keep is a judgement about a *photo*, not about a face — getting this wrong means a centroid quietly drifted onto someone else. |
+| `LabelledNearMissTest` | The query supplying the below-the-bar half of a threshold, clause by clause — and the boundary with `vouchedNearMisses`: the same discarded near miss must give the fitter a negative point and teach a centroid nothing. |
 | `WatcherArmingTest` | Re-arming the content trigger never cancels a trigger already waiting. Arming used `REPLACE`, and since every app open re-arms to heal a broken chain, routine use kept resetting the trigger — and cancelled a run in progress during testing. Also: a cancelled slot is re-armable, so a force-stop is recoverable. |
 
 **Every DB test passes an explicit database name.** Instrumented tests run as
@@ -368,28 +370,34 @@ Ordered by the risk each one leaves open.
    clicks each review action and asserts a row appears in the database. This is
    the highest-value missing test and the hardest, because it must not be run
    against the user's real photos.
-2. **Precision as a number, out of sample.** `MatchFaceTest` pins the threshold
+2. **Whether a lowered threshold actually holds.** `FitThresholdTest` pins the
+   arithmetic and `LabelledNearMissTest` the attribution, but no measurement yet
+   says a bar lowered from two-sided evidence keeps its promised precision on
+   the library. The sample below the bar is biased twice over — the rescue queue
+   is ordered by near-miss similarity, and the single-near-face clause drops
+   crowded photos — so the fitted figure is optimistic by an unknown amount.
+3. **Precision as a number, out of sample.** `MatchFaceTest` pins the threshold
    but cannot say what precision it buys. Needs a committed golden label set and
    a held-out split, so the suite can assert "precision ≥ 0.90 on data the
    thresholds were not fitted on". Blocked on the labels containing real photo
    filenames: the test must take a path and skip when absent.
-3. **Date preservation end to end.** MediaProvider re-scans on `IS_PENDING`
+4. **Date preservation end to end.** MediaProvider re-scans on `IS_PENDING`
    1→0 and recomputes the date from EXIF, which WhatsApp strips — so rescued
    photos landed in the cloud dated today instead of last June. Needs an
    instrumented test that promotes a fixture, re-reads `DATE_TAKEN`, and asserts
    the original date.
-4. **The promote/verify invariant under interruption.** 19 rescued files went
+5. **The promote/verify invariant under interruption.** 19 rescued files went
    missing once. `op=promocheck` checks it after the fact; a test should kill a
    promote run partway and assert the rows and the files still agree.
-5. **A memory regression test.** `op=memprobe` measures this by hand; nothing
+6. **A memory regression test.** `op=memprobe` measures this by hand; nothing
    fails automatically. A test that asserts stage 1 stays flat and stage 3 adds
    under ~5 MB per 100 images would catch a regression in our own code without
    pinning ML Kit's leak in place. It needs committed fixture images, and the
    user's photos must not be used.
-6. **Partial media grants.** Android 14+ `READ_MEDIA_VISUAL_USER_SELECTED` gives
+7. **Partial media grants.** Android 14+ `READ_MEDIA_VISUAL_USER_SELECTED` gives
    a library that looks readable and is not. `smoke.sh` asserts
    `ACCESS_MODE=FULL`; nothing tests that the app refuses a partial grant.
-7. **Video.** 315 WhatsApp videos are entirely unhandled, so there is nothing to
+8. **Video.** 315 WhatsApp videos are entirely unhandled, so there is nothing to
    test — noted here so it is not mistaken for coverage.
 
 ## Rules for this suite

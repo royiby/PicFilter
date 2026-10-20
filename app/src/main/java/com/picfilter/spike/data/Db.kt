@@ -1089,6 +1089,57 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
 
     data class Quad(val personId: Long, val name: String, val sim: Float, val correct: Boolean)
 
+    /**
+     * Human verdicts on faces that did NOT match -- the other half of a
+     * threshold.
+     *
+     * [labelledMatches] can only see faces above the bar, so a fit computed
+     * from it alone never observes a false negative and can only ever ratchet
+     * the bar upward. Deciding where a boundary belongs needs labelled points
+     * on both sides of it, and these are the ones below.
+     *
+     * Attribution is the same rule [vouchedNearMisses] uses, and for the same
+     * reason -- a verdict is about a photo, not about a face. The item was
+     * reviewed, nothing in it matched anyone (otherwise the verdict is
+     * explained by that match), and exactly ONE face came close to exactly one
+     * person. Then that face is that person, and the verdict is about them.
+     *
+     * The polarity is what differs. [vouchedNearMisses] only wants KEEPs,
+     * because only a keep can widen a centroid and a discard teaches it
+     * nothing. A threshold wants both: a keep here is a face that SHOULD have
+     * matched, and a discard is a face that correctly did not.
+     *
+     * Two biases the caller has to carry, because this sample is not random:
+     * the rescue queue is ordered by near-miss similarity, so reviewed items
+     * skew toward the top of the band; and the single-near-face clause drops
+     * crowded photos, which are not like the ones it keeps.
+     */
+    fun labelledNearMisses(minSim: Float, limit: Int = 500): List<Quad> {
+        val out = mutableListOf<Quad>()
+        readableDatabase.rawQuery(
+            """SELECT f.person_id, p.name, f.similarity, l.label
+               FROM label l
+               JOIN item i ON i.id = l.item_id
+               JOIN face f ON f.item_id = l.item_id
+               JOIN person p ON p.id = f.person_id
+               WHERE l.label IN ('KEEP','DISCARD')
+                 AND f.person_id IS NOT NULL
+                 AND f.state != 'MATCH'
+                 AND f.similarity >= ?
+                 AND NOT EXISTS (
+                     SELECT 1 FROM face m WHERE m.item_id = l.item_id AND m.state = 'MATCH')
+                 AND (SELECT COUNT(*) FROM face n
+                      WHERE n.item_id = l.item_id AND n.person_id IS NOT NULL
+                        AND n.similarity >= ?) = 1
+               ORDER BY f.similarity DESC LIMIT ?""",
+            arrayOf(minSim.toString(), minSim.toString(), limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) out += Quad(
+                c.getLong(0), c.getString(1), c.getFloat(2), c.getString(3) == "KEEP")
+        }
+        return out
+    }
+
     fun promotedDests(): List<Pair<String, String>> {
         val out = mutableListOf<Pair<String, String>>()
         readableDatabase.rawQuery("SELECT dest_uri, dest_name FROM promotion", null).use { c ->

@@ -118,7 +118,7 @@ bounding box.
 | `MIN_ORIG_PX` / `MAX_POSE` (scoring) | FaceEngine.kt | 40 px / 45° | measured, SPIKES.md 3d |
 | `ENROL_MIN_ORIG_PX` / `ENROL_MAX_POSE` | FaceEngine.kt | 80 px / 30° | precision-biased; small faces poison centroids |
 | `MATCH_THRESHOLD` | FaceEngine.kt | **0.70** | fitted — see below |
-| per-person threshold | `Fitter` | fitted at 90% target precision, ≥6 labelled matches | overrides the global bar |
+| per-person threshold | `Fitter` | fitted at 90% target precision from labelled faces on **both** sides of the bar | overrides the global bar; floor 0.55 |
 | `CLUSTER_THRESHOLD` | FaceEngine.kt | **0.60** (average linkage) | dominates greedy @0.65 on both axes |
 | `TEXT_FRAC_HEAVY` | Pipeline.kt | 0.08 | spike 3b |
 | `DUPE_HAMMING` | Pipeline.kt | 6 | conventional dHash default, unvalidated |
@@ -246,9 +246,11 @@ promoted 111, of which 110 confirmed synced and reclaimed locally
 ```
 
 Known gaps, in order of risk: no held-out precision figure; per-person
-thresholds are currently unfitted because only 2 labelled matches exist against
-`Fitter`'s minimum of 6; 315 WhatsApp videos are entirely unhandled; no
-instrumented test clicks a review button.
+thresholds are currently unfitted — every one of the 267 labels sits on a
+`REVIEW` item, and the `verify` queue that would supply labelled matches has
+111 items and none reviewed; 63 of the 111 rescued photos were promoted under
+the old 0.55 bar and would not be rescued today; 315 WhatsApp videos are
+entirely unhandled; no instrumented test clicks a review button.
 
 ## Build
 

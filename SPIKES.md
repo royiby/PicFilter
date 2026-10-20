@@ -1131,3 +1131,101 @@ Rebuilt on Material 3 with a Google-Photos-shaped visual language:
 All review queues are now empty — 494 of 638 items carry a human label
 (378 DISCARD, 116 KEEP). Decisions under the fitted thresholds:
 KEEP 58, REVIEW 422, DISCARD_CANDIDATE 158.
+
+---
+
+# 🐛 The fitter could only ever ratchet upward — 2026-10-20
+
+`Fitter` takes its evidence from `labelledMatches()`, which returns labelled
+faces the scorer called a `MATCH`. Every one of those sits at or above the
+person's current bar, so the lowest cut the search could consider *was* that
+bar. The fitted threshold could rise and never fall, on any evidence.
+
+This is not a tuning weakness, it is the wrong estimator. The query measures
+precision over what was kept, which cannot observe a false negative, and a
+threshold is a trade between the two. Fitting a boundary from points on one
+side of it is not fitting.
+
+The consequence was concrete and already paid: `d973c31` fitted מישי 0.55,
+אבי 0.63 and Person 1 0.65. When the global bar rose to 0.70 those became
+**unrecoverable** — the faces that justified them now score `NO_MATCH` and are
+filtered out before `Fitter` sees them.
+
+## What the state actually was
+
+On the live corpus, `labelledMatches()` returns **zero rows**. All 267 human
+verdicts sit on `REVIEW` items, and a `REVIEW` item has no `MATCH` face by
+construction — `matched >= 1` short-circuits to `KEEP`. They came from the
+rescue and no-face queues; the `verify` queue, the only one serving matched
+items, has 111 items and none reviewed.
+
+So the fitter had no data at all, every `person.threshold` is NULL, and the
+94.8% per-person configuration has not existed since the instrumented-test
+wipe of 19 Oct. No backup in `backups/` contains a fitted threshold.
+
+## Fix: fit from both sides
+
+`Db.labelledNearMisses()` supplies the points below the bar, under the same
+earned attribution rule `vouchedNearMisses` uses — the item was reviewed,
+nothing in it matched anyone, and exactly one face came close to exactly one
+person. The polarity is what differs: widening a centroid can only learn from
+a KEEP, while a threshold learns from both. A keep below the bar is a face
+that should have matched; a discard below it is a face that correctly did not.
+
+Guards, because down is the direction that admits strangers:
+
+- **`MIN_BELOW_SAMPLES = 5`** labelled points below the default before a fit
+  may go below it. Three points reach 90% by being three points.
+- **`ABSOLUTE_FLOOR = 0.55`**, from the calibration that found keep-rate flat
+  beneath it and *zero* in the two bands closest to it.
+- The arithmetic is lifted into a pure `fitThreshold()`, the same move
+  `matchFace` got, so it is testable without a device. Thirteen JVM tests.
+
+## ⚠️ Caught while verifying: the fail-safe fired on the wrong evidence
+
+Simulating the new fitter against the real corpus before shipping it showed
+גבע being clamped to **0.85**.
+
+The fail-safe exists for a centroid that is wrong even where it is most
+confident. But גבע's 27 points are *all* below the bar — 25 discarded near
+misses and 2 kept — so they say only that the bar is not too low, and nothing
+whatever about how it performs above. Reading that as "unreliable centroid"
+would have cost the most-photographed person most of their recall, on evidence
+gathered entirely in the band the bar already rejects.
+
+`fitThreshold` now distinguishes the two: with no labelled point above the
+default it holds at the default and says so, rather than condemning anyone.
+Pinned by `near misses alone hold the bar rather than condemning the person`
+and its counterpart for the genuine case.
+
+**The simulation is the lesson, not the bug.** The arithmetic and all eleven
+tests at that point were green; what was wrong only appeared when the function
+met the real distribution.
+
+## What it buys on this library, today
+
+31 labelled points recovered from verdicts that were previously 100% invisible
+to the fitter — 0 above the bar, 31 below:
+
+```
+גבע   25 DISCARD + 2 KEEP   in 0.551..0.653
+דני    4 DISCARD            in 0.561..0.688
+```
+
+Both are then **held at 0.70**: גבע because nothing above the bar is labelled,
+דני for having fewer than `MIN_SAMPLES`. So the first finding of two-sided
+fitting on real data is a negative one, and the right one — the 0.55–0.65 band
+for גבע is 25-to-2 against, which is the same person who measured 24.7% correct
+at 0.55. The fitter can now *see* that rather than being blind to it.
+
+Unblocking the rest needs the `verify` queue worked through: 48 of the 111
+promoted items still carry a `MATCH` face, and that is enough for all five
+people to clear `MIN_SAMPLES` — גבע 21, דני 18, אבי 12, אמא 7, מישי 6.
+
+## Still unmeasured
+
+A bar lowered from two-sided evidence has not been shown to hold its promised
+precision on the library, and the sample below the bar is biased twice: the
+rescue queue is ordered by near-miss similarity, and the single-near-face
+clause drops crowded photos. The guards are a judgement about that bias, not a
+measurement of it.

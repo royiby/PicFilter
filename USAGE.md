@@ -142,7 +142,10 @@ R watchstat                   # what WorkManager actually holds
 R sweep                       # gate sensitivity from stored metrics — no re-detection
 R calibrate                   # human keep-rate by near-miss similarity band
 R precision                   # precision ABOVE the threshold, by band and by person
-R fit                         # fit per-person thresholds from labelled matches
+R fit                         # fit per-person thresholds from labelled faces
+                              # (needs both sides: matches from the 'Saved
+                              #  photos' queue, near misses from 'More family
+                              #  photos')
 R memprobe  --es stage 3 --es n 100   # native-heap growth by pipeline stage (stages 1-4)
 R item      --es id <itemId>  # full scoring detail for one photo
 R labels / clearlabels / unlabel --es id <itemId>
@@ -220,7 +223,9 @@ pins that invariant, because the optimisation is correct only while it holds.
 | `MAX_POSE` (scoring) | FaceEngine.kt | 45° | binding constraint; strict on purpose |
 | `ENROL_MIN_ORIG_PX` / `ENROL_MAX_POSE` | FaceEngine.kt | 80 px / 30° | precision-biased |
 | `MATCH_THRESHOLD` | FaceEngine.kt | 0.70 | fitted; 0.55 gave 47% precision |
-| per-person threshold | person.threshold | fitted by `Fitter` | 90% target, ≥6 labelled matches |
+| per-person threshold | person.threshold | fitted by `Fitter` | 90% target, ≥6 labelled points |
+| `MIN_BELOW_SAMPLES` | Fitter.kt | 5 | labelled points below the default before a fit may go below it |
+| `ABSOLUTE_FLOOR` | Fitter.kt | 0.55 | calibration found keep-rate zero in the bands beneath it |
 | `CLUSTER_THRESHOLD` | FaceEngine.kt | 0.60 | average linkage; dominates greedy @0.65 |
 | `TEXT_FRAC_HEAVY` / `TEXT_BLOCKS_HEAVY` | Pipeline.kt | 0.08 / 10 | spike 3b |
 | `DUPE_HAMMING` | Pipeline.kt | 6 | **unvalidated** — dHash convention |
