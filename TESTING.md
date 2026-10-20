@@ -307,12 +307,34 @@ cannot extend beyond it. Lowering the bar to reach them is exactly the drift
 that bar exists to prevent — and it would be learning from faces we cannot tell
 apart from strangers.
 
-What does work is the signal growth cannot reach: **a human saying "this one is
-them" about a face that scored below the threshold.** That hands over a point
-outside the covered region, vouched for by someone who can actually tell.
-Simulated on the same embeddings, seeded from three picked photos: **91% → 98%**
-overall, and the hardest person **78% → 94%**, for one false match in 435 faces.
-Built as `Clusterer.extendFromLabels`.
+What does work, though less than first claimed, is the signal growth cannot
+reach: **a human saying "this one is them" about a face that scored below the
+threshold.** That hands over a point outside the covered region, vouched for by
+someone who can actually tell. Built as `Clusterer.extendFromLabels`.
+
+**Run on the real library, it recovered exactly the photos that were vouched for
+and nothing else.** Two keeps in the review queue, two photos of that person
+moved from REVIEW to KEEP — and both were the vouched items themselves. The
+widened centroid generalised to no other photo. Nothing stopped matching, so
+monotonicity held.
+
+The first simulation said 91% → 98%, and that figure was wrong: it counted the
+vouched faces as recoveries, which is circular — those are known by assumption.
+Measuring only the faces that were *not* vouched for, generalisation is **1 of
+2**. Real, but a single data point.
+
+Why the live run generalised not at all: that person was enrolled from a full
+18-face cluster, so the centroid set already covered them and the missed faces
+were isolated outliers rather than representatives of an uncovered region. The
+case this is built for — someone enrolled from three picked photos, with a
+population of similar faces outside the centroid — has not been tested on real
+data, because nobody on this library is enrolled that way.
+
+Worth being plain about the implication: when extension only recovers the
+vouched photo itself, it buys nothing over honouring the label directly, which
+`itemsForPromotion`/`promote byLabel` can already do. It is kept because it is
+cheap (monotonic, requeues 357 of 641, runs only when labels exist) and safe
+(attribution is pinned by seven tests), not because the live evidence is strong.
 
 Attribution is the whole difficulty, because a keep is a judgement about a photo
 and not about a face. The rule: the item was kept, nothing in it matched anyone
@@ -323,10 +345,14 @@ ambiguous, a distant face is not a near miss, and a discard teaches nothing —
 because the cost of getting this wrong is a centroid that has quietly drifted
 onto someone else.
 
-**Not yet demonstrated on real data:** this library has no human labels at all,
-so `extendFromLabels` correctly reports "nothing vouched yet" and does nothing.
-The evidence for it is the simulation above and the instrumented tests; the
-on-device effect cannot be shown until some photos are reviewed.
+### What the review itself said
+
+267 verdicts on the "more family photos" queue came back **264 DISCARD, 3
+KEEP**. So that queue is about 1% useful: the app is surfacing faces it is
+unsure about, and the user is almost always confirming it was right to doubt
+them. Those 264 negatives cannot feed `Fitter`, which fits per-person thresholds
+from labelled MATCHES, and only 2 labelled matches exist — far below its minimum
+of 6. The thresholds therefore remain the default 0.70 rather than fitted.
 
 ## What is not covered yet
 
