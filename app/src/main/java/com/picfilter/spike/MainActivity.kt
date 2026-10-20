@@ -375,6 +375,18 @@ class MainActivity : ComponentActivity() {
             "watchoff"  -> Thread { com.picfilter.spike.engine.Watcher.disable(this) }.start()
             "watchnow"  -> Thread { com.picfilter.spike.engine.Watcher.runNow(this) }.start()
             "watchstat" -> Thread { com.picfilter.spike.engine.Watcher.status(this) }.start()
+            "pickenrol" -> Thread {
+                // Dev only: feed enrolFromUris real photos without the picker,
+                // so the engine can be checked apart from the UI.
+                val d = com.picfilter.spike.data.Db(this)
+                val pid = intent?.getStringExtra("pid")?.toLongOrNull() ?: 0L
+                val n = intent?.getStringExtra("n")?.toIntOrNull() ?: 4
+                val uris = d.matchedItemsFor(pid, n).map { android.net.Uri.parse(it.second) }
+                d.close()
+                Log.i(TAG, "PICKENROL dev: feeding ${uris.size} photos")
+                com.picfilter.spike.engine.Clusterer.enrolFromUris(
+                    this, intent?.getStringExtra("name") ?: "PICKTEST", uris)
+            }.start()
             "avatars"   -> Thread {
                 com.picfilter.spike.engine.Clusterer.rebuildAvatars(
                     this, force = intent?.getStringExtra("force") == "1")

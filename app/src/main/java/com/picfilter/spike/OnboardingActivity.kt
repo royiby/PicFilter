@@ -119,12 +119,8 @@ class OnboardingActivity : ComponentActivity() {
         col.addView(Ui.factRow(this, R.drawable.ic_lock, "Nothing leaves this phone"))
 
         col.addView(button("Find my people", Ui.Btn.PRIMARY) { runScan() })
-        col.addView(button("Pick photos of someone instead", Ui.Btn.OUTLINED) {
-            pickPhotos.launch(
-                PickVisualMediaRequest.Builder()
-                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    .build())
-        })
+        // Secondary here: the scan is the headline action on first run.
+        col.addView(pickButton("Pick photos of someone instead", Ui.Btn.OUTLINED))
         if (db.candidates(limit = 1, thumbsEach = 1).isNotEmpty()) {
             col.addView(button("Continue with faces already found", Ui.Btn.OUTLINED) {
                 candidates = db.candidates(limit = 20, thumbsEach = 6)
@@ -200,13 +196,23 @@ class OnboardingActivity : ComponentActivity() {
 
     private fun showNoFaces() {
         root.removeAllViews()
-        root.addView(title("No recurring faces found"))
+        root.addView(title("No faces to show you"))
         root.addView(body(
-            "Nothing in the sample had enough clear, front-facing photos of the same person.\n\n" +
-            "That usually means these folders are mostly forwarded pictures rather than photos " +
-            "of people you know. You can try again later, once there are more."
+            "Nothing in the sample had enough clear, front-facing photos of the same person \u2014 " +
+            "or the faces we found earlier are no longer on this phone.\n\n" +
+            "You can look again, or just point us at a few photos of someone yourself."
         ))
+        root.addView(pickButton("Pick photos of someone"))
+        root.addView(button("Look again", Ui.Btn.OUTLINED) { runScan() })
         root.addView(button("Done", Ui.Btn.TEXT) { done() })
+    }
+
+    /** The picker, offered wherever someone might want to add a person. */
+    private fun pickButton(label: String, role: Ui.Btn = Ui.Btn.PRIMARY) = button(label, role) {
+        pickPhotos.launch(
+            PickVisualMediaRequest.Builder()
+                .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                .build())
     }
 
     // --------------------------------------------------------- 3. candidates

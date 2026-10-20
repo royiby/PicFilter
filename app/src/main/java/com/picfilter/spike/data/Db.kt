@@ -583,7 +583,13 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
                        ORDER BY orig_px DESC LIMIT ?""",
                     arrayOf(id.toString(), thumbsEach.toString())
                 ).use { t -> while (t.moveToNext()) thumbs += t.getString(0) }
-                out += Candidate(id, size, thumbs)
+                // Only offer a face the user can actually look at. The crops
+                // live in the app's own storage while these rows hold their
+                // paths, so clearing app data leaves 435 rows pointing at
+                // nothing -- and the screen then asks "do you know this person?"
+                // with no person on it.
+                val onDisk = thumbs.filter { java.io.File(it).exists() }
+                if (onDisk.isNotEmpty()) out += Candidate(id, size, onDisk)
             }
         }
         return out
