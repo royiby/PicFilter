@@ -281,6 +281,38 @@ Scoring with nobody enrolled at all stays legal: that is a new install, where
 600 images) and the adb dev ops. The bootstrap is the other heavy ML Kit user
 and would need the same treatment plus cross-process progress reporting.
 
+## Measured and rejected: growing centroids from confident matches
+
+Enrolling from a few picked photos costs recall — 91% at three photos against
+100% from a full cluster. The obvious repair is to let the library teach the
+centroid: every confident match is a free, already-verified extra view of the
+person, so add the least-similar matches above 0.85 as a new centroid. Matching
+takes the max over a person's set, so this is monotonic and needs no full
+rescan — only the items that matched nobody.
+
+It was built, run, and **it recovers nothing.**
+
+On the device: one person out of five gained a centroid, 357 of 641 items were
+correctly requeued rather than the whole corpus, `centroid_rev` never moved —
+the machinery behaved exactly as designed — and the rescore produced **zero**
+new matches. KEEP stayed at 48 and every per-person count was identical.
+Simulated offline against the stored embeddings for the case it was meant to
+fix, a two-or-three-photo enrolment: **91% → 91%.**
+
+The reason is structural rather than a tuning problem. Growth learns from faces
+that already match, which are by definition **inside** the region the centroid
+already covers. The faces being missed sit below the threshold, **outside** it,
+and growth never sees them. It can interpolate within the covered region; it
+cannot extend beyond it. Lowering the bar to reach them is exactly the drift
+that bar exists to prevent — and it would be learning from faces we cannot tell
+apart from strangers.
+
+What would work is the signal growth cannot reach: **a human saying "this one is
+them" about a face that scored below the threshold.** That extends the centroid
+into new territory and is safe by construction, because a person vouched for it.
+The `label` table already records those verdicts and `Fitter` already uses them
+for per-person thresholds. That is where to spend the effort, not here.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.
