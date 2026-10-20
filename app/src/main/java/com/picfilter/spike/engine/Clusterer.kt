@@ -448,6 +448,89 @@ object Clusterer {
         return rebuilt
     }
 
+    /**
+     * A near miss only counts as a lesson if it was nearly right to begin with.
+     * Below this the face is as likely to be a stranger standing next to the
+     * person, and the keep was about the photo.
+     */
+    const val VOUCH_MIN_SIM = 0.55f
+
+    /** Beyond this a person's set describes them well enough. */
+    const val MAX_CENTROIDS = 6
+
+    /**
+     * Widen a person from faces the user vouched for and the matcher missed.
+     *
+     * Enrolling from a few picked photos costs recall: 91% at three photos
+     * against 100% from a full cluster. Self-training cannot close that --
+     * learning from confident matches only re-describes the region already
+     * covered, and measured 91% -> 91% (TESTING.md). A human saying "this is
+     * them" about a face that scored BELOW the threshold is different in kind:
+     * it hands over a point outside the covered region, vouched for by someone
+     * who can actually tell. Simulated on this library, 91% -> 98%, and the
+     * hardest person 78% -> 94%.
+     *
+     * Monotonic, like any added centroid, so only the items that matched nobody
+     * are requeued rather than the whole library.
+     */
+    fun extendFromLabels(
+        ctx: Context, minSim: Float = VOUCH_MIN_SIM, perPerson: Int = 4,
+    ): Int {
+        val db = Db(ctx)
+        val centroids = db.centroidsByPerson()
+        val names = db.personNames()
+        if (centroids.isEmpty()) { db.close(); return 0 }
+        val vouched = db.vouchedNearMisses(minSim, perPerson * centroids.size * 2)
+        if (vouched.isEmpty()) {
+            Log.i(TAG, "EXTEND nothing vouched yet; review some photos first")
+            db.close(); return 0
+        }
+        val byPerson = vouched.groupBy { it.first }
+        var added = 0
+        FaceEngine(
+            ctx, targetPx = 1200,
+            minOrigPx = FaceEngine.MIN_ORIG_PX, maxPose = FaceEngine.MAX_POSE,
+        ).use { eng ->
+            for ((pid, items) in byPerson) {
+                val existing = centroids[pid] ?: continue
+                if (db.centroidCount(pid) >= MAX_CENTROIDS) continue
+                val picked = mutableListOf<FloatArray>()
+                for ((_, _, uriStr) in items.take(perPerson)) {
+                    try {
+                        val img = eng.decode(ctx, Uri.parse(uriStr)) ?: continue
+                        val obs = eng.observe(img)
+                        // The face that nearly matched this person, not another
+                        // one that happens to be in the photo.
+                        val best = obs.filter { it.embedding != null }
+                            .maxByOrNull { o -> existing.maxOf { cos(it, o.embedding!!) } }
+                        if (best != null) picked += best.embedding!!
+                        img.bitmap.recycle()
+                    } catch (e: Exception) { /* one unreadable photo is not fatal */ }
+                }
+                if (picked.isEmpty()) continue
+                val dim = picked[0].size
+                val fresh = FloatArray(dim)
+                for (v in picked) for (j in 0 until dim) fresh[j] += v[j]
+                for (j in 0 until dim) fresh[j] /= picked.size
+                l2(fresh)
+                val nearest = existing.maxOf { cos(it, fresh) }
+                if (nearest >= 0.98f) {
+                    Log.i(TAG, "EXTEND ${names[pid]} skipped, already covered " +
+                        "(${"%.3f".format(nearest)})")
+                    continue
+                }
+                db.addCentroid(pid, fresh, picked.size, bumpRev = false)
+                added++
+                Log.i(TAG, "EXTEND ${names[pid]} +1 centroid from ${picked.size} vouched " +
+                    "near misses (nearest existing ${"%.3f".format(nearest)})")
+            }
+        }
+        val requeued = if (added > 0) db.invalidateUnmatched() else 0
+        Log.i(TAG, "EXTEND added=$added centroids; $requeued unmatched items to reconsider")
+        db.close()
+        return added
+    }
+
     /** What enrolling from hand-picked photos managed to use. */
     data class PickOutcome(
         val personId: Long, val used: Int, val noFace: Int, val tooManyFaces: Int,

@@ -180,13 +180,75 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         }
     }
 
-    fun addCentroid(personId: Long, vec: FloatArray, faceCount: Int) {
+    /**
+     * [bumpRev] false when EXTENDING a person rather than enrolling one.
+     * Matching takes the max over a person's set, so an added vector can only
+     * turn a miss into a match, never the reverse. Invalidating every score for
+     * that would mean re-reading the whole library to re-confirm matches that
+     * cannot change; [invalidateUnmatched] requeues only what could differ.
+     */
+    fun addCentroid(personId: Long, vec: FloatArray, faceCount: Int, bumpRev: Boolean = true) {
         val v = ContentValues().apply {
             put("person_id", personId); put("vec", floatsToBytes(vec))
             put("face_count", faceCount); put("created_at", System.currentTimeMillis())
         }
         writableDatabase.insert("centroid", null, v)
-        bumpCentroidRev()
+        if (bumpRev) bumpCentroidRev()
+    }
+
+    fun centroidCount(personId: Long): Int =
+        readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM centroid WHERE person_id=?", arrayOf(personId.toString())
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
+    /**
+     * Requeue only what an added centroid could change: an item that already
+     * matched cannot stop matching, and one with no faces can never start.
+     */
+    fun invalidateUnmatched(): Int {
+        writableDatabase.execSQL(
+            "UPDATE score SET centroid_rev = -1 WHERE matched = 0 AND faces > 0")
+        return readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM score WHERE centroid_rev = -1", null
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+    }
+
+    /**
+     * Faces a person vouched for that the matcher had rejected.
+     *
+     * This is the one signal that can widen a centroid. Growing from confident
+     * matches cannot: those sit inside the region already covered, so it
+     * recovers nothing (measured -- see TESTING.md). A face the matcher scored
+     * BELOW its threshold, which a human then said is family, lies outside that
+     * region, which is precisely why it is worth learning.
+     *
+     * Attribution has to be unambiguous, because a keep is about the photo and
+     * not about a face. So: the item was kept, nothing in it matched anyone
+     * (otherwise the keep is explained by that match), and exactly ONE face in
+     * it came close to exactly one person. Then that face is that person.
+     */
+    fun vouchedNearMisses(minSim: Float, limit: Int): List<Triple<Long, Long, String>> {
+        val out = mutableListOf<Triple<Long, Long, String>>()
+        readableDatabase.rawQuery(
+            """SELECT f.person_id, i.id, i.uri
+               FROM label l
+               JOIN item i ON i.id = l.item_id
+               JOIN face f ON f.item_id = l.item_id
+               WHERE l.label = 'KEEP'
+                 AND f.person_id IS NOT NULL
+                 AND f.state != 'MATCH'
+                 AND f.similarity >= ?
+                 AND NOT EXISTS (
+                     SELECT 1 FROM face m WHERE m.item_id = l.item_id AND m.state = 'MATCH')
+                 AND (SELECT COUNT(*) FROM face n
+                      WHERE n.item_id = l.item_id AND n.person_id IS NOT NULL
+                        AND n.similarity >= ?) = 1
+               ORDER BY f.similarity DESC LIMIT ?""",
+            arrayOf(minSim.toString(), minSim.toString(), limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) out += Triple(c.getLong(0), c.getLong(1), c.getString(2))
+        }
+        return out
     }
 
     /** All centroids, keyed by person. Matching takes the max similarity over a person's set. */

@@ -307,11 +307,26 @@ cannot extend beyond it. Lowering the bar to reach them is exactly the drift
 that bar exists to prevent — and it would be learning from faces we cannot tell
 apart from strangers.
 
-What would work is the signal growth cannot reach: **a human saying "this one is
-them" about a face that scored below the threshold.** That extends the centroid
-into new territory and is safe by construction, because a person vouched for it.
-The `label` table already records those verdicts and `Fitter` already uses them
-for per-person thresholds. That is where to spend the effort, not here.
+What does work is the signal growth cannot reach: **a human saying "this one is
+them" about a face that scored below the threshold.** That hands over a point
+outside the covered region, vouched for by someone who can actually tell.
+Simulated on the same embeddings, seeded from three picked photos: **91% → 98%**
+overall, and the hardest person **78% → 94%**, for one false match in 435 faces.
+Built as `Clusterer.extendFromLabels`.
+
+Attribution is the whole difficulty, because a keep is a judgement about a photo
+and not about a face. The rule: the item was kept, nothing in it matched anyone
+(otherwise the keep is explained by that match), and exactly one face came close
+to exactly one person. `VouchedExtensionTest` pins each clause — a keep
+explained by a match teaches nothing, two near misses in one photo are
+ambiguous, a distant face is not a near miss, and a discard teaches nothing —
+because the cost of getting this wrong is a centroid that has quietly drifted
+onto someone else.
+
+**Not yet demonstrated on real data:** this library has no human labels at all,
+so `extendFromLabels` correctly reports "nothing vouched yet" and does nothing.
+The evidence for it is the simulation above and the instrumented tests; the
+on-device effect cannot be shown until some photos are reviewed.
 
 ## What is not covered yet
 

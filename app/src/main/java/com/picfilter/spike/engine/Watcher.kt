@@ -232,6 +232,15 @@ fun runRescuePass(ctx: Context): PassOutcome {
     // the promoter refuses DISCARD_CANDIDATE and nothing here trashes.
     Promoter.run(ctx, dryRun = false, decisions = listOf("KEEP"))
 
+    // Learn from anything the user vouched for since the last pass. Monotonic,
+    // so it requeues only the items that matched nobody; the drain picks those
+    // up on a later wake.
+    try {
+        Clusterer.extendFromLabels(ctx)
+    } catch (e: Exception) {
+        Log.w(TAG, "EXTEND skipped: ${e.javaClass.simpleName}: ${e.message}")
+    }
+
     val db2 = Db(ctx)
     val protectedNow = db2.promotionCount() - promotedBefore
     val candidates = db2.decisionCounts()

@@ -387,6 +387,7 @@ class MainActivity : ComponentActivity() {
                 com.picfilter.spike.engine.Clusterer.enrolFromUris(
                     this, intent?.getStringExtra("name") ?: "PICKTEST", uris)
             }.start()
+            "extend"    -> Thread { com.picfilter.spike.engine.Clusterer.extendFromLabels(this) }.start()
             "avatars"   -> Thread {
                 com.picfilter.spike.engine.Clusterer.rebuildAvatars(
                     this, force = intent?.getStringExtra("force") == "1")
