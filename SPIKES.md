@@ -1153,7 +1153,12 @@ filtered out before `Fitter` sees them.
 
 ## What the state actually was
 
-On the live corpus, `labelledMatches()` returns **zero rows**. All 267 human
+`labelledMatches()` returns **zero rows** on the 11:46 database backup and
+**two** on the device an hour later — both גבע, at 0.736 and 0.760, which
+`extendFromLabels` created by adding a centroid and requeueing. Either way it
+is far below `MIN_SAMPLES` for anyone, so the fitter had nothing to work with.
+
+The cause is structural rather than a shortage of effort. All 267 human
 verdicts sit on `REVIEW` items, and a `REVIEW` item has no `MATCH` face by
 construction — `matched >= 1` short-circuits to `KEEP`. They came from the
 rescue and no-face queues; the `verify` queue, the only one serving matched
@@ -1229,3 +1234,51 @@ precision on the library, and the sample below the bar is biased twice: the
 rescue queue is ordered by near-miss similarity, and the single-near-face
 clause drops crowded photos. The guards are a judgement about that bias, not a
 measurement of it.
+
+## ✅ Verified on the device — 2026-10-20
+
+`op=fit` on the real library, SM-S948B:
+
+```
+FIT target_precision=90% points=38 (above=2 below=36) floor=0.55 default=0.70
+FIT  גבע        stays at 0.70 — nothing to rescore
+FIT  גבע        == 0.70  (was 6% correct over 35, now 100% over 2; 33 below the default)
+FIT  דני        only 3 point(s) — leaving at global 0.70
+```
+
+**38 points against the 2 the old query could see.** Both people then hold at
+0.70 — גבע because the band below is 33 points of mostly-discards that cannot
+reach 90%, דני for being under `MIN_SAMPLES`. The two-sided fitter's first live
+answer is to change nothing, which is the correct answer and one the old fitter
+could not have reached: with 2 points it was under `MIN_SAMPLES` for everybody
+and did nothing at all, indistinguishably.
+
+Afterwards: `centroid_rev` 10, **0 stale scores**, every `person.threshold`
+still NULL.
+
+### 🐛 Caught by running it: a no-op fit restaled the whole library
+
+`setPersonThreshold` bumped the centroid revision unconditionally, and
+`unscoredItems` treats any score below the current revision as needing
+recomputation. So writing 0.70 over an effective 0.70 — a fit that changes no
+verdict — marked all **641** scores stale: three `:scoring` passes and about
+two minutes of face detection to recompute identical answers. A fitter run on
+a schedule would have paid that every time it agreed with itself.
+
+The guard is in two halves, because neither layer knows enough alone. `Db`
+skips the bump when the stored value is unchanged; it cannot do more, since
+whether an explicit 0.70 differs from "no row" is a question about the engine's
+default. `Fitter` holds that half and does not write at all when the fitted
+value equals the bar already in force.
+
+Pinned by `rewriting_the_same_threshold_invalidates_nothing`, and confirmed
+above: 0 stale scores after a live run.
+
+### Process note
+
+The instrumented run uninstalls the app and takes `/data/data` with it, as
+documented. Both runs here were preceded by `db-backup.sh save` and followed by
+a restore verified byte-identical by sha256. `db-backup.sh restore` needed a
+fix to survive that: a freshly reinstalled app has no `databases/` directory,
+so the restore reported a successful push and then failed to copy — in exactly
+the situation the command exists for.

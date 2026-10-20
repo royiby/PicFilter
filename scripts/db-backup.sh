@@ -46,6 +46,11 @@ case ${1:-save} in
     [[ $(head -c 15 "$SRC" 2>/dev/null) == "SQLite format 3" ]] || {
       echo "not a SQLite database: $SRC"; exit 1; }
     $ADB push "$SRC" /data/local/tmp/restore.db >/dev/null
+    # A freshly reinstalled app has no databases/ directory -- it is created
+    # when the app first opens the database. Restoring after an instrumented
+    # run is EXACTLY that case, and without this the copy fails with "No such
+    # file or directory" having already reported the push as succeeding.
+    $ADB shell "run-as $PKG mkdir -p /data/data/$PKG/databases"
     # The whole thing has to be ONE argument to adb shell, with the redirect
     # inside the quotes, so that the inner run-as'd sh performs it. Written any
     # other way the outer shell does the redirect as the shell user and gets

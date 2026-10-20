@@ -144,6 +144,7 @@ object Fitter {
 
     fun fit(ctx: Context, target: Double = TARGET_PRECISION) {
         val db = Db(ctx)
+        val existing = db.personThresholds()
         val matches = db.labelledMatches()
         val nearMisses = db.labelledNearMisses(ABSOLUTE_FLOOR)
         val rows = (matches + nearMisses).map {
@@ -163,6 +164,22 @@ object Fitter {
                 "raise thresholds — review 'More family photos' to let it lower them")
         }
 
+        /**
+         * Write only when the bar moves. Storing a number equal to the bar
+         * already in force changes no verdict, and [Db.setPersonThreshold]
+         * bumps the centroid revision, which restales every score in the
+         * database. A fit that agrees with the status quo must be free.
+         */
+        fun apply(pid: Long, name: String, t: Float): Boolean {
+            val effective = existing[pid] ?: FaceEngine.MATCH_THRESHOLD
+            if (t == effective) {
+                Log.i(TAG, "FIT  %-10s stays at %.2f — nothing to rescore".format(name, t))
+                return false
+            }
+            db.setPersonThreshold(pid, t)
+            return true
+        }
+
         for ((pid, group) in rows.groupBy { it.personId }) {
             val name = group.first().name
             val below = group.count { it.sim < FaceEngine.MATCH_THRESHOLD }
@@ -177,15 +194,15 @@ object Fitter {
                 Log.w(TAG, "FIT  %-10s CANNOT reach %.0f%% at any threshold (best base %.0f%%, n=%d)".format(
                     name, target * 100, baseline * 100, group.size))
                 // fail safe: demand near-certainty rather than leaving it permissive
-                db.setPersonThreshold(pid, 0.85f)
-                Log.w(TAG, "FIT  %-10s -> 0.85 (fail-safe)".format(name))
+                if (apply(pid, name, 0.85f)) Log.w(TAG, "FIT  %-10s -> 0.85 (fail-safe)".format(name))
             } else {
-                db.setPersonThreshold(pid, fitted.threshold)
+                val moved = apply(pid, name, fitted.threshold)
                 val prec = fitted.precision
                     ?.let { "now %.0f%% over %d".format(it * 100, fitted.kept) }
                     ?: "nothing above it to measure"
-                Log.i(TAG, "FIT  %-10s -> %.2f  (was %.0f%% correct over %d, %s; %d below the default) — %s".format(
-                    name, fitted.threshold, baseline * 100, group.size, prec, below, fitted.note))
+                Log.i(TAG, "FIT  %-10s %s %.2f  (was %.0f%% correct over %d, %s; %d below the default) — %s".format(
+                    name, if (moved) "->" else "==", fitted.threshold,
+                    baseline * 100, group.size, prec, below, fitted.note))
             }
         }
         db.close()

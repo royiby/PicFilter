@@ -11,7 +11,7 @@ made.
 ```bash
 ./gradlew :app:testDebugUnitTest         # 56 JVM tests, ~5s, no device
 scripts/db-backup.sh save                # ALWAYS, before the next line
-./gradlew :app:connectedDebugAndroidTest # 34 instrumented tests, needs a phone
+./gradlew :app:connectedDebugAndroidTest # 35 instrumented tests, needs a phone
 scripts/smoke.sh static                  # repo checks, no device
 scripts/smoke.sh                         # full device walk-through
 ```
@@ -57,6 +57,7 @@ Real SQLite, real WorkManager, on a device.
 | `SyncedReclaimTest` | Reclaiming a local copy must not invite the app to copy it straight back. The folder and the promotion table together decide what still needs rescuing, so a file deliberately removed — because it is in the cloud and the space was reclaimed — has to stay recorded and stay out of the promotion queue. |
 | `VouchedExtensionTest` | Attribution for `extendFromLabels`, clause by clause: a keep explained by an existing match teaches nothing, two near misses in one photo are ambiguous, a distant face is not a near miss, and a discard teaches nothing. A keep is a judgement about a *photo*, not about a face — getting this wrong means a centroid quietly drifted onto someone else. |
 | `LabelledNearMissTest` | The query supplying the below-the-bar half of a threshold, clause by clause — and the boundary with `vouchedNearMisses`: the same discarded near miss must give the fitter a negative point and teach a centroid nothing. |
+| `ScoreStalenessTest` *(also)* | Rewriting a threshold it already holds invalidates nothing. The bump restales every score — 641 of them, three passes and two minutes of face detection — so a fitter agreeing with itself must be free, or it becomes the most expensive thing it does. |
 | `WatcherArmingTest` | Re-arming the content trigger never cancels a trigger already waiting. Arming used `REPLACE`, and since every app open re-arms to heal a broken chain, routine use kept resetting the trigger — and cancelled a run in progress during testing. Also: a cancelled slot is re-armable, so a force-stop is recoverable. |
 
 **Every DB test passes an explicit database name.** Instrumented tests run as

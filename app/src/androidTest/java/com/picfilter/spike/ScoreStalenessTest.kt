@@ -91,6 +91,26 @@ class ScoreStalenessTest {
         assertEquals(1, db.unscoredCount())
     }
 
+    @Test fun rewriting_the_same_threshold_invalidates_nothing() {
+        // The bump restales every score in the database -- 641 of them on the
+        // real device, three scoring passes and two minutes of face detection.
+        // A fitter that re-confirms a threshold it already holds must not cost
+        // that, or agreeing with itself becomes the most expensive thing it
+        // does.
+        val id = anItem()
+        val pid = db.upsertPerson("נועה")
+        db.addCentroid(pid, vec(), 8)
+        db.setPersonThreshold(pid, 0.82f)
+        score(id)
+        assertEquals(0, db.unscoredCount())
+
+        db.setPersonThreshold(pid, 0.82f)
+        assertEquals("the bar did not move", 0, db.unscoredCount())
+
+        db.setPersonThreshold(pid, 0.83f)
+        assertEquals("but this one did", 1, db.unscoredCount())
+    }
+
     @Test fun wiping_enrolment_also_invalidates() {
         val id = anItem()
         db.addCentroid(db.upsertPerson("דני"), vec(), 10)

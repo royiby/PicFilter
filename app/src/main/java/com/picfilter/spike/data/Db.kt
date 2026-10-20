@@ -1063,7 +1063,25 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         return out
     }
 
+    /**
+     * Only a bar that actually MOVES invalidates a score.
+     *
+     * The bump restales every score in the database -- 641 of them here, which
+     * is three scoring passes and about two minutes of face detection. Writing
+     * the same number back does not move the boundary, so it must not cost
+     * that. A fitter that re-confirms its thresholds on a schedule would
+     * otherwise rescore the whole library every time it agreed with itself.
+     *
+     * This can only compare against what is STORED. A person on the global
+     * default has no row value, and whether an explicit threshold equal to
+     * that default is a change is a question about the default -- which lives
+     * in the engine, not here. [Fitter] holds that half.
+     */
     fun setPersonThreshold(personId: Long, t: Float) {
+        val current = readableDatabase.rawQuery(
+            "SELECT threshold FROM person WHERE id=?", arrayOf(personId.toString())
+        ).use { if (it.moveToFirst() && !it.isNull(0)) it.getFloat(0) else null }
+        if (current == t) return
         writableDatabase.execSQL("UPDATE person SET threshold=? WHERE id=?",
             arrayOf<Any>(t, personId))
         bumpCentroidRev()
