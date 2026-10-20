@@ -22,9 +22,13 @@ import androidx.core.view.WindowInsetsCompat
 import com.picfilter.spike.data.Db
 
 /**
- * Phase 2 review UI. Two modes:
- *   golden — label individual items KEEP/DISCARD to build the golden set
- *   dupes  — verify proposed near-duplicate groups (SAME / DIFFERENT)
+ * Phase 2 review UI. Six queues, chosen by the "mode" extra:
+ *   golden — unlabelled items, stratified 40 per reason, to build the golden set
+ *   verify — everything promoted, WEAKEST MATCH FIRST, so false keeps surface
+ *   rescue — REVIEW items with faces, ordered by near-miss similarity
+ *   noface — NO_FACE_PLAIN items: places, drawings, documents
+ *   junk   — unjudged DISCARD_CANDIDATEs
+ *   dupes  — proposed near-duplicate groups (SAME / DIFFERENT)
  *
  * This is the surface a human actually uses, so it is launched from the app
  * icon, not adb. Nothing here deletes or moves anything: it only records

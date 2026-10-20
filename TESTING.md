@@ -9,9 +9,9 @@ made.
 ## Running it
 
 ```bash
-./gradlew :app:testDebugUnitTest         # 27 JVM tests, ~5s, no device
+./gradlew :app:testDebugUnitTest         # 43 JVM tests, ~5s, no device
 scripts/db-backup.sh save                # ALWAYS, before the next line
-./gradlew :app:connectedDebugAndroidTest # 14 instrumented tests, ~10s, needs a phone
+./gradlew :app:connectedDebugAndroidTest # 26 instrumented tests, needs a phone
 scripts/smoke.sh static                  # repo checks, no device
 scripts/smoke.sh                         # full device walk-through
 ```
@@ -38,6 +38,9 @@ Pure logic, no device. These run in seconds and should stay that way.
 | `MatchFaceTest` | Three-state matching. A face below the quality gate is `INDETERMINATE`, never a stranger. Per-person thresholds override the default and do not leak between people. The nearest person survives a miss, because the review screen shows it. Pins `MATCH_THRESHOLD` at the measured 0.70 — at 0.55 precision was 47%. |
 | `ClusterAverageTest` | Average linkage does not chain. A bridging face within single-linkage reach of two tight groups must not merge them; greedy linkage did, and produced a 205-face garbage cluster. Also pins `CLUSTER_THRESHOLD`. |
 | `VecMathTest` | `l2` and `cos` — including `l2` on a zero vector, which must not divide by zero. |
+| `EmptyCentroidsTest` *(in `MatchFaceTest.kt`)* | The 290-mislabelled-photo bug, in two halves: an empty centroid set really does read as a clean miss rather than as uncertainty, and a clean miss on a crowd really does become a discard candidate. Neither is wrong alone; together they are why `Pipeline.score` refuses to run when people are enrolled and no centroids load. |
+| `DestNameTest` | Promotion is safe to re-run. The promotion table is what PixKin *believes* it copied and the folder is what is *there*; clearing app data drifts them apart, and MediaStore writes "name (1).jpg" rather than overwriting. Pins that the folder is the authority, and that same-name-different-size is a real collision rather than a skip. |
+| `WhatsAppFolderTest` | Which folders onboarding samples. WhatsApp has used several folder shapes over the years and the bucket names differ again; getting this wrong is quiet — the scan still runs, it just learns the wrong faces. |
 
 `matchFace` was lifted out of `FaceEngine` to make this possible: it is pure
 arithmetic that was trapped in a class needing a TFLite interpreter.
@@ -51,6 +54,7 @@ Real SQLite, real WorkManager, on a device.
 | `ScoreStalenessTest` | Enrolling a person, refitting a threshold, or wiping enrolment invalidates the existing scores. Without this, 638 photos stayed scored against nobody: `KEEP` was 0 and auto-rescue would have woken on every new photo and rescued nothing. Also: rescoring must not accumulate `face` rows. |
 | `DbUpgradeTest` | The v5→v6 migration, on a database shaped like the one on the phone — scores first, people enrolled afterwards. That database *is* the bug, so the upgrade must mark its scores stale. And the migration must keep the scored corpus: rebuilding 638 scores costs two minutes of face detection. |
 | `SyncedReclaimTest` | Reclaiming a local copy must not invite the app to copy it straight back. The folder and the promotion table together decide what still needs rescuing, so a file deliberately removed — because it is in the cloud and the space was reclaimed — has to stay recorded and stay out of the promotion queue. |
+| `VouchedExtensionTest` | Attribution for `extendFromLabels`, clause by clause: a keep explained by an existing match teaches nothing, two near misses in one photo are ambiguous, a distant face is not a near miss, and a discard teaches nothing. A keep is a judgement about a *photo*, not about a face — getting this wrong means a centroid quietly drifted onto someone else. |
 | `WatcherArmingTest` | Re-arming the content trigger never cancels a trigger already waiting. Arming used `REPLACE`, and since every app open re-arms to heal a broken chain, routine use kept resetting the trigger — and cancelled a run in progress during testing. Also: a cancelled slot is re-armable, so a force-stop is recoverable. |
 
 **Every DB test passes an explicit database name.** Instrumented tests run as

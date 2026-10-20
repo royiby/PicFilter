@@ -95,13 +95,24 @@ matched_enrolled >= 1                          →  KEEP, never proposed
 │        ▼                                                    │
 │  score ──▶ KEEP ───────▶ copy to /Pictures/PicFilter/        │
 │        │                 (Google Photos backs up this folder)│
-│        └──▶ DISCARD ───▶ nightly MediaStore.createTrashRequest│
-│                          (one dialog per batch)              │
+│        └──▶ DISCARD ───▶ reported only, never trashed        │
 │  Review UI: notification ──▶ swipe grid                      │
 └─────────────────────────────────────────────────────────────┘
           Google Photos backup for WhatsApp folders: OFF
           Google Photos backup for Camera + PicFilter:  ON
 ```
+
+**As built, two things differ from this sketch.** Storage is raw SQLite behind a
+typed DAO, not Room — Room needs KSP and AGP 9.4.1's bundled Kotlin makes the
+KSP version story a build fight; the tables match the planned entities so the
+swap stays mechanical. And the scoring pass runs in a separate `:scoring`
+process that exits when it drains, to contain an ML Kit native-memory leak
+(~84 MB per 100 images) that cannot be fixed from here. See TESTING.md.
+
+**Nothing is trashed automatically, and the automation has no path to it.**
+`Promoter.run` refuses `DISCARD_CANDIDATE` with a `require`, and no trash or
+delete call is reachable from `engine/` at all. Copying is additive and
+reversible; deleting is not.
 
 **The gatekeeper trick.** Turn off Google Photos backup for the WhatsApp device
 folders; turn it on for a new `/sdcard/Pictures/PicFilter/`. The app's only job
@@ -190,13 +201,22 @@ produced a clear recurring-people head (92,48,46,45,42,38,34) over a long
 singleton tail, with the top 10 clusters covering 43% of all faces.
 
 ```
-install -> permissions -> sample ~600 recent images (~4 min, measured)
+install -> permissions -> sample ~600 recent images (~4.5 min, measured)
         -> detect + embed under the STRICT gate -> cluster -> rank by size
         -> show top 15 candidates, each a montage of up to 6 crops
         -> [name] / [not important] / [these aren't the same person]
         -> named clusters' centroids become enrolled people
         -> warn about unclaimed recurring faces
 ```
+
+**A second path was added because 4.5 minutes is too long to wait.** The user
+can instead pick a handful of photos of one person. Measured cost, by rebuilding
+each person's centroid from only their N biggest faces: 80% of their faces still
+match from one photo, 91% from three, against 100% from the full cluster.
+Precision is untouched, so the whole cost falls on faces that stop being
+recognised — the dangerous direction, since an unmatched family face can leave a
+crowd photo in the discard pile. Hence several varied photos, and a warning when
+fewer than three are used.
 
 **Enrolment uses a stricter gate than scoring.** Scoring is biased to recall —
 every face must be judged, and an unjudgeable one becomes INDETERMINATE and
@@ -228,10 +248,19 @@ Other decisions:
   faces drift.
 - Singleton clusters are **stored but not offered** as candidates — dropping
   them at write time eroded the face set on every regroup.
-- **Cluster threshold 0.65**, not the spike's 0.55. At 0.55 the largest cluster
-  held 20% of all faces on a real library. The errors are asymmetric: over-split
-  is recoverable (name the clusters identically; centroids merge under one
-  person), over-merge permanently poisons a centroid. Bias high. See SPIKES.md.
+- **Average linkage at 0.60**, after greedy clustering at 0.65 was replaced.
+  The errors are asymmetric: over-split is recoverable (name the clusters
+  identically; centroids merge under one person), over-merge permanently
+  poisons a centroid. So bias high — but the first version biased the wrong
+  knob. Greedy merges against a *running centroid*, which chains: the centroid
+  drifts toward each new member, pulling in unrelated faces while pushing
+  genuine matches below threshold. The owner saw both failures at once, which is
+  the signature of chaining rather than a mis-set threshold. Average linkage
+  compares against the mean similarity to every member, so one drifting member
+  cannot drag the group, and Lance-Williams keeps it O(n²) — 433 faces in well
+  under a second. Measured on the same faces, **avg-link @0.60 dominates greedy
+  @0.65 on both axes at once**: largest cluster 13 vs 18, singletons 79 vs 93.
+  Not a trade-off. See SPIKES.md.
 - Clustering can be redone from stored embeddings without re-scanning, so
   threshold work costs seconds rather than the 4-minute extraction.
 
@@ -321,21 +350,41 @@ mediocre.** Missing junk costs nothing. Trashing a real memory does not.
 - Auto-*keep* is allowed. Auto-*discard* ships **disabled**, and is only enabled
   per-class once the golden set proves it.
 - Trash, never delete — `createTrashRequest`, which leaves a 30-day recovery
-  window, plus our own action log in Room. Never `createDeleteRequest` in v1.
+  window, plus our own `action_log` table. Never `createDeleteRequest` in v1.
 - Protected, never proposed: any enrolled match at any confidence, favorited,
   in an album, edited, sent-by-me (`/Sent/` subfolder), video over N seconds.
 - **Golden set:** hand-label ~200 WhatsApp items before trusting a threshold.
   Track precision/recall per class, per release.
 
+### ⚠️ CORRECTION 2026-10-19: "false keeps are the safe error" was wrong
+
+The asymmetry above is right about data loss and was then over-applied. Because
+a false *keep* loses nothing, it was filed as harmless and stopped being
+measured at all — while every unreviewed-bucket worry went to
+`DISCARD_CANDIDATE`. When precision above the threshold was finally measured it
+was **47%**, and the project's own motivating photo had been rescued after its
+owner marked it "not mine".
+
+A false keep copies someone else's children into the user's cloud library and
+spends their quota. "Safe" only ever meant "does not lose data". Both buckets
+need measuring, and `verify` review mode now walks everything promoted,
+weakest match first.
+
 ### Two failure modes specific to this use case
 1. **Your kid is in the class photo but missed** — small, turned, or blurry face
-   → scored as crowd junk. Mitigate: bias the *enrolled-match* threshold toward
-   recall, impose a minimum face size before a face counts toward `face_count`,
-   and keep crowd shots review-only until measured.
+   → scored as crowd junk. Mitigate: impose a minimum face size before a face
+   counts toward `face_count`, and keep crowd shots review-only until measured.
+   *"Bias the enrolled-match threshold toward recall" was the original mitigation
+   and measurement reversed it:* a permissive bar matched strangers, so the
+   recall now goes through human review instead of straight into the cloud.
 2. **Children's faces drift fast.** Face recognition is measurably weaker on
    young kids, and a 6-year-old's centroid degrades within a year. Mitigate:
    prompt for re-enrollment periodically, and store multiple centroids per person
    with capture dates rather than one averaged vector.
+   **Confirmed, and worse than drift.** At a 0.55 bar one child's centroid was
+   24.7% correct over 73 matches while three adults were 100%: in a library of
+   school-group photos it was matching *"child of that age"*, not that child.
+   This is why thresholds are now fitted per person rather than globally.
 
 ---
 
@@ -359,11 +408,13 @@ Results in [SPIKES.md](SPIKES.md). Run on emulator, **Android 17 / SDK 37**.
       images, 13 ms/face, ~12 faces/s. Clustering gives a clear recurring-people
       head (92,48,46,45,42,38,34) over a long singleton tail; **top 10 clusters
       = 43% of all faces**. The "top 10 faces" premise holds, found label-free.
-- [ ] **Labeled** accuracy per person (esp. children) — still needs Takeout.
-      Clustering proves embeddings are *meaningful*, not that they are *correct*;
-      over-split clusters would be invisible in that view.
-- [ ] Google Photos per-folder backup toggle (WhatsApp off, `Pictures/PicFilter`
-      on). Needs a real account — manual steps in SPIKES.md.
+- [x] **Labeled** accuracy per person — answered without Takeout in the end.
+      267 human verdicts from the review queues settled it: at 0.55 one child's
+      centroid was 24.7% correct over 73 matches while three adults were 100%.
+      Takeout's remaining value is measuring *recall* independently, since this
+      method can only sample what the scorer already routed to review.
+- [x] Google Photos per-folder backup toggle — **PASS**, verified by finding a
+      rescued photo in the cloud under its original date rather than today.
 
 Two requirements that came out of the spikes:
 - **Detect Android 14+ partial media grants** (`READ_MEDIA_VISUAL_USER_SELECTED`)
@@ -372,18 +423,39 @@ Two requirements that came out of the spikes:
   files. Catch `FileNotFoundException` and treat it as a dead row.
 - Chunk trash requests at **2000 URIs** max per call.
 
-### Phase 1 — Enrolment + scorer
-Room schema, enrollment flow (pick photos → centroids), detect/embed/match,
-scoring, debug screen showing per-item signals. No actions yet.
+### Phase 1 — Enrolment + scorer — **DONE**
+Schema (raw SQLite, not Room), enrolment flow, detect/embed/match, scoring,
+per-item signals. No actions taken.
 
-### Phase 2 — Review UI + golden set
-Swipe grid tiered by class, keep/discard/undo, near-dupe groups side by side.
-Hand-label the golden set here. Report precision/recall.
+### Phase 2 — Review UI + golden set — **DONE**
+Six review queues, keep/discard/undo, near-dupe groups side by side, grid or
+single-card. 267 labels recorded; precision measured and the match threshold
+refitted from them.
 
-### Phase 3 — Automation  ← *first shipped value*
-ContentObserver + WorkManager, copy keepers to `Pictures/PicFilter/`, nightly
-batched trash request, daily digest notification. Backup toggles documented as
-one-time setup.
+### Phase 3 — Automation — **DONE**, and it was the first shipped value
+WorkManager with a **content-URI trigger** rather than a ContentObserver — the
+OS wakes the job on a media change, so a new photo is handled in ~30 s instead
+of waiting out a poll, and an empty wake costs one query (0.009 mAh). A long
+periodic job is the safety net for what the trigger misses: changes while the
+device was off, a Doze window that swallowed the callback, a chain broken by a
+force-stop. Content triggers only exist on one-time work, so each run arms the
+next — in **two alternating slots**, because a worker cannot `REPLACE` the
+unique work it is itself running.
+
+Keepers are copied to `Pictures/PicFilter/` and a digest notification is posted
+when something changed. **No nightly trash request**, contrary to the original
+sketch: auto-discard would have to be proven first, and copying is the only
+reversible half. The pass runs in a `:scoring` process that exits afterwards,
+and scores at most 300 images, scheduling a continuation if a backlog remains.
+
+### Phase 3b — Reclaim — **DONE** *(not in the original plan)*
+`Pictures/PicFilter` only ever grew: every rescued photo duplicated a WhatsApp
+original forever. Promotion rows gained `synced_at`, so a local copy that has
+reached the cloud can be trashed without the next pass copying it straight back.
+Synced is an *inference*, not a fact we can check — the API that could answer is
+closed — so it rests on the folder being verifiably backed up plus a 24-hour
+grace period, takes the user's confirmation, and trashes rather than deletes.
+On the device: 111 files and 43 MB down to one file, with nothing recopied.
 
 ### Phase 4 — Backlog
 Two routes, use both:
@@ -398,9 +470,17 @@ Two routes, use both:
 Honest framing: cloud-only deletion stays manual. Google provides no API for it.
 Realistic win is a couple of hours instead of twenty — not one click.
 
-### Phase 5 — Hardening
-Battery/thermal tuning, multi-centroid-per-person, re-enrollment prompts,
-threshold tuning against the golden set, storage-reclaimed reporting.
+### Phase 5 — Hardening — **partial**
+Done: multi-centroid-per-person, per-person threshold fitting against the golden
+set, battery and thermal baselines (scoring is ~0.042 mAh/photo; battery is not
+a concern), native-heap containment, storage reclaim.
+
+Outstanding, by risk: a **held-out** precision figure — 94.8% is in-sample, and
+per-person thresholds are currently unfitted because only 2 labelled matches
+exist against `Fitter`'s minimum of 6; an instrumented test that clicks a review
+button and asserts a row appears; re-enrolment prompts; **video** (315 WhatsApp
+videos are entirely unhandled); and the `DUPE_HAMMING` threshold, the one
+tunable still unmeasured.
 
 ---
 

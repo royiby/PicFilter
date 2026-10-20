@@ -491,7 +491,8 @@ class MainActivity : ComponentActivity() {
             "sweepcl"   -> Thread { com.picfilter.spike.engine.Clusterer.sweepThresholds(this) }.start()
             "recluster" -> Thread {
                 com.picfilter.spike.engine.Clusterer.recluster(
-                    this, intent?.getStringExtra("t")?.toFloatOrNull() ?: 0.65f)
+                    this, intent?.getStringExtra("t")?.toFloatOrNull()
+                        ?: com.picfilter.spike.engine.FaceEngine.CLUSTER_THRESHOLD)
             }.start()
             "bootstrap" -> Thread {
                 com.picfilter.spike.engine.Clusterer.bootstrap(
