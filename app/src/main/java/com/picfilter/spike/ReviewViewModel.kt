@@ -170,7 +170,6 @@ class ReviewViewModel(app: Application, private val state: SavedStateHandle) :
     }
 
     override fun onCleared() {
-        super.onCleared()
         dbq.closeAfterPending()
     }
 

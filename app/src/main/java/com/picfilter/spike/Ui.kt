@@ -725,7 +725,7 @@ object Ui {
             layoutParams = LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         })
-        addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        addView(MaterialButton(ctx, null, android.R.attr.borderlessButtonStyle).apply {
             text = actionLabel
             setTextColor(primary(ctx))
             typeface = font(ctx, 600)

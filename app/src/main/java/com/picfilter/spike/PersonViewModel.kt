@@ -79,7 +79,6 @@ class PersonViewModel(app: Application, state: SavedStateHandle) : AndroidViewMo
     }
 
     override fun onCleared() {
-        super.onCleared()
         dbq.closeAfterPending()
     }
 }

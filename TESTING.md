@@ -461,6 +461,39 @@ prove the mechanism is right, not that nothing else breaks at that size — the
 queries themselves are still unbounded, and `Paging 3` over them is the next
 step if a real library gets there.
 
+## Upgrading the inference runtime
+
+`org.tensorflow:tensorflow-lite` stops at 2.17.0 and pins `litert 1.0.1`,
+whose native libraries are not aligned for the 16 KB memory pages Android 15
+introduced. Lint flagged three of them, and on a 16 KB device an unaligned
+library does not load at all. The app is on `com.google.ai.edge.litert:litert`
+directly now — the same `org.tensorflow.lite.Interpreter` API, no code change.
+
+**Swapping the thing that produces embeddings invalidates every threshold in
+the app if the numbers move**, so the test is equality, not "it still runs":
+
+1. Back up, and record the fingerprint —
+   `SELECT COUNT(*), SUM(similarity) FROM face WHERE similarity IS NOT NULL`.
+2. Note the per-face similarities of the photos `op=unscore` will target.
+3. Upgrade, then `op=unscore --es n 5` and `op=score --es limit 5`.
+4. Compare. The similarities must match to six decimal places and the
+   corpus-wide sum must be unchanged, because nothing else was re-scored.
+
+Measured across two runs: every similarity reproduced exactly (0.286414,
+0.413478, 0.309158, 0.318958) and the fingerprint held at 1156 faces,
+sum 454.099573. `op=modelcheck` also reports the same shape, 192-d and
+batch 2.
+
+LiteRT 2.3.0 is declined for now and the reason is in `build.gradle.kts`: it
+ships Kotlin 2.4.0 metadata against this project's 2.2.0 toolchain, so taking
+it is a Kotlin upgrade rather than a dependency bump, and would want this
+whole procedure run again.
+
+`targetSdk` stays at 36 while `compileSdk` moves to 37. Compiling against a
+newer platform is safe; targeting one opts the app in to its behaviour
+changes — background limits, permission semantics — which is a change to
+verify on a device, not a number to bump alongside the dependencies.
+
 ## State, and what happens when the screen is destroyed
 
 Every screen has a ViewModel now. Before, the Activities held the queue, the
