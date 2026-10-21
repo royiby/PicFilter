@@ -19,6 +19,8 @@ import java.nio.ByteOrder
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.sqrt
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.scale
 
 private const val TAG = "PICFILTER"
 
@@ -208,7 +210,7 @@ class FaceEngine(
                         postTranslate(-cx, -cy); postRotate(-angle)
                         postScale(scale, scale); postTranslate(IN / 2f, IN * 0.42f)
                     }
-                    val outBmp = Bitmap.createBitmap(IN, IN, Bitmap.Config.ARGB_8888)
+                    val outBmp = createBitmap(IN, IN, Bitmap.Config.ARGB_8888)
                     Canvas(outBmp).drawBitmap(src, m, null)
                     return outBmp
                 }
@@ -223,7 +225,7 @@ class FaceEngine(
         val ww = w.coerceAtMost(src.width - x); val hh = h.coerceAtMost(src.height - y)
         if (ww < 2 || hh < 2) return null
         val sub = Bitmap.createBitmap(src, x, y, ww, hh)
-        val scaled = Bitmap.createScaledBitmap(sub, IN, IN, true)
+        val scaled = sub.scale(IN, IN, true)
         if (scaled !== sub) sub.recycle()
         return scaled
     }

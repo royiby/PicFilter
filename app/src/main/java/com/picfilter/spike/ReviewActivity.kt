@@ -32,6 +32,8 @@ import com.picfilter.spike.data.DbQueue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.core.net.toUri
+import androidx.core.view.isEmpty
 
 /**
  * Phase 2 review UI. Six queues, chosen by the "mode" extra:
@@ -270,7 +272,7 @@ class ReviewActivity : ComponentActivity() {
             image.setImageDrawable(null); strip.visibility = View.GONE
             actionBar.visibility = View.GONE
             undoBtn.visibility = if (vm.historyEmpty) View.GONE else View.VISIBLE
-            if (empty.childCount == 0) empty.addView(Ui.emptyState(this, getString(
+            if (empty.isEmpty()) empty.addView(Ui.emptyState(this, getString(
                 if (vm.historyEmpty) R.string.empty_nothing_here
                 else R.string.empty_all_done)))
             empty.visibility = View.VISIBLE
@@ -330,7 +332,8 @@ class ReviewActivity : ComponentActivity() {
             info.text = getString(
                 R.string.detail_item, r.decision, r.reason,
                 r.faces, r.matched, r.indet, sim(r.textFrac),
-            ) + (r.dupeGroup?.let { getString(R.string.detail_dupe_group, it) } ?: "")
+                r.dupeGroup?.let { getString(R.string.detail_dupe_group, it) } ?: "",
+            )
         }
     }
 
@@ -347,7 +350,7 @@ class ReviewActivity : ComponentActivity() {
      * in memory.
      */
     private fun showImage(uriStr: String, target: Int = CARD_PX) {
-        image.load(Uri.parse(uriStr)) { size(target) }
+        image.load(uriStr.toUri()) { size(target) }
     }
 
     /** A row of small thumbnails. */
@@ -358,7 +361,7 @@ class ReviewActivity : ComponentActivity() {
         for ((i, u) in uris.withIndex()) {
             strip.addView(Ui.thumb(this, 80).also { t ->
                 if (onTap != null) t.setOnClickListener { onTap(i) }
-                t.load(Uri.parse(u)) { size(GRID_THUMB_PX); scale(Scale.FILL) }
+                t.load(u.toUri()) { size(GRID_THUMB_PX); scale(Scale.FILL) }
             })
         }
     }

@@ -12,6 +12,10 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.picfilter.spike.data.Db
 import java.io.FileNotFoundException
+import androidx.core.net.toUri
+import androidx.core.graphics.scale
+import androidx.core.graphics.get
+import android.os.Environment
 
 private const val TAG = "PICFILTER"
 
@@ -19,7 +23,8 @@ enum class Decision { KEEP, REVIEW, DISCARD_CANDIDATE }
 
 object Pipeline {
 
-    private const val ENROLL_PATH = "Pictures/PicFilterEnroll/%"
+    private const val ENROLL_DIR = "Pictures/PicFilterEnroll"
+    private const val ENROLL_PATH = "$ENROLL_DIR/%"
     private const val TEXT_FRAC_HEAVY = 0.08f
     private const val TEXT_BLOCKS_HEAVY = 10
     private const val DUPE_HAMMING = 6
@@ -71,7 +76,7 @@ object Pipeline {
                 "rejected_multiface=$rejectedMulti rejected_quality=$rejectedQuality")
             if (byPerson.isEmpty()) {
                 Log.w(TAG, "ENROLL nothing enrolled — put photos in " +
-                    "/sdcard/Pictures/PicFilterEnroll/<PersonName>/")
+                    "${Environment.getExternalStorageDirectory()}/$ENROLL_DIR/<PersonName>/")
             }
             for ((person, vecs) in byPerson) {
                 val centroid = FloatArray(eng.dim)
@@ -162,7 +167,7 @@ object Pipeline {
 
         FaceEngine(ctx).use { eng ->
             for ((itemId, uriStr, _) in db.unscoredItems(limit)) {
-                val uri = Uri.parse(uriStr)
+                val uri = uriStr.toUri()
                 try {
                     val img = eng.decode(ctx, uri) ?: run { dead++; null } ?: continue
                     val obs = eng.observe(img)
@@ -279,7 +284,7 @@ object Pipeline {
             var done = 0
             for (u in uris) {
                 try {
-                    val img = eng.decode(ctx, Uri.parse(u)) ?: continue
+                    val img = eng.decode(ctx, u.toUri()) ?: continue
                     if (stage >= 2) {
                         val obs = eng.observe(img)
                         for (o in obs) eng.match(o, centroids)
@@ -330,10 +335,10 @@ object Pipeline {
     }
 
     private fun dhash(bmp: Bitmap): Long {
-        val small = Bitmap.createScaledBitmap(bmp, 9, 8, true)
+        val small = bmp.scale(9, 8, true)
         var h = 0L; var bit = 0
         for (y in 0 until 8) for (x in 0 until 8) {
-            val p1 = small.getPixel(x, y); val p2 = small.getPixel(x + 1, y)
+            val p1 = small[x, y]; val p2 = small[x + 1, y]
             fun lum(p: Int) = 0.299 * (p shr 16 and 0xFF) + 0.587 * (p shr 8 and 0xFF) + 0.114 * (p and 0xFF)
             if (lum(p1) > lum(p2)) h = h or (1L shl bit)
             bit++

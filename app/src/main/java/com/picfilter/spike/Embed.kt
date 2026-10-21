@@ -19,6 +19,9 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlin.math.atan2
 import kotlin.math.sqrt
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.set
+import androidx.core.graphics.scale
 
 private const val TAG = "PICFILTER"
 
@@ -144,10 +147,10 @@ object Embed {
         Log.i(TAG, "CHECK in=${inShape.joinToString("x")} out_dim=$dim batch=$batch")
 
         fun synth(seed: Int): Bitmap {
-            val bm = Bitmap.createBitmap(IN, IN, Bitmap.Config.ARGB_8888)
+            val bm = createBitmap(IN, IN, Bitmap.Config.ARGB_8888)
             for (y in 0 until IN) for (x in 0 until IN) {
                 val v = ((x * 7 + y * 13 + seed * 53) % 256)
-                bm.setPixel(x, y, (0xFF shl 24) or (v shl 16) or ((255 - v) shl 8) or ((v * 2) % 256))
+                bm[x, y] = (0xFF shl 24) or (v shl 16) or ((255 - v) shl 8) or ((v * 2) % 256)
             }
             return bm
         }
@@ -198,14 +201,14 @@ object Embed {
                     postScale(scale, scale)
                     postTranslate(IN / 2f, IN * 0.42f)  // eyes slightly above centre
                 }
-                val out = Bitmap.createBitmap(IN, IN, Bitmap.Config.ARGB_8888)
+                val out = createBitmap(IN, IN, Bitmap.Config.ARGB_8888)
                 android.graphics.Canvas(out).drawBitmap(src, m, null)
                 out
             } else {
                 val x = box.left.coerceAtLeast(0); val y = box.top.coerceAtLeast(0)
                 val w = minOf(box.width(), src.width - x); val h = minOf(box.height(), src.height - y)
                 if (w <= 0 || h <= 0) return null
-                Bitmap.createScaledBitmap(Bitmap.createBitmap(src, x, y, w, h), IN, IN, true)
+                Bitmap.createBitmap(src, x, y, w, h).scale(IN, IN)
             }
         } catch (e: Exception) { null }
     }

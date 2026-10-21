@@ -32,7 +32,9 @@ private const val TAG = "PICFILTER"
 class PersonViewModel(app: Application, state: SavedStateHandle) : AndroidViewModel(app) {
 
     val personId: Long = state["person_id"] ?: -1L
-    val personName: String = state["person_name"] ?: ""
+    /** Blank rather than null would put an empty title bar on the screen. */
+    val personName: String = state["person_name"]
+        ?: app.getString(R.string.person_fallback)
 
     private val db = Db(app)
     private val dbq = DbQueue(db)

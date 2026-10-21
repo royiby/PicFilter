@@ -24,4 +24,30 @@
     -->
     <issue id="PluralsCandidate" severity="informational" />
 
+    <!--
+      The wordmark is an 8,677-character path. Lint is right that long vector
+      paths cost time to parse, and it is the logo: one instance, drawn once
+      when a screen is built, never animated. Simplifying it is a design
+      change to the brand mark, not a performance fix, so it is a decision
+      rather than a finding.
+    -->
+    <issue id="VectorPath">
+        <ignore path="src/main/res/drawable/ic_logo_wordmark.xml" />
+        <ignore path="src/main/res/drawable-night/ic_logo_wordmark.xml" />
+    </issue>
+
+    <!--
+      Kept deliberately, not forgotten. The brand colours are the record of
+      what the mark IS -- the logo drawables carry their own literals so it
+      renders the same whatever the theme does -- and pk_success completes the
+      status set beside pk_warning and pk_error. The tagline and the scan's
+      first phase label are copy the screens may want back.
+    -->
+    <issue id="UnusedResources">
+        <ignore regexp="R.color.brand_" />
+        <ignore regexp="R.color.pk_success" />
+        <ignore regexp="R.string.tagline" />
+        <ignore regexp="R.string.onboard_starting" />
+    </issue>
+
 </lint>

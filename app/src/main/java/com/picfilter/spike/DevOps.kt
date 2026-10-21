@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.FileNotFoundException
+import androidx.core.net.toUri
 
 private const val TAG = "PICFILTER"
 private const val WA_FILTER = "%com.whatsapp%"
@@ -140,7 +141,7 @@ internal fun MainActivity.dispatch(op: String) {
             val d = com.picfilter.spike.data.Db(this)
             val pid = intent?.getStringExtra("pid")?.toLongOrNull() ?: 0L
             val n = intent?.getStringExtra("n")?.toIntOrNull() ?: 4
-            val uris = d.matchedItemsFor(pid, n).map { android.net.Uri.parse(it.second) }
+            val uris = d.matchedItemsFor(pid, n).map { it.second.toUri() }
             d.close()
             Log.i(TAG, "PICKENROL dev: feeding ${uris.size} photos")
             com.picfilter.spike.engine.Clusterer.enrolFromUris(

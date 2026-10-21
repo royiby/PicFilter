@@ -4,17 +4,18 @@ plugins {
 
 android {
     namespace = "com.picfilter.spike"
-    // Compile against 37 so the current AndroidX libraries resolve. targetSdk
-    // stays at 36 deliberately: raising it opts the app in to a new platform's
-    // behaviour changes -- background limits, permission semantics -- and that
-    // is a change to verify on a device, not a number to bump with the
-    // dependencies.
     compileSdk = 37
 
     defaultConfig {
         applicationId = "com.picfilter.spike"
-        minSdk = 30
-        targetSdk = 36
+        // 33, not 30. Every path in the app gates on READ_MEDIA_IMAGES, and
+        // that permission does not exist before Android 13 -- on 11 and 12 the
+        // constant is just a string naming nothing, the request can never be
+        // granted, and the app installs and then cannot read a single photo.
+        // Claiming those devices in the manifest was the bug; lint had been
+        // saying so as four InlinedApi warnings.
+        minSdk = 33
+        targetSdk = 37
         // Phases 0-3 are done and the app runs unattended on a real library.
         // The package name stays com.picfilter.spike: renaming it costs a
         // reinstall, which orphans the rescue folder and the enrolment.
@@ -58,7 +59,7 @@ dependencies {
     // and a scope that outlives the Activity rather than the other way round.
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("com.google.mlkit:face-detection:16.1.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("androidx.exifinterface:exifinterface:1.4.2")

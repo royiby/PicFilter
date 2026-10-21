@@ -9,6 +9,7 @@ import android.util.Log
 import com.picfilter.spike.data.Db
 import java.io.File
 import java.io.FileOutputStream
+import androidx.core.net.toUri
 
 private const val TAG = "PICFILTER"
 
@@ -440,7 +441,7 @@ object Clusterer {
                 for ((_, uriStr) in db.matchedItemsFor(pid, perPerson * 6)) {
                     if (saved >= perPerson) break
                     try {
-                        val img = eng.decode(ctx, Uri.parse(uriStr)) ?: continue
+                        val img = eng.decode(ctx, uriStr.toUri()) ?: continue
                         val obs = eng.observe(img, keepCrop = true)
                         val scored = obs.filter { it.crop != null && it.embedding != null }
                             .map { o -> o to vecs.maxOf { cos(it, o.embedding!!) } }
@@ -518,7 +519,7 @@ object Clusterer {
                 val picked = mutableListOf<FloatArray>()
                 for ((_, _, uriStr) in items.take(perPerson)) {
                     try {
-                        val img = eng.decode(ctx, Uri.parse(uriStr)) ?: continue
+                        val img = eng.decode(ctx, uriStr.toUri()) ?: continue
                         val obs = eng.observe(img)
                         // The face that nearly matched this person, not another
                         // one that happens to be in the photo.

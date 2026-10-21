@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import android.database.SQLException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import androidx.core.database.sqlite.transaction
 
 /**
  * Phase 1 store. Raw SQLite + typed DAO (Room swap is a later cleanup).
@@ -339,15 +340,10 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
      * one go -- so batching is the difference between one flush and hundreds.
      */
     fun <T> inTransaction(block: () -> T): T {
-        val db = writableDatabase
-        db.beginTransaction()
-        return try {
-            val r = block()
-            db.setTransactionSuccessful()
-            r
-        } finally {
-            db.endTransaction()
-        }
+        var result: T? = null
+        writableDatabase.transaction { result = block() }
+        @Suppress("UNCHECKED_CAST")
+        return result as T
     }
 
     fun setDhash(itemId: Long, h: Long) =
@@ -1370,16 +1366,14 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         if (itemIds.isEmpty()) return 0
         val now = System.currentTimeMillis()
         var n = 0
-        writableDatabase.beginTransaction()
-        try {
+        writableDatabase.transaction {
             for (id in itemIds) {
-                writableDatabase.execSQL(
+                execSQL(
                     "UPDATE promotion SET synced_at=? WHERE item_id=? AND synced_at IS NULL",
                     arrayOf<Any>(now, id))
                 n++
             }
-            writableDatabase.setTransactionSuccessful()
-        } finally { writableDatabase.endTransaction() }
+        }
         return n
     }
 

@@ -20,7 +20,13 @@
   The brand_* values are the logo's own and are deliberately untouched.
 -->
 <resources>
-    <!-- Brand (logo and illustrations only) -->
+    <!--
+      Brand. Lint reports these as unused and they are: the logo drawables
+      carry their own literals so the mark renders identically whatever the
+      theme does. They stay as the record of what the brand colours ARE, for
+      the next illustration or a store listing, and are marked so the report
+      does not keep asking.
+    -->
     <color name="brand_cherry">#FFD7263D</color>
     <color name="brand_stem">#FF2E8B57</color>
     <color name="brand_leaf">#FF3FA66B</color>
@@ -45,6 +51,7 @@
     <color name="pk_outline_variant">#FFE3DFD8</color>
     <color name="pk_error">#FF8A2B10</color>
     <color name="pk_on_error">#FFFFFFFF</color>
+    <!-- Paired with pk_warning and pk_error; kept so the status set is whole. -->
     <color name="pk_success">#FF2F5D45</color>
     <color name="pk_warning">#FF8A5A12</color>
 </resources>

@@ -33,6 +33,7 @@ import com.picfilter.spike.Ui.setMarginsRelative
 import com.picfilter.spike.data.Db
 import com.picfilter.spike.engine.Clusterer
 import com.picfilter.spike.engine.Promoter
+import androidx.core.content.edit
 
 /**
  * First run, end to end: look through the WhatsApp folders, group the faces
@@ -197,8 +198,7 @@ class OnboardingActivity : ComponentActivity() {
      * otherwise opening the app again drops the user straight back in here.
      */
     private fun done() {
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit()
-            .putBoolean(KEY_ONBOARDED, true).apply()
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit { putBoolean(KEY_ONBOARDED, true) }
         finish()
     }
 

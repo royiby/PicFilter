@@ -716,7 +716,8 @@ object Ui {
      * name it never had, and fixes its position whatever the row is doing.
      */
     fun sectionHeader(
-        ctx: Context, title: String, actionLabel: String, onAction: () -> Unit,
+        ctx: Context, title: String, actionLabel: String,
+        actionDescription: String? = null, onAction: () -> Unit,
     ): View = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -727,6 +728,9 @@ object Ui {
         })
         addView(MaterialButton(ctx, null, android.R.attr.borderlessButtonStyle).apply {
             text = actionLabel
+            // The button's own text is terse by design; a reader gets the
+            // longer version, which says what the action adds someone to.
+            actionDescription?.let { contentDescription = it }
             setTextColor(primary(ctx))
             typeface = font(ctx, 600)
             isAllCaps = false

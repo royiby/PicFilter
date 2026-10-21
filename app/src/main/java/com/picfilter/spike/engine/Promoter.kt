@@ -13,6 +13,8 @@ import java.text.SimpleDateFormat
 import java.io.IOException
 import java.util.Date
 import java.util.Locale
+import androidx.core.net.toUri
+import androidx.core.graphics.createBitmap
 
 private const val TAG = "PICFILTER"
 
@@ -55,7 +57,7 @@ object Promoter {
             val uri = ctx.contentResolver.insert(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values) ?: return false
             ctx.contentResolver.openOutputStream(uri)?.use { out ->
-                android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+                createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
                     .compress(android.graphics.Bitmap.CompressFormat.JPEG, 50, out)
             }
             // The marker is gone; the directory it created is what we wanted,
@@ -235,7 +237,7 @@ object Promoter {
                 ) ?: run { failed++; null } ?: continue
 
                 var copied = 0L
-                ctx.contentResolver.openInputStream(Uri.parse(r.uri))!!.use { ins ->
+                ctx.contentResolver.openInputStream(r.uri.toUri())!!.use { ins ->
                     ctx.contentResolver.openOutputStream(dest)!!.use { outs ->
                         copied = ins.copyTo(outs)
                     }
@@ -332,7 +334,7 @@ object Promoter {
             } catch (e: IOException) { false } catch (e: SecurityException) { false }
             if (already) { skipped++; continue }
             val taken = originalDateMs(name, System.currentTimeMillis() / 1000)
-            if (stampDate(ctx, Uri.parse(uriStr), taken, name)) ok++ else bad++
+            if (stampDate(ctx, uriStr.toUri(), taken, name)) ok++ else bad++
         }
         Log.i(TAG, "STAMP stamped=$ok failed=$bad already_dated=$skipped missing_file=$gone")
         db.close()

@@ -31,6 +31,7 @@ import kotlinx.coroutines.withContext
 import com.picfilter.spike.engine.Pipeline
 import com.picfilter.spike.engine.Sweep
 import java.io.FileNotFoundException
+import androidx.core.net.toUri
 
 private const val TAG = "PICFILTER"
 private const val WA_FILTER = "%com.whatsapp%"
@@ -191,6 +192,7 @@ class MainActivity : ComponentActivity() {
             // beside it already say.
             col.addView(Ui.sectionHeader(
                 this, getString(R.string.home_people_header), getString(R.string.home_add),
+                actionDescription = getString(R.string.home_add_description),
             ) { managePeople() })
             col.addView(Ui.peopleRow(
                 this,
@@ -293,7 +295,7 @@ class MainActivity : ComponentActivity() {
         if (uris.isEmpty()) return
         for (u in uris) {
             card.strip.addView(Ui.previewTile(this).also { t ->
-                t.load(Uri.parse(u)) { size(GRID_THUMB_PX); scale(coil.size.Scale.FILL) }
+                t.load(u.toUri()) { size(GRID_THUMB_PX); scale(coil.size.Scale.FILL) }
             })
         }
         card.strip.visibility = android.view.View.VISIBLE

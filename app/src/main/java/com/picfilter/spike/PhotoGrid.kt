@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import coil.size.Scale
+import androidx.core.net.toUri
 
 /** Columns in every photo grid in the app. */
 const val GRID_COLS = 3
@@ -64,7 +65,7 @@ class PhotoGridAdapter(
         }
         val uri = item.uri
         if (uri == null) holder.image.setImageDrawable(null)
-        else holder.image.load(Uri.parse(uri)) {
+        else holder.image.load(uri.toUri()) {
             size(GRID_THUMB_PX)
             scale(Scale.FILL)
         }

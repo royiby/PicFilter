@@ -461,6 +461,24 @@ prove the mechanism is right, not that nothing else breaks at that size — the
 queries themselves are still unbounded, and `Paging 3` over them is the next
 step if a real library gets there.
 
+## Lint, and what is deliberately left
+
+The first run reported 108 findings. It reports 9 now, none of them errors:
+eight `PluralsCandidate` on diagnostic lines ("faces=3  matched=1") and
+screen-reader strings that read a position aloud — a plural form of a column
+name is not a thing — and one `GradleDependency` for LiteRT 2.3.0, declined
+for the reason below.
+
+`app/lint.xml` carries every other exemption with its reason, so the report
+stays worth reading. `abortOnError` is on: a lint error now fails the build.
+
+One of those findings was a real bug rather than a style note. `minSdk` was
+30 while every path in the app gates on `READ_MEDIA_IMAGES`, which does not
+exist before 33 — on Android 11 and 12 the constant names a permission the
+platform does not have, the request can never be granted, and the app would
+install and then read nothing at all. `minSdk` is 33. Four `InlinedApi`
+warnings had been saying so from the start.
+
 ## Upgrading the inference runtime
 
 `org.tensorflow:tensorflow-lite` stops at 2.17.0 and pins `litert 1.0.1`,
@@ -489,10 +507,10 @@ ships Kotlin 2.4.0 metadata against this project's 2.2.0 toolchain, so taking
 it is a Kotlin upgrade rather than a dependency bump, and would want this
 whole procedure run again.
 
-`targetSdk` stays at 36 while `compileSdk` moves to 37. Compiling against a
-newer platform is safe; targeting one opts the app in to its behaviour
-changes — background limits, permission semantics — which is a change to
-verify on a device, not a number to bump alongside the dependencies.
+`compileSdk` and `targetSdk` are both 37. Targeting a new platform opts the
+app in to its behaviour changes, so it was verified rather than assumed:
+permissions still resolve to `ACCESS_MODE=FULL`, WorkManager still arms both
+trigger slots and the periodic net, and the corpus fingerprint is unchanged.
 
 ## State, and what happens when the screen is destroyed
 

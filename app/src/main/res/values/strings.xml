@@ -138,7 +138,7 @@
          are the names in the database and in the logs, and a translated one
          would not match what the developer greps for. -->
     <string name="detail_faces" translatable="false">%1$s\nfaces=%2$d  unidentifiable=%3$d  ·  %4$s</string>
-    <string name="detail_item" translatable="false">%1$s  ·  %2$s\nfaces=%3$d  matched=%4$d  indeterminate=%5$d  text=%6$s</string>
+    <string name="detail_item" translatable="false">%1$s  ·  %2$s\nfaces=%3$d  matched=%4$d  indeterminate=%5$d  text=%6$s%7$s</string>
     <string name="detail_dupe_group" translatable="false">  dupe_group=%1$d</string>
 
     <!-- Spoken by a screen reader; never shown. -->
