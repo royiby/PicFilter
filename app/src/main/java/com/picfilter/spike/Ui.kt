@@ -168,8 +168,15 @@ object Ui {
     }
 
     /** Inner screens: back arrow, a title, and at most one action on the right. */
+    /**
+     * [actionLabel] is what a screen reader says for the icon on the right.
+     * An unlabelled ImageView is announced as "button" and nothing else, which
+     * in this app meant the only way to switch between the grid and the single
+     * card was invisible to anyone using TalkBack.
+     */
     fun titleBar(
         ctx: Context, title: String, actionIcon: Int? = null,
+        actionLabel: String = "More",
         onAction: () -> Unit = {}, onBack: () -> Unit,
     ): View = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -200,6 +207,7 @@ object Ui {
             if (actionIcon != null) addView(ImageView(ctx).apply {
                 setImageResource(actionIcon)
                 imageTintList = android.content.res.ColorStateList.valueOf(onSurfaceVariant(ctx))
+                contentDescription = actionLabel
                 layoutParams = LinearLayout.LayoutParams(dp(TOUCH), dp(TOUCH))
                 val p = (dp(TOUCH) - dp(ICON)) / 2
                 setPadding(p, p, p, p)
@@ -215,8 +223,16 @@ object Ui {
      * badge when PixKin saved it, and dimmed when it is one of the ones being
      * left behind — never red, which would read as an error.
      */
-    fun gridTile(ctx: Context, side: Int, kept: Boolean, dimmed: Boolean): FrameLayout =
+    fun gridTile(
+        ctx: Context, side: Int, kept: Boolean, dimmed: Boolean,
+        label: String = "Photo",
+    ): FrameLayout =
         FrameLayout(ctx).apply {
+            // The tile is the tappable thing, so it carries the description and
+            // its children are hidden from the reader -- otherwise the badge and
+            // the image are announced as two more nameless nodes.
+            contentDescription = label
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
             // A row of the grid is a LinearLayout, and the caller sets the gap
             // as a margin — so these have to be LinearLayout params.
             layoutParams = LinearLayout.LayoutParams(side, side)
@@ -225,6 +241,7 @@ object Ui {
                 setBackgroundColor(surfaceVariant(ctx))
                 layoutParams = FrameLayout.LayoutParams(side, side)
                 alpha = if (dimmed) 0.4f else 1f
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             })
             if (kept) addView(keptBadge(ctx))
             isClickable = true
@@ -307,6 +324,10 @@ object Ui {
         for ((i, p) in pairs.withIndex()) {
             val (value, caption) = p
             addView(MaterialCardView(ctx).apply {
+                // "48, backed up" as one stop rather than a number and then a
+                // word, which is what a reader makes of two stacked TextViews.
+                contentDescription = "$value $caption"
+                isScreenReaderFocusable = true
                 with(ctx) {
                     layoutParams = LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
@@ -410,7 +431,16 @@ object Ui {
 
     // ---------- photos ----------
 
+    /**
+     * Decorative by default.
+     *
+     * A photo is only meaningful to a screen reader if something can describe
+     * it, and PixKin cannot describe someone's picture. The screens that DO
+     * know what a photo is -- the review card knows whose face matched and at
+     * what similarity -- set a description and turn this back on.
+     */
     fun photo(ctx: Context): ShapeableImageView = ShapeableImageView(ctx).apply {
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         with(ctx) {
             shapeAppearanceModel = ShapeAppearanceModel.builder()
                 .setAllCorners(CornerFamily.ROUNDED, dp(R_MD).toFloat()).build()
@@ -440,6 +470,8 @@ object Ui {
 
     /** A photo PixKin kept: a check on secondaryContainer, bottom-right. */
     fun keptBadge(ctx: Context): View = ImageView(ctx).apply {
+        // Decorative: gridTile's own description already says the photo is saved.
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         setImageResource(R.drawable.ic_check)
         imageTintList = android.content.res.ColorStateList.valueOf(onSecondaryContainer(ctx))
         background = GradientDrawable().apply {
@@ -459,6 +491,9 @@ object Ui {
 
     /** Circular image, for a face crop. */
     fun circle(ctx: Context, sizeDp: Int): ShapeableImageView = ShapeableImageView(ctx).apply {
+        // personCell announces the name; the crop and the monogram behind it
+        // would otherwise be two extra stops with nothing to say.
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         with(ctx) {
             layoutParams = ViewGroup.LayoutParams(dp(sizeDp), dp(sizeDp))
             shapeAppearanceModel = ShapeAppearanceModel.builder()
@@ -528,6 +563,10 @@ object Ui {
         }
         val img = circle(ctx, size)
         stack.addView(img)
+        // A bare thread on purpose, and the one place it is still right: this is
+        // a stateless factory with no lifecycle to scope to, it holds no
+        // reference to an Activity, and View.post on a detached view drops the
+        // work rather than crashing. Bounded by the number of enrolled people.
         if (f.thumbPaths.isNotEmpty()) Thread {
             val bmp = bestCrop(f.thumbPaths)
             if (bmp != null) img.post { img.setImageBitmap(bmp) }
@@ -543,6 +582,14 @@ object Ui {
             })
             if (f.caption.isNotEmpty())
                 addView(caption(ctx, f.caption, R.color.pk_on_surface_variant))
+            // One stop that says who it is and what tapping does, instead of
+            // three nameless nodes and a count.
+            contentDescription = buildString {
+                append(f.name)
+                if (f.caption.isNotEmpty()) append(", ${f.caption}")
+                append(". Opens your people.")
+            }
+            isScreenReaderFocusable = true
             setOnClickListener { onClick() }
         }
     }
@@ -564,6 +611,8 @@ object Ui {
                 gravity = Gravity.CENTER
                 with(ctx) { setPadding(0, dp(XXS), 0, 0) }
             })
+            contentDescription = "Add someone"
+            isScreenReaderFocusable = true
             setOnClickListener { onClick() }
         }
     }
@@ -632,6 +681,9 @@ object Ui {
         with(ctx) {
             setPadding(dp(MD), dp(XS), dp(MD), dp(XS))
             addView(ImageView(ctx).apply {
+                // Decorative: the line beside it is the content, and an
+                // unlabelled icon is just an extra stop that says nothing.
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 setImageResource(icon)
                 imageTintList = android.content.res.ColorStateList.valueOf(color(ctx, tint))
                 layoutParams = LinearLayout.LayoutParams(dp(ICON), dp(ICON))
@@ -689,6 +741,7 @@ object Ui {
 
     /** The mark on its own, for the top of a step. */
     fun mark(ctx: Context, sizeDp: Int = 72): View = ImageView(ctx).apply {
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         setImageResource(R.drawable.ic_logo_mark)
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))

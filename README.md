@@ -225,6 +225,28 @@ Face detection still leaks. It is not fixable from here — every ML Kit lever
 small-face recall, which was deliberately tuned, and the unbundled Play Services
 detector measured *worse* (+94.9 MB vs +87.9 MB per 100 images).
 
+## Where it departs from Google's recommendations
+
+Deliberately, and it is worth being able to say which is which. **Not** Compose,
+**not** Room, no Hilt, no ViewModel, no repository layer: this started as a
+measurement spike, and optimising for how fast the scoring pipeline could change
+is what bought the findings above. `Ui.kt` is a hand-rolled token system that a
+Compose theme would do better.
+
+What it does follow: the system **photo picker** for enrolment (no permission at
+all), **WorkManager** with content-URI triggers rather than polling,
+`MediaStore.createTrashRequest` rather than `MANAGE_EXTERNAL_STORAGE`,
+partial-grant detection, `values-night` and edge-to-edge insets, and 48dp touch
+targets.
+
+Six things that were plain defects rather than trade-offs have been fixed:
+main-thread database and bitmap work (now behind a `StrictMode` tripwire in
+debug), no configuration-change handling at all, hardcoded `/sdcard` paths where
+MediaStore is the only thing that actually knows, missing accessibility labels,
+unstructured `Thread {}` with callbacks into possibly-dead Activities, and
+spike-era version metadata. `isMinifyEnabled = false` remains: R8 against
+ML Kit and TFLite needs testing this project has not done.
+
 ## Status
 
 | Phase | State |

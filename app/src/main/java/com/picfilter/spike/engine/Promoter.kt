@@ -41,8 +41,10 @@ object Promoter {
      * leaves nothing behind in the user's library.
      */
     fun ensureDestFolder(ctx: Context): Boolean {
-        val dir = java.io.File("/sdcard/$DEST")
-        if (dir.isDirectory) return true
+        // Existence means "MediaStore has something filed under this path",
+        // which is also the only sense Google Photos cares about when it lists
+        // device folders. Stat-ing /sdcard answered a different question.
+        if (existingDest(ctx).isNotEmpty()) return true
         return try {
             val values = android.content.ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, ".pixkin-folder-marker.jpg")
@@ -55,10 +57,10 @@ object Promoter {
                 android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
                     .compress(android.graphics.Bitmap.CompressFormat.JPEG, 50, out)
             }
-            ctx.contentResolver.delete(uri, null, null)
-            val ok = dir.isDirectory
-            Log.i(TAG, "DESTFOLDER created=$ok path=$dir")
-            ok
+            // The marker is gone; the directory it created is what we wanted,
+            // and the insert succeeding is the proof that the path is writable.
+            Log.i(TAG, "DESTFOLDER created path=$DEST")
+            true
         } catch (e: Exception) {
             Log.e(TAG, "DESTFOLDER failed ${e.javaClass.simpleName}: ${e.message}")
             false
@@ -70,32 +72,76 @@ object Promoter {
     private val WA_DATE = Regex("""IMG-(\d{8})-WA""")
 
     /**
-     * What is in the destination folder right now: display name -> size, plus
-     * the uri so a skipped file can be recorded without copying it again.
+     * One file sitting in the destination folder, as MediaStore describes it.
+     *
+     * [path] is the filesystem path MediaStore itself reports. The column is
+     * deprecated and may be null, so it is only ever used where a path is
+     * genuinely required -- MediaScannerConnection takes one -- and never to
+     * decide whether a file exists. That used to be done by building
+     * "/sdcard/Pictures/PicFilter/$name" by hand, which assumes the primary
+     * volume is mounted there and that the folder is where we last left it.
+     * Neither is guaranteed, and MediaStore is the thing that actually knows.
      */
-    private fun existingDest(ctx: Context): Map<String, Pair<Uri, Long>> {
-        val out = HashMap<String, Pair<Uri, Long>>()
+    data class DestFile(
+        val uri: Uri, val name: String, val size: Long,
+        val modifiedSeconds: Long, val path: String?,
+    )
+
+    /**
+     * What is in the destination folder right now, keyed by display name.
+     */
+    private fun existingDest(ctx: Context): Map<String, DestFile> {
+        val out = HashMap<String, DestFile>()
+        @Suppress("DEPRECATION")
+        val dataCol = MediaStore.MediaColumns.DATA
         ctx.contentResolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             arrayOf(
                 MediaStore.MediaColumns._ID,
                 MediaStore.MediaColumns.DISPLAY_NAME,
                 MediaStore.MediaColumns.SIZE,
+                MediaStore.MediaColumns.DATE_MODIFIED,
+                dataCol,
             ),
             "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?", arrayOf("$DEST%"), null
         )?.use { c ->
             val iId = c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
             val iName = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
             val iSize = c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE)
+            val iMod = c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+            val iData = c.getColumnIndex(dataCol)
             while (c.moveToNext()) {
                 val name = c.getString(iName) ?: continue
-                out[name] = ContentUris.withAppendedId(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(iId)
-                ) to c.getLong(iSize)
+                out[name] = DestFile(
+                    uri = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(iId)),
+                    name = name,
+                    size = c.getLong(iSize),
+                    modifiedSeconds = c.getLong(iMod),
+                    path = if (iData >= 0 && !c.isNull(iData)) c.getString(iData) else null,
+                )
             }
         }
         return out
     }
+
+    /**
+     * Does this uri point at bytes we can actually read?
+     *
+     * The honest replacement for File(...).exists() && length() > 0: ask the
+     * provider to open it. A MediaStore row can outlive its file, and opening
+     * is the only answer that cannot be stale.
+     */
+    /**
+     * Display names in the destination folder whose bytes are actually
+     * readable. For diagnostics that want to compare the table with reality.
+     */
+    fun presentDestNames(ctx: Context): Set<String> =
+        existingDest(ctx).filterValues { readableBytes(ctx, it.uri) > 0L }.keys
+
+    private fun readableBytes(ctx: Context, uri: Uri): Long = try {
+        ctx.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
+    } catch (e: Exception) { -1L }
 
     /**
      * What to write a photo as, or null when the folder already has it.
@@ -146,7 +192,7 @@ object Promoter {
 
         // The folder, not the promotion table, decides what still needs copying.
         val existing = existingDest(ctx)
-        val sizes = existing.mapValues { it.value.second }
+        val sizes = existing.mapValues { it.value.size }
         val alreadyThere = rows.count { destName(it.name, it.id, it.bytes, sizes) == null }
         Log.i(TAG, "PROMOTE folder holds ${existing.size} files; $alreadyThere of the " +
             "${rows.size} candidates are already among them")
@@ -163,8 +209,8 @@ object Promoter {
                 if (name == null) {
                     // Already in the folder. Record it so the table catches up
                     // with the folder and the next run has nothing to do.
-                    val (uri, size) = existing[r.name]!!
-                    db.recordPromotion(r.id, uri.toString(), r.name!!, size)
+                    val there = existing[r.name]!!
+                    db.recordPromotion(r.id, there.uri.toString(), r.name!!, there.size)
                     skipped++
                     continue
                 }
@@ -206,9 +252,11 @@ object Promoter {
                 // recorded as promoted and later found absent. A rescue tool
                 // that reports success for a file that is not there is worse
                 // than one that fails loudly.
-                val f = java.io.File("/sdcard/$DEST/$name")
-                if (!f.exists() || f.length() <= 0L) {
-                    Log.w(TAG, "PROMOTE VERIFY FAILED $name (not on disk after write)")
+                //
+                // Asked of the provider that owns the row, rather than of a
+                // path we assembled ourselves.
+                if (readableBytes(ctx, dest) <= 0L) {
+                    Log.w(TAG, "PROMOTE VERIFY FAILED $name (unreadable after write)")
                     failed++
                     continue
                 }
@@ -232,6 +280,9 @@ object Promoter {
      * than living only in a local database row.
      */
     fun stampDate(ctx: Context, uri: Uri, takenMs: Long, name: String? = null): Boolean = try {
+        // MediaScannerConnection needs a filesystem path, and MediaStore is the
+        // only thing that knows it. Looked up, never assembled.
+        val scanPath = name?.let { existingDest(ctx)[it]?.path }
         val exifFmt = SimpleDateFormat("yyyy:MM:dd HH:mm:ss", Locale.US)
         val stamp = exifFmt.format(Date(takenMs))
         ctx.contentResolver.openFileDescriptor(uri, "rw")!!.use { pfd ->
@@ -246,9 +297,8 @@ object Promoter {
         }, null, null)
         // the row is stale until MediaProvider re-reads the file it now shares
         // a date with; without this the local gallery still sorts by import time
-        name?.let {
-            MediaScannerConnection.scanFile(
-                ctx, arrayOf("/sdcard/$DEST/$it"), arrayOf("image/jpeg"), null)
+        scanPath?.let {
+            MediaScannerConnection.scanFile(ctx, arrayOf(it), arrayOf("image/jpeg"), null)
         }
         true
     } catch (e: Exception) {
@@ -268,12 +318,16 @@ object Promoter {
     fun fixDates(ctx: Context) {
         val db = Db(ctx)
         var ok = 0; var bad = 0; var skipped = 0; var gone = 0
+        val inFolder = existingDest(ctx)
         for ((uriStr, name) in db.promotedDests()) {
-            val f = java.io.File("/sdcard/$DEST/$name")
-            if (!f.exists()) { gone++; continue }
+            val there = inFolder[name]
+            if (there == null || readableBytes(ctx, there.uri) <= 0L) { gone++; continue }
+            // Read the EXIF through the provider, so this works whatever the
+            // volume is mounted as.
             val already = try {
-                ExifInterface(f.absolutePath)
-                    .getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) != null
+                ctx.contentResolver.openInputStream(there.uri)?.use { ins ->
+                    ExifInterface(ins).getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) != null
+                } ?: false
             } catch (e: Exception) { false }
             if (already) { skipped++; continue }
             val taken = originalDateMs(name, System.currentTimeMillis() / 1000)
@@ -302,7 +356,10 @@ object Promoter {
             } catch (e: Exception) {
                 Log.w(TAG, "UNPROMOTE delete failed for $name: ${e.javaClass.simpleName}")
             }
-            java.io.File("/sdcard/$DEST/$name").takeIf { it.exists() }?.delete()
+            // No filesystem fallback: this app created the entry, so deleting
+            // through the provider is the whole of it. Reaching round the
+            // provider to a path we guessed is how a delete silently targets
+            // nothing -- or something else.
         }
         db.deletePromotion(itemId)
         db.close()
@@ -396,10 +453,10 @@ object Promoter {
         val db = Db(ctx)
         val known = db.promotedDests().map { it.second }.toSet()
         var added = 0
-        for ((name, pair) in existingDest(ctx)) {
+        for ((name, there) in existingDest(ctx)) {
             if (name in known) continue
             val itemId = db.itemIdByName(name) ?: continue
-            db.recordPromotion(itemId, pair.first.toString(), name, pair.second)
+            db.recordPromotion(itemId, there.uri.toString(), name, there.size)
             added++
         }
         Log.i(TAG, "RECONCILE added $added promotion records for files already in the folder")
@@ -429,15 +486,19 @@ object Promoter {
         val out = mutableListOf<Pair<Uri, String>>()
         val ids = mutableListOf<Long>()
         var tooNew = 0
-        for ((name, pair) in existingDest(ctx)) {
-            val f = java.io.File("/sdcard/$DEST/$name")
-            if (!f.exists()) continue
-            if (f.lastModified() > cutoff) { tooNew++; continue }
+        var bytes = 0L
+        for ((name, there) in existingDest(ctx)) {
+            // DATE_MODIFIED is in seconds, and it is MediaStore's own record of
+            // when the file last changed -- the same fact File.lastModified()
+            // was being asked for, from the party that maintains it.
+            if (there.modifiedSeconds * 1000L > cutoff) { tooNew++; continue }
+            if (readableBytes(ctx, there.uri) <= 0L) continue
             val itemId = db.itemIdByName(name) ?: continue
-            out += pair.first to name
+            out += there.uri to name
             ids += itemId
+            bytes += there.size
         }
-        val mb = out.sumOf { java.io.File("/sdcard/$DEST/${it.second}").length() } / 1048576.0
+        val mb = bytes / 1048576.0
         Log.i(TAG, "RECLAIM ${out.size} copies reclaimable (${"%.1f".format(mb)} MB), " +
             "$tooNew still within the ${graceHours}h grace period" +
             if (dryRun) " (dry run)" else "")
@@ -453,9 +514,11 @@ object Promoter {
         // local file was reclaimed. Dropping its record here would make the next
         // pass copy it back, which is the whole trap this guards against.
         val synced = db.syncedDestNames()
+        val inFolder = existingDest(ctx)
         for ((_, name) in db.promotedDests()) {
             if (name in synced) continue
-            if (!java.io.File("/sdcard/$DEST/$name").exists()) {
+            val there = inFolder[name]
+            if (there == null || readableBytes(ctx, there.uri) <= 0L) {
                 db.writableDatabase.execSQL(
                     "DELETE FROM promotion WHERE dest_name=?", arrayOf<Any>(name))
                 dropped++

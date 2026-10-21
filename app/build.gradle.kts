@@ -10,8 +10,11 @@ android {
         applicationId = "com.picfilter.spike"
         minSdk = 30
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1-spike"
+        // Phases 0-3 are done and the app runs unattended on a real library.
+        // The package name stays com.picfilter.spike: renaming it costs a
+        // reinstall, which orphans the rescue folder and the enrolment.
+        versionCode = 4
+        versionName = "0.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
@@ -29,11 +32,17 @@ android {
         // calling into them; returning defaults keeps the stubs from throwing.
         unitTests.isReturnDefaultValues = true
     }
+
+    buildFeatures { buildConfig = true }
 }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-ktx:1.9.3")
+    // lifecycleScope: work started by a screen is cancelled when that screen
+    // goes away, rather than posting back into a dead Activity.
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.mlkit:face-detection:16.1.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")

@@ -361,44 +361,83 @@ them. Those 264 negatives cannot feed `Fitter`, which fits per-person thresholds
 from labelled MATCHES, and only 2 labelled matches exist — far below its minimum
 of 6. The thresholds therefore remain the default 0.70 rather than fitted.
 
+## Main-thread work, and the tripwire for it
+
+The home screen opened the database and ran eight queries inside `onCreate` and
+again on every `onResume`; the review screen loaded its whole queue the same
+way and then decoded a 1400px bitmap on the UI thread for every card. None of
+it ever looked broken — the database is a megabyte and the phone has eight
+cores — which is exactly why it survived so long.
+
+`PixKinApp` now arms `StrictMode` in debug builds: disk reads, disk writes,
+network and slow calls on the main thread, plus leaked closables and leaked
+SQLite objects. Logged, not fatal — a death penalty would take the app down on
+a violation inside a library we do not control, and the point is to be told.
+
+**The tripwire is the regression test.** There is no automated assertion that
+the main thread stays clean, so a violation shows up as a `StrictMode` line in
+logcat during any debug run. Check for one after touching a screen:
+
+```bash
+adb logcat -d | grep -i StrictMode
+```
+
+Database access from a screen goes through `DbQueue`: one thread per screen,
+reads and writes both, with the handle's `close()` queued behind whatever has
+already been asked for. That ordering is the point — a verdict and the undo
+that follows it have to land in the order they were tapped, and closing the
+handle while a read is still running throws.
+
+Work that must outlive the screen that started it — un-promoting a photo — goes
+to `Background.io` instead, because `lifecycleScope` would cancel it and half an
+un-promotion leaves a file in the backed-up folder with no record of it.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.
 
-1. **A UI handler that silently does nothing.** Every rescue button once became a
+1. **Configuration changes and process death.** `ReviewActivity` and
+   `OnboardingActivity` now save their step, index and undo history, and the
+   onboarding scan survives in `Scan` rather than dying with the Activity.
+   **None of it is tested, and none of it has been exercised on a device yet** —
+   it wants `ActivityScenario.recreate()` against fixtures, which collides with
+   the rule below about never automating the review screen. Until then this is
+   hand-verification: rotate mid-review, rotate mid-scan, and check the queue
+   position and progress survive.
+2. **A UI handler that silently does nothing.** Every rescue button once became a
    no-op because a `when` over card types quietly stopped being exhaustive, and
    nothing failed — the buttons just did nothing. Needs an instrumented test that
    clicks each review action and asserts a row appears in the database. This is
    the highest-value missing test and the hardest, because it must not be run
    against the user's real photos.
-2. **Whether a lowered threshold actually holds.** `FitThresholdTest` pins the
+3. **Whether a lowered threshold actually holds.** `FitThresholdTest` pins the
    arithmetic and `LabelledNearMissTest` the attribution, but no measurement yet
    says a bar lowered from two-sided evidence keeps its promised precision on
    the library. The sample below the bar is biased twice over — the rescue queue
    is ordered by near-miss similarity, and the single-near-face clause drops
    crowded photos — so the fitted figure is optimistic by an unknown amount.
-3. **Precision as a number, out of sample.** `MatchFaceTest` pins the threshold
+4. **Precision as a number, out of sample.** `MatchFaceTest` pins the threshold
    but cannot say what precision it buys. Needs a committed golden label set and
    a held-out split, so the suite can assert "precision ≥ 0.90 on data the
    thresholds were not fitted on". Blocked on the labels containing real photo
    filenames: the test must take a path and skip when absent.
-4. **Date preservation end to end.** MediaProvider re-scans on `IS_PENDING`
+5. **Date preservation end to end.** MediaProvider re-scans on `IS_PENDING`
    1→0 and recomputes the date from EXIF, which WhatsApp strips — so rescued
    photos landed in the cloud dated today instead of last June. Needs an
    instrumented test that promotes a fixture, re-reads `DATE_TAKEN`, and asserts
    the original date.
-5. **The promote/verify invariant under interruption.** 19 rescued files went
+6. **The promote/verify invariant under interruption.** 19 rescued files went
    missing once. `op=promocheck` checks it after the fact; a test should kill a
    promote run partway and assert the rows and the files still agree.
-6. **A memory regression test.** `op=memprobe` measures this by hand; nothing
+7. **A memory regression test.** `op=memprobe` measures this by hand; nothing
    fails automatically. A test that asserts stage 1 stays flat and stage 3 adds
    under ~5 MB per 100 images would catch a regression in our own code without
    pinning ML Kit's leak in place. It needs committed fixture images, and the
    user's photos must not be used.
-7. **Partial media grants.** Android 14+ `READ_MEDIA_VISUAL_USER_SELECTED` gives
+8. **Partial media grants.** Android 14+ `READ_MEDIA_VISUAL_USER_SELECTED` gives
    a library that looks readable and is not. `smoke.sh` asserts
    `ACCESS_MODE=FULL`; nothing tests that the app refuses a partial grant.
-8. **Video.** 315 WhatsApp videos are entirely unhandled, so there is nothing to
+9. **Video.** 315 WhatsApp videos are entirely unhandled, so there is nothing to
    test — noted here so it is not mistaken for coverage.
 
 ## Rules for this suite

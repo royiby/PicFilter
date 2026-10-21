@@ -19,7 +19,13 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.lifecycle.lifecycleScope
 import com.picfilter.spike.data.Db
+import com.picfilter.spike.data.DbQueue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Phase 2 review UI. Six queues, chosen by the "mode" extra:
@@ -66,14 +72,62 @@ class ReviewActivity : ComponentActivity() {
     private var idx = 0
     private val history = ArrayDeque<Pair<Int, Long>>()   // (index, id) for undo
 
+    /** Every database touch from this screen, serialised; see [DbQueue]. */
+    private val dbq by lazy { DbQueue(db) }
+
+    /** The card currently being decoded, so a fast swipe cancels the last one. */
+    private var decode: Job? = null
+
+    private companion object {
+        const val S_MODE = "mode"
+        const val S_GRID = "grid"
+        const val S_IDX = "idx"
+        const val S_HIST_AT = "hist_at"
+        const val S_HIST_ID = "hist_id"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         db = Db(this)
-        mode = intent?.getStringExtra("mode") ?: "golden"
-        grid = mode == "verify"
+        mode = savedInstanceState?.getString(S_MODE)
+            ?: intent?.getStringExtra("mode") ?: "golden"
+        grid = savedInstanceState?.getBoolean(S_GRID) ?: (mode == "verify")
+        idx = savedInstanceState?.getInt(S_IDX) ?: 0
+        val at = savedInstanceState?.getIntArray(S_HIST_AT)
+        val ids = savedInstanceState?.getLongArray(S_HIST_ID)
+        if (at != null && ids != null && at.size == ids.size) {
+            for (i in at.indices) history.addLast(at[i] to ids[i])
+        }
         setContentView(buildUi())
         loadQueue()
-        render()
+    }
+
+    /**
+     * Survive a rotation, and process death.
+     *
+     * Without this the Activity was rebuilt from scratch: queue reloaded, index
+     * back to zero, undo history gone. Turning the phone sideways halfway
+     * through a review of 111 photos started it again from the first one, and
+     * the only reason it was never reported is that the person reviewing was
+     * the person who wrote it.
+     *
+     * The queue itself is not saved -- it is derivable from the database, and
+     * reloading is the right thing anyway, since a verdict recorded before the
+     * rotation has removed that item from it.
+     */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(S_MODE, mode)
+        outState.putBoolean(S_GRID, grid)
+        outState.putInt(S_IDX, idx)
+        outState.putIntArray(S_HIST_AT, history.map { it.first }.toIntArray())
+        outState.putLongArray(S_HIST_ID, history.map { it.second }.toLongArray())
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        decode?.cancel()
+        dbq.closeAfterPending()
     }
 
     // ------------------------------------------------------------------ ui
@@ -103,6 +157,11 @@ class ReviewActivity : ComponentActivity() {
         root.addView(counter)
 
         image = Ui.photo(this).apply {
+            // The one photo on screen IS the content of this screen, and unlike
+            // a grid tile there is something true to say about it. renderCard
+            // sets the description per card; see [describe].
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            isScreenReaderFocusable = true
             scaleType = ImageView.ScaleType.FIT_CENTER
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
@@ -191,16 +250,32 @@ class ReviewActivity : ComponentActivity() {
 
     // --------------------------------------------------------------- queue
 
-    private fun loadQueue() {
-        queue = when (mode) {
-            "dupes" -> db.dupeGroups().map { DupeCard(it.first, it.second) }
-            "rescue" -> db.rescueQueue().map { RescueCard(it) }
-            "noface" -> db.rescueQueue(listOf("NO_FACE_PLAIN")).map { RescueCard(it) }
-            "verify" -> db.promotedForReview().map { RescueCard(it) }
-            "junk" -> db.junkQueue().map { RescueCard(it) }
-            else -> db.goldenQueue(perReason = 40).map { ItemCard(it) }
+    /**
+     * Read the queue off the main thread, then draw it.
+     *
+     * Every one of these is a multi-table query with sub-selects per row --
+     * rescueQueue sorts by a correlated MAX(similarity) -- and it ran inside
+     * onCreate on the thread that draws frames.
+     */
+    private fun loadQueue(keepIndex: Boolean = true) {
+        lifecycleScope.launch {
+            val loaded = withContext(dbq.context) {
+                when (mode) {
+                    "dupes" -> db.dupeGroups().map { DupeCard(it.first, it.second) }
+                    "rescue" -> db.rescueQueue().map { RescueCard(it) }
+                    "noface" -> db.rescueQueue(listOf("NO_FACE_PLAIN")).map { RescueCard(it) }
+                    "verify" -> db.promotedForReview().map { RescueCard(it) }
+                    "junk" -> db.junkQueue().map { RescueCard(it) }
+                    else -> db.goldenQueue(perReason = 40).map { ItemCard(it) }
+                }
+            }
+            queue = loaded
+            // A restored index can be past the end: verdicts recorded before
+            // the rotation have taken their items out of the queue.
+            idx = if (keepIndex) idx.coerceIn(0, maxOf(loaded.size, 0)) else 0
+            gridRows.removeAllViews()
+            render()
         }
-        idx = 0
     }
 
     private fun buildBar() {
@@ -208,6 +283,7 @@ class ReviewActivity : ComponentActivity() {
         bar.addView(Ui.titleBar(
             this, screenTitle(),
             actionIcon = if (grid) R.drawable.ic_single_photo else R.drawable.ic_grid,
+            actionLabel = if (grid) "Show one photo at a time" else "Show all as a grid",
             onAction = { grid = !grid; buildBar(); render() },
         ) { finish() })
     }
@@ -246,7 +322,10 @@ class ReviewActivity : ComponentActivity() {
                 }
                 gridRows.addView(row)
             }
-            val tile = Ui.gridTile(this, side, kept, dimmed).apply {
+            val tile = Ui.gridTile(
+                this, side, kept, dimmed,
+                label = "${describe(card)} Item ${i + 1} of ${queue.size}. Tap to open.",
+            ).apply {
                 if (i % cols != 0) (layoutParams as LinearLayout.LayoutParams).marginStart = gap
                 setOnClickListener { idx = i; grid = false; buildBar(); render() }
             }
@@ -254,15 +333,14 @@ class ReviewActivity : ComponentActivity() {
             tiles += tile.getChildAt(0) as ImageView
         }
 
-        Thread {
+        lifecycleScope.launch {
             for ((i, card) in queue.withIndex()) {
-                if (gen != gridGeneration) return@Thread
+                if (gen != gridGeneration) return@launch
                 val u = uriOf(card) ?: continue
-                val bmp = quickThumb(u) ?: continue
-                val v = tiles[i]
-                v.post { if (gen == gridGeneration) v.setImageBitmap(bmp) }
+                val bmp = withContext(Dispatchers.IO) { quickThumb(u) } ?: continue
+                if (gen == gridGeneration) tiles[i].setImageBitmap(bmp)
             }
-        }.start()
+        }
     }
 
     private fun render() {
@@ -296,11 +374,15 @@ class ReviewActivity : ComponentActivity() {
                 if (history.isEmpty()) "Nothing here to look at." else "All done here."))
             empty.visibility = View.VISIBLE
             image.visibility = View.GONE
-            val summary = if (mode == "dupes")
-                db.dupeVerdictCounts().joinToString("  ") { "${it.first}=${it.second}" }
-            else db.labelCounts().joinToString("  ") { "${it.first}=${it.second}" }
-            info.text = summary
             counter.text = ""
+            info.text = ""
+            lifecycleScope.launch {
+                info.text = withContext(dbq.context) {
+                    if (mode == "dupes")
+                        db.dupeVerdictCounts().joinToString("  ") { "${it.first}=${it.second}" }
+                    else db.labelCounts().joinToString("  ") { "${it.first}=${it.second}" }
+                }
+            }
             return
         }
         empty.visibility = View.GONE
@@ -310,20 +392,17 @@ class ReviewActivity : ComponentActivity() {
         counter.text = "${idx + 1} of ${queue.size}"
 
         val card = queue[idx]
+        image.contentDescription = "${describe(card)} ${idx + 1} of ${queue.size}."
         if (card is DupeCard) {
             val gid = card.groupId
             val members = card.members
-            strip.visibility = View.VISIBLE
-            strip.removeAllViews()
-            image.setImageBitmap(thumb(Uri.parse(members[0].second), 1400))
-            for ((_, u) in members) {
-                strip.addView(Ui.thumb(this, 80).apply { setImageBitmap(quickThumb(u)) })
-            }
+            showImage(members[0].second)
+            fillStrip(members.map { it.second })
             info.text = "group $gid · ${members.size} members\nAre these the same picture?"
         } else if (card is RescueCard) {
             val r = card.row
             strip.visibility = View.GONE
-            image.setImageBitmap(thumb(Uri.parse(r.uri), 1400))
+            showImage(r.uri)
             if (mode == "verify") {
                 info.text = "PixKin saved this as family" +
                     (r.nearName?.let { n -> ", matching $n" } ?: "") +
@@ -355,12 +434,78 @@ class ReviewActivity : ComponentActivity() {
         } else if (card is ItemCard) {
             val r = card.row
             strip.visibility = View.GONE
-            image.setImageBitmap(thumb(Uri.parse(r.uri), 1400))
+            showImage(r.uri)
             info.text = "${r.decision}  ·  ${r.reason}\n" +
                 "faces=${r.faces}  matched=${r.matched}  indeterminate=${r.indet}  " +
                 "text=${"%.3f".format(r.textFrac)}" +
                 (r.dupeGroup?.let { "  dupe_group=$it" } ?: "")
         }
+    }
+
+    /**
+     * Put a photo on screen without decoding it on the thread that draws.
+     *
+     * This was `image.setImageBitmap(thumb(uri, 1400))` inline in renderCard:
+     * two full passes over the file (bounds, then pixels) for a 1400px bitmap,
+     * per card, on the UI thread. It is the single heaviest main-thread call in
+     * the app and the reason moving through a queue felt sticky.
+     *
+     * One decode at a time: moving on cancels the previous card's, so holding
+     * the Keep button down does not queue up a dozen full-size decodes.
+     */
+    private fun showImage(uriStr: String, target: Int = 1400) {
+        decode?.cancel()
+        image.setImageDrawable(null)
+        val u = Uri.parse(uriStr)
+        decode = lifecycleScope.launch {
+            val bmp = withContext(Dispatchers.IO) { thumb(u, target) }
+            if (bmp != null) image.setImageBitmap(bmp)
+        }
+    }
+
+    /** A row of small thumbnails, each decoded off the main thread. */
+    private fun fillStrip(uris: List<String>, onTap: ((Int) -> Unit)? = null) {
+        strip.removeAllViews()
+        if (uris.isEmpty()) { strip.visibility = View.GONE; return }
+        strip.visibility = View.VISIBLE
+        val tiles = uris.mapIndexed { i, _ ->
+            Ui.thumb(this, 80).also { t ->
+                if (onTap != null) t.setOnClickListener { onTap(i) }
+                strip.addView(t)
+            }
+        }
+        lifecycleScope.launch {
+            for ((i, u) in uris.withIndex()) {
+                val bmp = withContext(Dispatchers.IO) { quickThumb(u) } ?: continue
+                tiles[i].setImageBitmap(bmp)
+            }
+        }
+    }
+
+    /**
+     * What a screen reader should say about the photo on screen.
+     *
+     * The picture itself cannot be described -- PixKin does not know what is in
+     * someone's photograph -- but everything around the decision can be, and
+     * that is what the person is being asked about. Without this the review
+     * flow was a row of buttons with no subject.
+     */
+    private fun describe(card: Card): String = when (card) {
+        is DupeCard -> "A group of ${card.members.size} photos that may be the same picture."
+        is RescueCard -> {
+            val r = card.row
+            val who = r.nearName?.let { n ->
+                r.nearSim?.let { v -> " Closest match $n, ${"%.2f".format(v)}." } ?: " Closest match $n."
+            } ?: ""
+            when (mode) {
+                "verify" -> "A photo PixKin saved as family.$who"
+                "junk" -> "A photo PixKin thinks is not yours.$who"
+                "noface" -> "A photo with no recognisable face in it."
+                else -> "A photo PixKin was unsure about.$who ${r.faces} faces found."
+            }
+        }
+        is ItemCard -> "A photo scored ${card.row.decision}, ${card.row.reason}, " +
+            "with ${card.row.faces} faces found."
     }
 
     /** MediaStore's own thumbnail — fast enough to fill a strip on the fly. */
@@ -371,18 +516,10 @@ class ReviewActivity : ComponentActivity() {
     /** The next few items in the queue, so the screen shows more than one
      *  suspect at a time. Tapping one jumps straight to it. */
     private fun showUpcoming() {
-        strip.removeAllViews()
         val next = queue.drop(idx + 1).take(8)
-        if (next.isEmpty()) { strip.visibility = View.GONE; return }
-        strip.visibility = View.VISIBLE
-        for ((offset, card) in next.withIndex()) {
-            val uri = (card as? RescueCard)?.row?.uri ?: continue
-            val at = idx + 1 + offset
-            strip.addView(Ui.thumb(this, 80).apply {
-                setImageBitmap(quickThumb(uri))
-                setOnClickListener { idx = at; render() }
-            })
-        }
+        val uris = next.mapNotNull { (it as? RescueCard)?.row?.uri }
+        val base = idx + 1
+        fillStrip(uris) { offset -> idx = base + offset; render() }
     }
 
     private fun thumb(u: Uri, target: Int) = try {
@@ -407,18 +544,36 @@ class ReviewActivity : ComponentActivity() {
             is DupeCard -> { Log.w(TAG, "label() on a DupeCard"); return }
             null -> return
         }
-        db.putLabel(id, v)
-        gridRows.removeAllViews()        // the queue changed under the grid
+        // The screen advances now and the row is written behind it, in tap
+        // order on [DbQueue]. A verdict that took 30ms of disk to record used
+        // hold the frame that showed the next photo.
+        //
+        // Un-promoting runs on the same queue rather than its own thread: it
+        // must not overtake the DISCARD label that explains it, and it must
+        // still finish if the screen closes straight afterwards -- which is why
+        // it is NOT on lifecycleScope.
+        // NOT lifecycleScope: it cancels on destroy, and a rotation right after
+        // a tap would throw the verdict away.
+        dbq.submit { db.putLabel(id, v) }
         if (mode == "verify" && v == "DISCARD") {
-            Thread { com.picfilter.spike.engine.Promoter.unpromote(this, id) }.start()
+            // Outlives this screen on purpose; see [Background].
+            val app = applicationContext
+            Background.io.execute {
+                try { com.picfilter.spike.engine.Promoter.unpromote(app, id) }
+                catch (e: Exception) {
+                    Log.w(TAG, "UNPROMOTE ${e.javaClass.simpleName}: ${e.message}")
+                }
+            }
         }
+        gridRows.removeAllViews()        // the queue changed under the grid
         history.addLast(idx to id)
         idx++; render()
     }
 
+
     private fun verdict(v: String) {
         val g = queue.getOrNull(idx) as? DupeCard ?: return
-        db.putDupeVerdict(g.groupId, v)
+        dbq.submit { db.putDupeVerdict(g.groupId, v) }
         history.addLast(idx to g.groupId)
         idx++; render()
     }
@@ -427,14 +582,15 @@ class ReviewActivity : ComponentActivity() {
         val last = history.removeLastOrNull() ?: run {
             Toast.makeText(this, "nothing to undo", Toast.LENGTH_SHORT).show(); return
         }
-        if (mode == "dupes") {
-            db.writableDatabase.execSQL("DELETE FROM dupe_verdict WHERE group_id=?", arrayOf<Any>(last.second))
-        } else {
-            db.deleteLabel(last.second)
+        val dupes = mode == "dupes"
+        // Ordered after the write it undoes: [DbQueue] is one thread.
+        dbq.submit {
+            if (dupes) db.writableDatabase.execSQL(
+                "DELETE FROM dupe_verdict WHERE group_id=?", arrayOf<Any>(last.second))
+            else db.deleteLabel(last.second)
         }
         idx = last.first
         render()
     }
 
-    override fun onDestroy() { super.onDestroy(); db.close() }
 }

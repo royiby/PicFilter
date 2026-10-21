@@ -20,6 +20,10 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.picfilter.spike.engine.Pipeline
 import com.picfilter.spike.engine.Sweep
 import java.io.FileNotFoundException
@@ -38,7 +42,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(buildHome())
+        showHome()
 
         trashLauncher = registerForActivityResult(
             ActivityResultContracts.StartIntentSenderForResult()
@@ -104,26 +108,29 @@ class MainActivity : ComponentActivity() {
      * detector. Once per process, off the main thread, and the home screen is
      * rebuilt only if something was actually recovered.
      */
-    private fun maybeRebuildAvatars(persons: List<com.picfilter.spike.data.Db.PersonChip>) {
-        if (avatarsChecked) return
+    private fun maybeRebuildAvatars(persons: List<HomePerson>) {
+        if (avatarsChecked || persons.isEmpty()) return
         avatarsChecked = true
-        Thread {
-            try {
-                val db = com.picfilter.spike.data.Db(this)
-                val missing = persons.count { p ->
-                    com.picfilter.spike.engine.Clusterer.personFaces(this, p.id).isEmpty() &&
-                        db.matchedItemsFor(p.id, 1).isNotEmpty()
+        lifecycleScope.launch {
+            val rebuilt = withContext(Dispatchers.IO) {
+                try {
+                    val db = com.picfilter.spike.data.Db(this@MainActivity)
+                    val missing = persons.count { p ->
+                        p.faces.isEmpty() && db.matchedItemsFor(p.id, 1).isNotEmpty()
+                    }
+                    db.close()
+                    if (missing == 0) return@withContext 0
+                    Log.i(TAG, "AVATAR $missing of ${persons.size} have no face to show; rebuilding")
+                    com.picfilter.spike.engine.Clusterer.rebuildAvatars(this@MainActivity)
+                } catch (e: Exception) {
+                    Log.w(TAG, "AVATAR rebuild: ${e.javaClass.simpleName}: ${e.message}")
+                    0
                 }
-                db.close()
-                if (missing == 0) return@Thread
-                Log.i(TAG, "AVATAR $missing of ${persons.size} have no face to show; rebuilding")
-                if (com.picfilter.spike.engine.Clusterer.rebuildAvatars(this) > 0) {
-                    runOnUiThread { if (!isFinishing) setContentView(buildHome()) }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "AVATAR rebuild: ${e.javaClass.simpleName}: ${e.message}")
             }
-        }.start()
+            // No isFinishing check needed: lifecycleScope has already cancelled
+            // this coroutine if the screen went away.
+            if (rebuilt > 0) showHome()
+        }
     }
 
     private fun maybeOnboard() {
@@ -131,17 +138,22 @@ class MainActivity : ComponentActivity() {
         onboardChecked = true
         // adb-driven ops are not a user opening the app; never hijack those.
         if (pendingOp != "scan") return
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-        if (prefs.getBoolean(KEY_ONBOARDED, false)) return
-        val db = com.picfilter.spike.data.Db(this)
-        val people = try { db.enrolledCount() } catch (e: Exception) { 0 }
-        db.close()
-        if (people > 0) return
-        Log.i(TAG, "FIRSTRUN nobody enrolled - starting onboarding")
-        startActivity(android.content.Intent().apply {
-            component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
-            putExtra("first_run", "1")
-        })
+        lifecycleScope.launch {
+            val go = withContext(Dispatchers.IO) {
+                val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+                if (prefs.getBoolean(KEY_ONBOARDED, false)) return@withContext false
+                val db = com.picfilter.spike.data.Db(this@MainActivity)
+                val people = try { db.enrolledCount() } catch (e: Exception) { 0 }
+                db.close()
+                people == 0
+            }
+            if (!go) return@launch
+            Log.i(TAG, "FIRSTRUN nobody enrolled - starting onboarding")
+            startActivity(android.content.Intent().apply {
+                component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
+                putExtra("first_run", "1")
+            })
+        }
     }
 
     /**
@@ -153,17 +165,42 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (homeBuilt) setContentView(buildHome()) else homeBuilt = true
+        if (homeBuilt) showHome() else homeBuilt = true
+    }
+
+    /**
+     * Read the home screen's figures off the main thread, then draw them on it.
+     *
+     * This used to be one synchronous buildHome(): eight database queries, a
+     * directory listing per enrolled person, and two blocking WorkManager
+     * futures, all inside onCreate and again on every onResume. It never looked
+     * broken -- the database is a megabyte and the phone has eight cores -- but
+     * it is disk work on the thread that draws frames, and StrictMode in
+     * [PixKinApp] now says so.
+     *
+     * lifecycleScope, so a slow read cannot come back to an Activity that has
+     * already gone away. The previous version guarded that with an isFinishing
+     * check in one of the three places that needed one.
+     */
+    private fun showHome() {
+        lifecycleScope.launch {
+            val data = withContext(Dispatchers.IO) { readHome() }
+            setContentView(renderHome(data))
+            maybeRebuildAvatars(data.people)
+        }
     }
 
     /** Once per launch: anyone whose face crops a re-scan orphaned gets them
      *  back from the new clusters, and the people row redraws if that worked. */
-    private fun relinkFaces() = Thread {
-        val fixed = try {
-            com.picfilter.spike.engine.Clusterer.relinkFaces(this)
-        } catch (e: Exception) { 0 }
-        if (fixed > 0) runOnUiThread { setContentView(buildHome()) }
-    }.start()
+    private fun relinkFaces() {
+        lifecycleScope.launch {
+            val fixed = withContext(Dispatchers.IO) {
+                try { com.picfilter.spike.engine.Clusterer.relinkFaces(this@MainActivity) }
+                catch (e: Exception) { 0 }
+            }
+            if (fixed > 0) showHome()
+        }
+    }
 
     /**
      * adb-driven runs often target an already-running instance, in which case
@@ -180,15 +217,33 @@ class MainActivity : ComponentActivity() {
         dispatch(op)
     }
 
-    /** Home. Photos-style: the people row, a stat row, then tappable cards. */
-    private fun buildHome(): android.view.View {
+    /** Everything the home screen shows, read in one background pass. */
+    private data class HomePerson(
+        val id: Long, val name: String, val subtitle: String, val faces: List<String>,
+    )
+
+    private data class HomeData(
+        val promoted: Int,
+        val review: Int,
+        val discard: Int,
+        val dupeGroups: Int,
+        val people: List<HomePerson>,
+        val watchOn: Boolean,
+        val armed: Boolean,
+        val savedThumbs: List<String>,
+        val rescueThumbs: List<String>,
+        val nofaceThumbs: List<String>,
+        val junkThumbs: List<String>,
+        val dupeThumbs: List<String>,
+    )
+
+    /** Disk and WorkManager only. Must not touch a View. */
+    private fun readHome(): HomeData {
         val db = com.picfilter.spike.data.Db(this)
         val promoted = try { db.promotionCount() } catch (e: Exception) { 0 }
         val persons = try { db.enrolledPeople() } catch (e: Exception) { emptyList() }
         val counts = try { db.decisionCounts().toMap() } catch (e: Exception) { emptyMap() }
         val dupeGroups = try { db.dupeGroupCount() } catch (e: Exception) { 0 }
-        // Thumbnail sources are read now, while the db is open; the bitmaps
-        // themselves are decoded off the main thread further down.
         val junkThumbs = try { db.junkQueue(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
         val dupeThumbs = try { db.dupePreview(limit = 5) } catch (e: Exception) { emptyList() }
         val savedThumbs = try { db.promotedForReview(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
@@ -197,11 +252,44 @@ class MainActivity : ComponentActivity() {
             db.rescueQueue(listOf("NO_FACE_PLAIN"), limit = 5).map { it.uri }
         } catch (e: Exception) { emptyList() }
         db.close()
-        val people = persons.size
-        val review = counts["REVIEW"] ?: 0
-        val discard = counts["DISCARD_CANDIDATE"] ?: 0
-        val keep = counts["KEEP"] ?: 0
 
+        // A re-scan wipes the cluster crops, so prefer the copies enrolment
+        // kept; fall back for people enrolled before that existed. This lists
+        // a directory per person, which is why it belongs here and not in the
+        // render pass.
+        val people = persons.map { p ->
+            HomePerson(
+                p.id, p.name,
+                if (p.photos > 0) "${p.photos} photos" else "",
+                com.picfilter.spike.engine.Clusterer.personFaces(this, p.id).ifEmpty { p.thumbs },
+            )
+        }
+
+        val watchOn = try { com.picfilter.spike.engine.Watcher.isEnabled(this) } catch (e: Exception) { false }
+        // A force-stop or a failed run can break the content-trigger chain while
+        // the periodic net keeps going. Re-arm it whenever the app is opened.
+        val armed = try { com.picfilter.spike.engine.Watcher.isArmed(this) } catch (e: Exception) { false }
+        if (watchOn && !armed) com.picfilter.spike.engine.Watcher.enable(this)
+
+        return HomeData(
+            promoted = promoted,
+            review = counts["REVIEW"] ?: 0,
+            discard = counts["DISCARD_CANDIDATE"] ?: 0,
+            dupeGroups = dupeGroups,
+            people = people,
+            watchOn = watchOn,
+            armed = armed,
+            savedThumbs = savedThumbs,
+            rescueThumbs = rescueThumbs,
+            nofaceThumbs = nofaceThumbs,
+            junkThumbs = junkThumbs,
+            dupeThumbs = dupeThumbs,
+        )
+    }
+
+    /** Home. Photos-style: the people row, a stat row, then tappable cards. */
+    private fun renderHome(d: HomeData): android.view.View {
+        val people = d.people.size
         val col = Ui.screen(this)
         val managePeople = {
             startActivity(android.content.Intent().apply {
@@ -210,58 +298,51 @@ class MainActivity : ComponentActivity() {
             })
         }
         if (people > 0) {
-            maybeRebuildAvatars(persons)
-            col.addView(Ui.peopleRow(this, persons.map {
-                Ui.Face(it.name, if (it.photos > 0) "${it.photos} photos" else "",
-                    // A re-scan wipes the cluster crops, so prefer the copies
-                    // enrolment kept; fall back for people enrolled before that.
-                    com.picfilter.spike.engine.Clusterer.personFaces(this, it.id)
-                        .ifEmpty { it.thumbs })
+            col.addView(Ui.peopleRow(this, d.people.map {
+                Ui.Face(it.name, it.subtitle, it.faces)
             }, managePeople))
             col.addView(Ui.body(this, "Photos of these people are kept automatically."))
         } else {
             col.addView(Ui.body(this, "Start by telling PixKin who matters to you."))
         }
         col.addView(Ui.statRow(this, listOf(
-            "$promoted" to "backed up",
-            "$review" to "to review",
-            "$discard" to "junk found",
+            "${d.promoted}" to "backed up",
+            "${d.review}" to "to review",
+            "${d.discard}" to "junk found",
         )))
 
-        val watchOn = try { com.picfilter.spike.engine.Watcher.isEnabled(this) } catch (e: Exception) { false }
-        // A force-stop or a failed run can break the content-trigger chain while
-        // the periodic net keeps going. Re-arm it whenever the app is opened.
-        if (watchOn && !com.picfilter.spike.engine.Watcher.isArmed(this)) {
-            com.picfilter.spike.engine.Watcher.enable(this)
-        }
         col.addView(Ui.actionCard(this,
-            if (watchOn) "Auto-rescue is on" else "Auto-rescue is off",
-            if (watchOn) "New WhatsApp photos of your people are saved for you"
+            if (d.watchOn) "Auto-rescue is on" else "Auto-rescue is off",
+            if (d.watchOn) "New WhatsApp photos of your people are saved for you"
             else "Turn on to protect new photos automatically",
-            accent = watchOn) {
-            if (watchOn) com.picfilter.spike.engine.Watcher.disable(this)
-            else com.picfilter.spike.engine.Watcher.enable(this)
-            setContentView(buildHome())
+            accent = d.watchOn) {
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO) {
+                    if (d.watchOn) com.picfilter.spike.engine.Watcher.disable(this@MainActivity)
+                    else com.picfilter.spike.engine.Watcher.enable(this@MainActivity)
+                }
+                showHome()
+            }
         })
 
         col.addView(Ui.actionCard(this,
             if (people == 0) "Set up — find your people" else "Manage people",
             if (people == 0) "Scans your library and finds recurring faces"
             else "$people enrolled · add or re-scan") { managePeople() })
-        preview("Saved for you", "$promoted photos PixKin kept \u00b7 check for mistakes",
-            "verify", savedThumbs, col)
+        preview("Saved for you", "${d.promoted} photos PixKin kept \u00b7 check for mistakes",
+            "verify", d.savedThumbs, col)
         preview("Find more family photos", "Photos we were unsure about",
-            "rescue", rescueThumbs, col)
+            "rescue", d.rescueThumbs, col)
         preview("Photos with no faces", "Places, drawings, documents",
-            "noface", nofaceThumbs, col)
+            "noface", d.nofaceThumbs, col)
         preview("Suspected junk",
-            if (discard == 0) "Nothing flagged yet"
-            else "$discard look like forwards, memes or screenshots",
-            "junk", junkThumbs, col)
+            if (d.discard == 0) "Nothing flagged yet"
+            else "${d.discard} look like forwards, memes or screenshots",
+            "junk", d.junkThumbs, col)
         preview("Suspected duplicates",
-            if (dupeGroups == 0) "No near-identical copies found"
-            else "$dupeGroups ${if (dupeGroups == 1) "group" else "groups"} of near-identical copies",
-            "dupes", dupeThumbs, col)
+            if (d.dupeGroups == 0) "No near-identical copies found"
+            else "${d.dupeGroups} ${if (d.dupeGroups == 1) "group" else "groups"} of near-identical copies",
+            "dupes", d.dupeThumbs, col)
 
         // The logo lockup is the home screen's top bar: it carries the brand,
         // so there is no title text and no colored bar.
@@ -292,16 +373,13 @@ class MainActivity : ComponentActivity() {
         col.addView(card.view)
         if (uris.isEmpty()) return
         val tiles = uris.map { Ui.previewTile(this).also { t -> card.strip.addView(t) } }
-        Thread {
+        lifecycleScope.launch {
             for ((i, u) in uris.withIndex()) {
-                val bmp = mediaThumb(u) ?: continue
-                val tile = tiles[i]
-                tile.post {
-                    tile.setImageBitmap(bmp)
-                    card.strip.visibility = android.view.View.VISIBLE
-                }
+                val bmp = withContext(Dispatchers.IO) { mediaThumb(u) } ?: continue
+                tiles[i].setImageBitmap(bmp)
+                card.strip.visibility = android.view.View.VISIBLE
             }
-        }.start()
+        }
     }
 
     /** MediaStore's own thumbnail — cheap, and already the right size. */
@@ -309,6 +387,15 @@ class MainActivity : ComponentActivity() {
         contentResolver.loadThumbnail(Uri.parse(uri), android.util.Size(256, 256), null)
     } catch (e: Exception) { null }
 
+    /**
+     * The adb-driven diagnostics.
+     *
+     * Most of these stay on a bare Thread on purpose, which is the one place in
+     * the app that is still right. They are fire-and-forget measurements that
+     * only write to logcat, and a long score or bootstrap must finish even if
+     * the screen goes away -- lifecycleScope would cancel it halfway and report
+     * nothing. The two that come back to the UI are scoped; see below.
+     */
     private fun dispatch(op: String) {
         when (op) {
             "scan" -> scan()
@@ -338,27 +425,35 @@ class MainActivity : ComponentActivity() {
                 )
             }.start()
             "repair"    -> Thread { com.picfilter.spike.engine.Promoter.repair(this) }.start()
-            "reclaim"   -> Thread {
+            // These two come back to the UI to raise the system trash dialog, so
+            // they are scoped: a result that arrives after the screen is gone
+            // has nothing to show it to, and launching from a dead Activity
+            // throws.
+            "reclaim"   -> lifecycleScope.launch {
                 val live = intent?.getStringExtra("live") == "1"
                 val hrs = intent?.getStringExtra("hours")?.toIntOrNull()
                     ?: com.picfilter.spike.engine.Promoter.SYNC_GRACE_HOURS
-                val gone = com.picfilter.spike.engine.Promoter.reclaimable(this, hrs, dryRun = !live)
-                if (live && gone.isNotEmpty()) runOnUiThread {
+                val gone = withContext(Dispatchers.IO) {
+                    com.picfilter.spike.engine.Promoter.reclaimable(
+                        this@MainActivity, hrs, dryRun = !live)
+                }
+                if (live && gone.isNotEmpty()) {
                     Log.i(TAG, "RECLAIM asking to trash ${gone.size} local copies")
                     trashUris(gone.map { it.first })
                 }
-            }.start()
-            "tidydest"  -> Thread {
+            }
+            "tidydest"  -> lifecycleScope.launch {
                 val live = intent?.getStringExtra("live") == "1"
-                com.picfilter.spike.engine.Promoter.tidyDest(this, dryRun = !live)
-                if (live) {
-                    val extras = com.picfilter.spike.engine.Promoter.redundantCopies(this)
-                    if (extras.isNotEmpty()) runOnUiThread {
-                        Log.i(TAG, "TIDYDEST asking to trash ${extras.size} copies")
-                        trashUris(extras.map { it.first })
-                    }
+                val extras = withContext(Dispatchers.IO) {
+                    com.picfilter.spike.engine.Promoter.tidyDest(this@MainActivity, dryRun = !live)
+                    if (live) com.picfilter.spike.engine.Promoter.redundantCopies(this@MainActivity)
+                    else emptyList()
                 }
-            }.start()
+                if (extras.isNotEmpty()) {
+                    Log.i(TAG, "TIDYDEST asking to trash ${extras.size} copies")
+                    trashUris(extras.map { it.first })
+                }
+            }
             "unpromote" -> Thread {
                 intent?.getStringExtra("id")?.toLongOrNull()?.let {
                     com.picfilter.spike.engine.Promoter.unpromote(this, it)
@@ -409,12 +504,12 @@ class MainActivity : ComponentActivity() {
                 val d = com.picfilter.spike.data.Db(this)
                 val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss", java.util.Locale.US)
                 var missing = 0; var present = 0
+                val onDisk = com.picfilter.spike.engine.Promoter.presentDestNames(this)
                 d.readableDatabase.rawQuery(
                     "SELECT dest_name, at, bytes FROM promotion ORDER BY at", null).use { c ->
                     while (c.moveToNext()) {
                         val n = c.getString(0)
-                        val f = java.io.File("/sdcard/Pictures/PicFilter/$n")
-                        if (f.exists()) present++ else {
+                        if (n in onDisk) present++ else {
                             missing++
                             Log.i(TAG, "PRDIAG MISSING $n promoted_at=${fmt.format(java.util.Date(c.getLong(1)))} recorded_bytes=${c.getLong(2)}")
                         }

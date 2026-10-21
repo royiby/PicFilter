@@ -20,6 +20,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.picfilter.spike.data.Db
@@ -49,6 +53,34 @@ class OnboardingActivity : ComponentActivity() {
     private var firstRun = false
 
     /**
+     * Which screen of the flow is showing.
+     *
+     * The step used to live only in which show*() had last been called, so a
+     * rotation sent the user back to the intro with their naming progress gone.
+     */
+    private var step = STEP_INTRO
+
+    /** Read once per visit to the summary, off the main thread. */
+    private var skippedCache: List<Db.Candidate>? = null
+
+    /** Every database touch from this screen, serialised; see [DbQueue]. */
+    private val dbq by lazy { com.picfilter.spike.data.DbQueue(db) }
+
+    private companion object {
+        const val STEP_INTRO = "intro"
+        const val STEP_SCAN = "scan"
+        const val STEP_NOFACES = "nofaces"
+        const val STEP_CANDIDATE = "candidate"
+        const val STEP_SUMMARY = "summary"
+        const val STEP_BACKUP = "backup"
+
+        const val S_STEP = "step"
+        const val S_IDX = "idx"
+        const val S_NAMED = "named"
+        const val S_FIRST = "first_run"
+    }
+
+    /**
      * The photo picker needs no permission at all: the user hands over exactly
      * the images they chose and nothing else.
      */
@@ -63,19 +95,72 @@ class OnboardingActivity : ComponentActivity() {
         root = Ui.screen(this)
         Ui.applyInsets(root, this, extraBottom = 8)
         setContentView(root)
-        firstRun = intent?.getStringExtra("first_run") == "1"
+        firstRun = savedInstanceState?.getBoolean(S_FIRST)
+            ?: (intent?.getStringExtra("first_run") == "1")
+
+        if (savedInstanceState != null) {
+            idx = savedInstanceState.getInt(S_IDX)
+            named = savedInstanceState.getInt(S_NAMED)
+            restore(savedInstanceState.getString(S_STEP) ?: STEP_INTRO)
+            return
+        }
+
         // "step" jumps straight to one screen, for looking at it in isolation.
-        val step = intent?.getStringExtra("step")
+        val jump = intent?.getStringExtra("step")
         // "resume" skips the scan and works from clusters already extracted —
         // used for adding people later, and for re-grouping experiments.
-        if (step == "backup") {
+        if (jump == "backup") {
             showBackup()
         } else if (intent?.getStringExtra("resume") == "1") {
-            candidates = db.candidates(limit = 20, thumbsEach = 6)
-            idx = 0
-            if (candidates.isEmpty()) showNoFaces() else showCandidate()
+            loadCandidates()
         } else {
             showIntro()
+        }
+    }
+
+    /**
+     * Put the user back where they were after a rotation or process death.
+     *
+     * A scan still running is re-attached to rather than restarted: [Scan] owns
+     * it now, so the progress screen comes back showing where it has got to.
+     * One that finished while the screen was gone goes straight to the faces it
+     * found, which is where it would have gone anyway.
+     */
+    private fun restore(saved: String) {
+        when (saved) {
+            STEP_SCAN -> when {
+                Scan.running -> showScanProgress()
+                else -> loadCandidates()
+            }
+            STEP_CANDIDATE -> loadCandidates(keepIndex = true)
+            STEP_SUMMARY -> showSummary()
+            STEP_BACKUP -> showBackup()
+            STEP_NOFACES -> showNoFaces()
+            else -> showIntro()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(S_STEP, step)
+        outState.putInt(S_IDX, idx)
+        outState.putInt(S_NAMED, named)
+        outState.putBoolean(S_FIRST, firstRun)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Must happen, or Scan keeps this Activity alive for the whole process.
+        Scan.observe(null)
+        dbq.closeAfterPending()
+    }
+
+    /** Read the candidate clusters off the main thread, then show one. */
+    private fun loadCandidates(keepIndex: Boolean = false) {
+        lifecycleScope.launch {
+            candidates = withContext(dbq.context) { db.candidates(limit = 20, thumbsEach = 6) }
+            if (!keepIndex) idx = 0
+            if (candidates.isEmpty()) showNoFaces() else showCandidate()
         }
     }
 
@@ -95,6 +180,7 @@ class OnboardingActivity : ComponentActivity() {
     // ------------------------------------------------------------- 1. intro
 
     private fun showIntro() {
+        step = STEP_INTRO
         root.removeAllViews()
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -121,30 +207,38 @@ class OnboardingActivity : ComponentActivity() {
         col.addView(button("Find my people", Ui.Btn.PRIMARY) { runScan() })
         // Secondary here: the scan is the headline action on first run.
         col.addView(pickButton("Pick photos of someone instead", Ui.Btn.OUTLINED))
-        if (db.candidates(limit = 1, thumbsEach = 1).isNotEmpty()) {
-            col.addView(button("Continue with faces already found", Ui.Btn.OUTLINED) {
-                candidates = db.candidates(limit = 20, thumbsEach = 6)
-                idx = 0
-                if (candidates.isEmpty()) showNoFaces() else showCandidate()
-            })
-        }
+        // Placed now, shown only if there is anything to continue from — the
+        // check is a database read and does not belong on this thread.
+        val continueBtn = button("Continue with faces already found", Ui.Btn.OUTLINED) {
+            loadCandidates()
+        }.apply { visibility = View.GONE }
+        col.addView(continueBtn)
         col.addView(button("Not now", Ui.Btn.TEXT) { done() })
         root.addView(scroll)
 
-        Thread {
-            val (n, uris) = Clusterer.whatsAppPreview(this, 4)
-            val bmps = uris.mapNotNull { u ->
-                try {
-                    contentResolver.loadThumbnail(u, android.util.Size(256, 256), null)
-                } catch (e: Exception) { null }
+        lifecycleScope.launch {
+            val already = withContext(dbq.context) {
+                db.candidates(limit = 1, thumbsEach = 1).isNotEmpty()
             }
-            runOnUiThread {
-                count.text = if (n > 0) "$n photos from WhatsApp on this phone"
-                             else "No WhatsApp photos found on this phone"
-                for (b in bmps) hero.addView(Ui.previewTile(this).apply { setImageBitmap(b) })
-                if (bmps.isNotEmpty()) hero.visibility = View.VISIBLE
+            if (already) continueBtn.visibility = View.VISIBLE
+        }
+
+        lifecycleScope.launch {
+            val (n, bmps) = withContext(Dispatchers.IO) {
+                val (count, uris) = Clusterer.whatsAppPreview(this@OnboardingActivity, 4)
+                count to uris.mapNotNull { u ->
+                    try {
+                        contentResolver.loadThumbnail(u, android.util.Size(256, 256), null)
+                    } catch (e: Exception) { null }
+                }
             }
-        }.start()
+            count.text = if (n > 0) "$n photos from WhatsApp on this phone"
+                         else "No WhatsApp photos found on this phone"
+            for (b in bmps) hero.addView(Ui.previewTile(this@OnboardingActivity).apply {
+                setImageBitmap(b)
+            })
+            if (bmps.isNotEmpty()) hero.visibility = View.VISIBLE
+        }
     }
 
     /**
@@ -160,9 +254,21 @@ class OnboardingActivity : ComponentActivity() {
     // -------------------------------------------------------------- 2. scan
 
     private fun runScan() {
+        Scan.start(applicationContext)
+        showScanProgress()
+    }
+
+    /**
+     * Draw whatever [Scan] is currently doing.
+     *
+     * Reachable twice: when the scan is started, and when a recreated Activity
+     * finds one already running.
+     */
+    private fun showScanProgress() {
+        step = STEP_SCAN
         root.removeAllViews()
         root.addView(title("Looking for faces"))
-        val status = body("Starting…")
+        val status = body("${Scan.phase}\u2026")
         val bar = com.google.android.material.progressindicator.LinearProgressIndicator(this).apply {
             isIndeterminate = false
             max = 100
@@ -174,27 +280,33 @@ class OnboardingActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { setMargins(dp(24), dp(8), dp(24), dp(8)) }
         }
+        bar.progress = Scan.percent
         root.addView(bar)
         root.addView(status)
-        root.addView(body("Keep the screen on until this finishes. Nothing leaves the phone."))
+        root.addView(body(
+            "This keeps going if you turn the phone or leave the app. " +
+            "Nothing leaves the phone."))
 
-        Thread {
-            Clusterer.bootstrap(this, Clusterer.SAMPLE_SIZE) { done, total, phase ->
-                val pct = if (total > 0) done * 100 / total else 0
-                runOnUiThread {
-                    bar.progress = pct
-                    status.text = "$phase…  $done / $total"
-                }
+        Scan.observe {
+            if (Scan.running) {
+                bar.progress = Scan.percent
+                status.text = "${Scan.phase}\u2026  ${Scan.done} / ${Scan.total}"
+            } else {
+                Scan.observe(null)
+                Scan.consumeFinished()
+                loadCandidates()
             }
-            runOnUiThread {
-                candidates = db.candidates(limit = 20, thumbsEach = 6)
-                idx = 0
-                if (candidates.isEmpty()) showNoFaces() else showCandidate()
-            }
-        }.start()
+        }
+        // The scan may have finished between start and here.
+        if (!Scan.running) {
+            Scan.observe(null)
+            Scan.consumeFinished()
+            loadCandidates()
+        }
     }
 
     private fun showNoFaces() {
+        step = STEP_NOFACES
         root.removeAllViews()
         root.addView(title("No faces to show you"))
         root.addView(body(
@@ -219,6 +331,7 @@ class OnboardingActivity : ComponentActivity() {
 
     private fun showCandidate() {
         if (idx >= candidates.size) { showSummary(); return }
+        step = STEP_CANDIDATE
         val c = candidates[idx]
         root.removeAllViews()
         root.addView(Ui.text(this, Ui.Type.CAPTION,
@@ -229,12 +342,18 @@ class OnboardingActivity : ComponentActivity() {
         root.addView(title("Do you know this person?"))
 
         val strip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        for (p in c.thumbs) {
-            val bmp = try { BitmapFactory.decodeFile(p) } catch (e: Exception) { null } ?: continue
-            strip.addView(Ui.thumb(this, 96).apply { setImageBitmap(bmp) })
-        }
+        val tiles = c.thumbs.map { Ui.thumb(this, 96).also { strip.addView(it) } }
         val scroll = android.widget.HorizontalScrollView(this).apply { addView(strip) }
         root.addView(scroll)
+        // Six JPEGs off disk, which is not the drawing thread's job.
+        lifecycleScope.launch {
+            for ((i, path) in c.thumbs.withIndex()) {
+                val bmp = withContext(Dispatchers.IO) {
+                    try { BitmapFactory.decodeFile(path) } catch (e: Exception) { null }
+                } ?: continue
+                tiles[i].setImageBitmap(bmp)
+            }
+        }
 
         root.addView(Ui.factRow(this, R.drawable.ic_photo_stack, "In ${c.size} of your photos"))
         root.addView(Ui.factRow(this, R.drawable.ic_lock,
@@ -256,10 +375,12 @@ class OnboardingActivity : ComponentActivity() {
             .setPositiveButton("Save") { _, _ ->
                 val typed = input.text.toString().trim()
                 val name = if (typed.isNotEmpty()) typed else "Person ${named + 1}"
-                Thread {
-                    Clusterer.enrolCluster(this, c.id, name)
-                    runOnUiThread { named++; idx++; showCandidate() }
-                }.start()
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        Clusterer.enrolCluster(this@OnboardingActivity, c.id, name)
+                    }
+                    named++; idx++; showCandidate()
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -285,18 +406,18 @@ class OnboardingActivity : ComponentActivity() {
                 val name = if (typed.isNotEmpty()) typed else "Person ${named + 1}"
                 val busy = AlertDialog.Builder(this)
                     .setMessage("Reading those photos\u2026").setCancelable(false).show()
-                Thread {
-                    val r = try {
-                        Clusterer.enrolFromUris(this, name, uris)
-                    } catch (e: Exception) {
-                        Clusterer.PickOutcome(-1, 0, uris.size, 0)
+                lifecycleScope.launch {
+                    val r = withContext(Dispatchers.IO) {
+                        try {
+                            Clusterer.enrolFromUris(this@OnboardingActivity, name, uris)
+                        } catch (e: Exception) {
+                            Clusterer.PickOutcome(-1, 0, uris.size, 0)
+                        }
                     }
-                    runOnUiThread {
-                        busy.dismiss()
-                        if (r.ok) named++
-                        showPickResult(name, r)
-                    }
-                }.start()
+                    busy.dismiss()
+                    if (r.ok) named++
+                    showPickResult(name, r)
+                }
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -331,15 +452,16 @@ class OnboardingActivity : ComponentActivity() {
     }
 
     private fun decide(c: Db.Candidate, status: String) {
-        Thread {
-            db.setClusterStatus(c.id, status, null)
-            runOnUiThread { idx++; showCandidate() }
-        }.start()
+        lifecycleScope.launch {
+            withContext(dbq.context) { db.setClusterStatus(c.id, status, null) }
+            idx++; showCandidate()
+        }
     }
 
     // ----------------------------------------------------------- 4. summary
 
     private fun showSummary() {
+        step = STEP_SUMMARY
         root.removeAllViews()
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -347,8 +469,18 @@ class OnboardingActivity : ComponentActivity() {
 
         col.addView(title("$named ${if (named == 1) "person" else "people"} enrolled"))
 
-        // The part that matters: who did they NOT claim?
-        val skipped = db.skippedClusters(minSize = 5)
+        // The part that matters: who did they NOT claim? Read on this thread
+        // only because the whole screen is already built synchronously; the
+        // decode below is what actually cost frames and that is now scoped.
+        val skipped = skippedCache
+        if (skipped == null) {
+            lifecycleScope.launch {
+                skippedCache = withContext(dbq.context) { db.skippedClusters(minSize = 5) }
+                showSummary()
+            }
+            root.addView(scroll)
+            return
+        }
         if (skipped.isNotEmpty()) {
             col.addView(Ui.text(this, Ui.Type.TITLE_SMALL, "Worth a second look",
                 R.color.pk_warning).apply {
@@ -359,25 +491,31 @@ class OnboardingActivity : ComponentActivity() {
                 "suggested for deletion. If any of these is family, go back and add them."
             ))
             val strip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val pending = ArrayList<Pair<android.widget.ImageView, String>>()
             for (s in skipped.take(10)) {
                 val p = s.thumbs.firstOrNull() ?: continue
-                val bmp = try { BitmapFactory.decodeFile(p) } catch (e: Exception) { null } ?: continue
                 val cell = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER_HORIZONTAL
                     layoutParams = LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.WRAP_CONTENT)
                         .apply { setMargins(0, 0, dp(8), 0) }
                 }
-                cell.addView(Ui.thumb(this, 80).apply { setImageBitmap(bmp) })
+                cell.addView(Ui.thumb(this, 80).also { pending += it to p })
                 cell.addView(Ui.text(this, Ui.Type.CAPTION, "${s.size} photos",
                     R.color.pk_on_surface_variant))
                 strip.addView(cell)
             }
             col.addView(android.widget.HorizontalScrollView(this).apply { addView(strip) })
+            lifecycleScope.launch {
+                for ((view, path) in pending) {
+                    val bmp = withContext(Dispatchers.IO) {
+                        try { BitmapFactory.decodeFile(path) } catch (e: Exception) { null }
+                    } ?: continue
+                    view.setImageBitmap(bmp)
+                }
+            }
             col.addView(button("Go back and add someone", Ui.Btn.PRIMARY) {
-                candidates = db.candidates(limit = 20, thumbsEach = 6)
-                idx = 0
-                if (candidates.isEmpty()) showSummary() else showCandidate()
+                loadCandidates()
             })
         } else if (named > 0) {
             col.addView(body("No other recurring faces were left unclaimed."))
@@ -406,6 +544,7 @@ class OnboardingActivity : ComponentActivity() {
      * and the WhatsApp folders have to stop being one.
      */
     private fun showBackup() {
+        step = STEP_BACKUP
         root.removeAllViews()
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -430,13 +569,13 @@ class OnboardingActivity : ComponentActivity() {
         col.addView(Ui.factRow(this, R.drawable.ic_folder, status))
         // Google Photos only lists a folder that exists, and on a fresh install
         // nothing has been rescued into it yet.
-        Thread {
-            val ok = Promoter.ensureDestFolder(this)
-            runOnUiThread {
-                status.text = if (ok) "${Promoter.DEST_LABEL} exists, so it will be in that list"
-                              else "PixKin makes that folder with the first photo it saves"
+        lifecycleScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                Promoter.ensureDestFolder(this@OnboardingActivity)
             }
-        }.start()
+            status.text = if (ok) "${Promoter.DEST_LABEL} exists, so it will be in that list"
+                          else "PixKin makes that folder with the first photo it saves"
+        }
 
         col.addView(body("Photos already backed up stay where they are."))
 
@@ -448,5 +587,4 @@ class OnboardingActivity : ComponentActivity() {
         root.addView(scroll)
     }
 
-    override fun onDestroy() { super.onDestroy(); db.close() }
 }
