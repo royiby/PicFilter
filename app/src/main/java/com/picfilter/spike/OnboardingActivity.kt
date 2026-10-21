@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.picfilter.spike.Ui.setMarginsRelative
 import com.picfilter.spike.data.Db
 import com.picfilter.spike.engine.Clusterer
 import com.picfilter.spike.engine.Promoter
@@ -189,31 +190,29 @@ class OnboardingActivity : ComponentActivity() {
         // Their own group-chat photos, not a paragraph about them.
         val hero = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(Ui.MD), dp(Ui.MD), dp(Ui.MD), 0)
+            setPaddingRelative(dp(Ui.MD), dp(Ui.MD), dp(Ui.MD), 0)
             visibility = View.GONE
         }
         col.addView(hero)
 
-        col.addView(headline("Who matters to you?"))
-        col.addView(body("Group chats fill your phone with other people's photos. " +
-            "PixKin keeps the ones your people are in."))
+        col.addView(headline(getString(R.string.onboard_who_matters)))
+        col.addView(body(getString(R.string.onboard_intro_body)))
 
-        val count = Ui.text(this, Ui.Type.BODY, "Reading your WhatsApp folders\u2026")
+        val count = Ui.text(this, Ui.Type.BODY, getString(R.string.onboard_reading))
         col.addView(Ui.factRow(this, R.drawable.ic_photo_stack, count))
-        col.addView(Ui.factRow(this, R.drawable.ic_timer,
-            "About four minutes to find them, or seconds if you pick photos yourself"))
-        col.addView(Ui.factRow(this, R.drawable.ic_lock, "Nothing leaves this phone"))
+        col.addView(Ui.factRow(this, R.drawable.ic_timer, getString(R.string.onboard_time)))
+        col.addView(Ui.factRow(this, R.drawable.ic_lock, getString(R.string.onboard_private)))
 
-        col.addView(button("Find my people", Ui.Btn.PRIMARY) { runScan() })
+        col.addView(button(getString(R.string.onboard_find), Ui.Btn.PRIMARY) { runScan() })
         // Secondary here: the scan is the headline action on first run.
-        col.addView(pickButton("Pick photos of someone instead", Ui.Btn.OUTLINED))
+        col.addView(pickButton(getString(R.string.onboard_pick_instead), Ui.Btn.OUTLINED))
         // Placed now, shown only if there is anything to continue from — the
         // check is a database read and does not belong on this thread.
-        val continueBtn = button("Continue with faces already found", Ui.Btn.OUTLINED) {
+        val continueBtn = button(getString(R.string.onboard_continue_found), Ui.Btn.OUTLINED) {
             loadCandidates()
         }.apply { visibility = View.GONE }
         col.addView(continueBtn)
-        col.addView(button("Not now", Ui.Btn.TEXT) { done() })
+        col.addView(button(getString(R.string.onboard_not_now), Ui.Btn.TEXT) { done() })
         root.addView(scroll)
 
         lifecycleScope.launch {
@@ -227,8 +226,9 @@ class OnboardingActivity : ComponentActivity() {
             val (n, uris) = withContext(Dispatchers.IO) {
                 Clusterer.whatsAppPreview(this@OnboardingActivity, 4)
             }
-            count.text = if (n > 0) "$n photos from WhatsApp on this phone"
-                         else "No WhatsApp photos found on this phone"
+            count.text = if (n > 0)
+                resources.getQuantityString(R.plurals.onboard_whatsapp_count, n, n)
+            else getString(R.string.onboard_no_whatsapp)
             for (u in uris) hero.addView(
                 Ui.previewTile(this@OnboardingActivity).also { it.load(u) })
             if (uris.isNotEmpty()) hero.visibility = View.VISIBLE
@@ -261,7 +261,7 @@ class OnboardingActivity : ComponentActivity() {
     private fun showScanProgress() {
         step = STEP_SCAN
         root.removeAllViews()
-        root.addView(title("Looking for faces"))
+        root.addView(title(getString(R.string.onboard_looking)))
         val status = body("${Scan.phase}\u2026")
         val bar = com.google.android.material.progressindicator.LinearProgressIndicator(this).apply {
             isIndeterminate = false
@@ -272,19 +272,18 @@ class OnboardingActivity : ComponentActivity() {
             trackThickness = dp(8)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(24), dp(8), dp(24), dp(8)) }
+            ).apply { setMarginsRelative(dp(24), dp(8), dp(24), dp(8)) }
         }
         bar.progress = Scan.percent
         root.addView(bar)
         root.addView(status)
-        root.addView(body(
-            "This keeps going if you turn the phone or leave the app. " +
-            "Nothing leaves the phone."))
+        root.addView(body(getString(R.string.onboard_scan_keeps_going)))
 
         Scan.observe {
             if (Scan.running) {
                 bar.progress = Scan.percent
-                status.text = "${Scan.phase}\u2026  ${Scan.done} / ${Scan.total}"
+                status.text = getString(
+                    R.string.onboard_progress, Scan.phase, Scan.done, Scan.total)
             } else {
                 Scan.observe(null)
                 Scan.consumeFinished()
@@ -302,15 +301,11 @@ class OnboardingActivity : ComponentActivity() {
     private fun showNoFaces() {
         step = STEP_NOFACES
         root.removeAllViews()
-        root.addView(title("No faces to show you"))
-        root.addView(body(
-            "Nothing in the sample had enough clear, front-facing photos of the same person \u2014 " +
-            "or the faces we found earlier are no longer on this phone.\n\n" +
-            "You can look again, or just point us at a few photos of someone yourself."
-        ))
-        root.addView(pickButton("Pick photos of someone"))
-        root.addView(button("Look again", Ui.Btn.OUTLINED) { runScan() })
-        root.addView(button("Done", Ui.Btn.TEXT) { done() })
+        root.addView(title(getString(R.string.onboard_no_faces_title)))
+        root.addView(body(getString(R.string.onboard_no_faces_body)))
+        root.addView(pickButton(getString(R.string.onboard_pick_someone)))
+        root.addView(button(getString(R.string.onboard_look_again), Ui.Btn.OUTLINED) { runScan() })
+        root.addView(button(getString(R.string.onboard_done), Ui.Btn.TEXT) { done() })
     }
 
     /** The picker, offered wherever someone might want to add a person. */
@@ -329,11 +324,11 @@ class OnboardingActivity : ComponentActivity() {
         val c = candidates[idx]
         root.removeAllViews()
         root.addView(Ui.text(this, Ui.Type.CAPTION,
-            "${idx + 1} of ${candidates.size}   ·   $named named",
+            getString(R.string.onboard_candidate_progress, idx + 1, candidates.size, named),
             R.color.pk_on_surface_variant).apply {
-            setPadding(dp(Ui.MD), dp(Ui.MD), dp(Ui.MD), 0)
+            setPaddingRelative(dp(Ui.MD), dp(Ui.MD), dp(Ui.MD), 0)
         })
-        root.addView(title("Do you know this person?"))
+        root.addView(title(getString(R.string.onboard_know_person)))
 
         val strip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         for (path in c.thumbs) {
@@ -341,26 +336,32 @@ class OnboardingActivity : ComponentActivity() {
         }
         root.addView(android.widget.HorizontalScrollView(this).apply { addView(strip) })
 
-        root.addView(Ui.factRow(this, R.drawable.ic_photo_stack, "In ${c.size} of your photos"))
-        root.addView(Ui.factRow(this, R.drawable.ic_lock,
-            "Claim them and their photos are always kept"))
-        root.addView(button("This is someone I care about", Ui.Btn.PRIMARY) { promptName(c) })
-        root.addView(button("Not important", Ui.Btn.OUTLINED) { decide(c, "SKIPPED") })
-        root.addView(button("These aren't the same person", Ui.Btn.TEXT) { decide(c, "MIXED") })
+        root.addView(Ui.factRow(this, R.drawable.ic_photo_stack,
+            resources.getQuantityString(R.plurals.onboard_in_photos, c.size, c.size)))
+        root.addView(Ui.factRow(this, R.drawable.ic_lock, getString(R.string.onboard_claim_note)))
+        root.addView(button(getString(R.string.onboard_someone_i_care), Ui.Btn.PRIMARY) {
+            promptName(c)
+        })
+        root.addView(button(getString(R.string.onboard_not_important), Ui.Btn.OUTLINED) {
+            decide(c, "SKIPPED")
+        })
+        root.addView(button(getString(R.string.onboard_not_same_person), Ui.Btn.TEXT) {
+            decide(c, "MIXED")
+        })
     }
 
     private fun promptName(c: Db.Candidate) {
         val input = EditText(this).apply {
-            hint = "Name (optional)"
-            setPadding(dp(20), dp(20), dp(20), dp(20))
+            hint = getString(R.string.onboard_name_hint_optional)
+            setPaddingRelative(dp(20), dp(20), dp(20), dp(20))
         }
         AlertDialog.Builder(this)
-            .setTitle("Who is this?")
-            .setMessage("A name just helps you recognise them later — you can leave it blank.")
+            .setTitle(R.string.onboard_who_is_this)
+            .setMessage(R.string.onboard_name_help)
             .setView(input)
             .setPositiveButton("Save") { _, _ ->
                 val typed = input.text.toString().trim()
-                val name = if (typed.isNotEmpty()) typed else "Person ${named + 1}"
+                val name = typed.ifEmpty { getString(R.string.onboard_default_person, named + 1) }
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
                         Clusterer.enrolCluster(this@OnboardingActivity, c.id, name)
@@ -379,19 +380,20 @@ class OnboardingActivity : ComponentActivity() {
      */
     private fun promptNameForPicked(uris: List<android.net.Uri>) {
         val input = EditText(this).apply {
-            hint = "Name"
-            setPadding(dp(20), dp(20), dp(20), dp(20))
+            hint = getString(R.string.onboard_name_hint)
+            setPaddingRelative(dp(20), dp(20), dp(20), dp(20))
         }
         AlertDialog.Builder(this)
-            .setTitle("Who is in these ${uris.size} photos?")
-            .setMessage("Photos where this person is the only clear face work best. " +
-                "A few taken at different times beat one good portrait.")
+            .setTitle(resources.getQuantityString(
+                R.plurals.onboard_who_in_photos, uris.size, uris.size))
+            .setMessage(getString(R.string.onboard_pick_help))
             .setView(input)
-            .setPositiveButton("Save") { _, _ ->
+            .setPositiveButton(R.string.action_save) { _, _ ->
                 val typed = input.text.toString().trim()
-                val name = if (typed.isNotEmpty()) typed else "Person ${named + 1}"
+                val name = typed.ifEmpty { getString(R.string.onboard_default_person, named + 1) }
                 val busy = AlertDialog.Builder(this)
-                    .setMessage("Reading those photos\u2026").setCancelable(false).show()
+                    .setMessage(getString(R.string.onboard_reading_photos))
+                    .setCancelable(false).show()
                 lifecycleScope.launch {
                     val r = withContext(Dispatchers.IO) {
                         try {
@@ -405,33 +407,35 @@ class OnboardingActivity : ComponentActivity() {
                     showPickResult(name, r)
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(R.string.action_cancel, null)
             .show()
     }
 
     private fun showPickResult(name: String, r: Clusterer.PickOutcome) {
         val skipped = buildString {
-            if (r.noFace > 0) append("\n${r.noFace} had no face clear enough.")
-            if (r.tooManyFaces > 0)
-                append("\n${r.tooManyFaces} had more than one clear face, so we could not " +
-                    "tell which one is $name.")
+            if (r.noFace > 0) append(resources.getQuantityString(
+                R.plurals.onboard_no_face_clear, r.noFace, r.noFace))
+            if (r.tooManyFaces > 0) append(resources.getQuantityString(
+                R.plurals.onboard_too_many_faces, r.tooManyFaces, r.tooManyFaces, name))
         }
         val msg = if (r.ok)
-            "Saved $name from ${r.used} photo${if (r.used == 1) "" else "s"}.$skipped" +
-                if (r.used < 3) "\n\nMore photos of $name would help — with only a " +
-                    "couple we miss roughly one face in five." else ""
-        else "Could not use any of those photos.$skipped"
+            resources.getQuantityString(R.plurals.onboard_saved_from, r.used, name, r.used) +
+                skipped +
+                if (r.used < 3) getString(R.string.onboard_more_photos_help, name) else ""
+        else getString(R.string.onboard_could_not_use) + skipped
 
         AlertDialog.Builder(this)
-            .setTitle(if (r.ok) "Added $name" else "Nothing to save")
+            .setTitle(if (r.ok) getString(R.string.onboard_added, name)
+                      else getString(R.string.onboard_nothing_to_save))
             .setMessage(msg)
-            .setPositiveButton("Add someone else") { _, _ ->
+            .setPositiveButton(R.string.onboard_add_someone_else) { _, _ ->
                 pickPhotos.launch(
                     PickVisualMediaRequest.Builder()
                         .setMediaType(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         .build())
             }
-            .setNegativeButton(if (named > 0) "Done" else "Back") { _, _ ->
+            .setNegativeButton(
+                if (named > 0) R.string.onboard_done else R.string.onboard_back) { _, _ ->
                 if (named > 0) showSummary() else showIntro()
             }
             .show()
@@ -453,7 +457,7 @@ class OnboardingActivity : ComponentActivity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(col)
 
-        col.addView(title("$named ${if (named == 1) "person" else "people"} enrolled"))
+        col.addView(title(resources.getQuantityString(R.plurals.onboard_enrolled, named, named)))
 
         // The part that matters: who did they NOT claim? Read on this thread
         // only because the whole screen is already built synchronously; the
@@ -468,14 +472,12 @@ class OnboardingActivity : ComponentActivity() {
             return
         }
         if (skipped.isNotEmpty()) {
-            col.addView(Ui.text(this, Ui.Type.TITLE_SMALL, "Worth a second look",
+            col.addView(Ui.text(this, Ui.Type.TITLE_SMALL,
+                getString(R.string.onboard_second_look),
                 R.color.pk_warning).apply {
-                setPadding(dp(Ui.MD), dp(Ui.SM), dp(Ui.MD), dp(Ui.XXS))
+                setPaddingRelative(dp(Ui.MD), dp(Ui.SM), dp(Ui.MD), dp(Ui.XXS))
             })
-            col.addView(body(
-                "These faces keep appearing but you didn't claim them. Photos of them can be " +
-                "suggested for deletion. If any of these is family, go back and add them."
-            ))
+            col.addView(body(getString(R.string.onboard_second_look_body)))
             val strip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             for (s in skipped.take(10)) {
                 val p = s.thumbs.firstOrNull() ?: continue
@@ -483,7 +485,7 @@ class OnboardingActivity : ComponentActivity() {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER_HORIZONTAL
                     layoutParams = LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.WRAP_CONTENT)
-                        .apply { setMargins(0, 0, dp(8), 0) }
+                        .apply { setMarginsRelative(0, 0, dp(8), 0) }
                 }
                 cell.addView(Ui.thumb(this, 80).also { it.load("file://$p") })
                 cell.addView(Ui.text(this, Ui.Type.CAPTION, "${s.size} photos",
@@ -491,19 +493,15 @@ class OnboardingActivity : ComponentActivity() {
                 strip.addView(cell)
             }
             col.addView(android.widget.HorizontalScrollView(this).apply { addView(strip) })
-            col.addView(button("Go back and add someone", Ui.Btn.PRIMARY) {
+            col.addView(button(getString(R.string.onboard_go_back_add), Ui.Btn.PRIMARY) {
                 loadCandidates()
             })
         } else if (named > 0) {
-            col.addView(body("No other recurring faces were left unclaimed."))
+            col.addView(body(getString(R.string.onboard_none_unclaimed)))
         }
 
         if (named == 0) {
-            col.addView(body(
-                "You haven't enrolled anyone. Until you do, every group photo — including " +
-                "photos of your own family — will be treated as a deletion candidate. " +
-                "Strongly consider adding at least the people closest to you."
-            ))
+            col.addView(body(getString(R.string.onboard_nobody_warning)))
         }
 
         col.addView(button(
@@ -539,10 +537,10 @@ class OnboardingActivity : ComponentActivity() {
             "Don't", good = false))
 
         col.addView(Ui.factRow(this, R.drawable.ic_photo_stack,
-            "Photos settings \u203a Backup \u203a Back up device folders"))
+            getString(R.string.backup_photos_settings)))
 
         val status = Ui.text(this, Ui.Type.BODY,
-            "Making the ${Promoter.DEST_LABEL} folder\u2026")
+            getString(R.string.backup_making_folder, Promoter.DEST_LABEL))
         col.addView(Ui.factRow(this, R.drawable.ic_folder, status))
         // Google Photos only lists a folder that exists, and on a fresh install
         // nothing has been rescued into it yet.
@@ -550,17 +548,20 @@ class OnboardingActivity : ComponentActivity() {
             val ok = withContext(Dispatchers.IO) {
                 Promoter.ensureDestFolder(this@OnboardingActivity)
             }
-            status.text = if (ok) "${Promoter.DEST_LABEL} exists, so it will be in that list"
-                          else "PixKin makes that folder with the first photo it saves"
+            status.text = if (ok)
+                getString(R.string.backup_folder_exists, Promoter.DEST_LABEL)
+            else getString(R.string.backup_folder_later)
         }
 
-        col.addView(body("Photos already backed up stay where they are."))
+        col.addView(body(getString(R.string.backup_already_safe)))
 
         val photos = packageManager.getLaunchIntentForPackage("com.google.android.apps.photos")
-        if (photos != null) col.addView(button("Open Google Photos", Ui.Btn.PRIMARY) {
+        if (photos != null) col.addView(button(
+            getString(R.string.backup_open_photos), Ui.Btn.PRIMARY) {
             startActivity(photos)
         })
-        col.addView(button("Done", if (photos == null) Ui.Btn.PRIMARY else Ui.Btn.TEXT) { done() })
+        col.addView(button(getString(R.string.onboard_done),
+            if (photos == null) Ui.Btn.PRIMARY else Ui.Btn.TEXT) { done() })
         root.addView(scroll)
     }
 

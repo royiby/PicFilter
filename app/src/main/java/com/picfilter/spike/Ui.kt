@@ -66,6 +66,23 @@ object Ui {
     const val AVATAR = 40
     const val GRID_GAP = 2
 
+    /**
+     * Margins that mirror in a right-to-left locale.
+     *
+     * setMarginsRelative() takes left and right, which are physical sides. In Hebrew
+     * the start of a line is on the right, so a left margin that was meant as
+     * "space before this" lands after it instead. Setting start and end as
+     * well lets the framework resolve them per direction; the plain values
+     * stay as the left-to-right fallback.
+     */
+    fun ViewGroup.MarginLayoutParams.setMarginsRelative(
+        start: Int, top: Int, end: Int, bottom: Int,
+    ) {
+        setMargins(start, top, end, bottom)
+        marginStart = start
+        marginEnd = end
+    }
+
     fun Context.dp(v: Int) = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
@@ -144,7 +161,7 @@ object Ui {
             ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
                 val b = insets.getInsets(
                     WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-                v.setPadding(b.left, b.top, b.right, b.bottom + dp(extraBottom))
+                v.setPaddingRelative(b.left, b.top, b.right, b.bottom + dp(extraBottom))
                 insets
             }
         }
@@ -161,7 +178,7 @@ object Ui {
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(TOP_BAR))
-            setPadding(dp(MD), 0, dp(MD), 0)
+            setPaddingRelative(dp(MD), 0, dp(MD), 0)
             addView(ImageView(ctx).apply {
                 setImageResource(R.drawable.ic_logo_wordmark)
                 adjustViewBounds = true
@@ -181,7 +198,7 @@ object Ui {
      */
     fun titleBar(
         ctx: Context, title: String, actionIcon: Int? = null,
-        actionLabel: String = "More",
+        actionLabel: String = ctx.getString(R.string.a11y_more),
         onAction: () -> Unit = {}, onBack: () -> Unit,
     ): View = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -190,20 +207,20 @@ object Ui {
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(TOP_BAR))
-            setPadding(dp(XS), 0, dp(MD), 0)
+            setPaddingRelative(dp(XS), 0, dp(MD), 0)
             addView(ImageView(ctx).apply {
                 setImageResource(R.drawable.ic_arrow_back)
                 imageTintList = android.content.res.ColorStateList.valueOf(onSurfaceVariant(ctx))
-                contentDescription = "Back"
+                contentDescription = ctx.getString(R.string.a11y_back)
                 layoutParams = LinearLayout.LayoutParams(dp(TOUCH), dp(TOUCH))
                 val p = (dp(TOUCH) - dp(ICON)) / 2
-                setPadding(p, p, p, p)
+                setPaddingRelative(p, p, p, p)
                 isClickable = true
                 isFocusable = true
                 setOnClickListener { onBack() }
             })
             addView(text(ctx, Type.TITLE, title).apply {
-                setPadding(dp(XS), 0, 0, 0)
+                setPaddingRelative(dp(XS), 0, 0, 0)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 layoutParams = LinearLayout.LayoutParams(0,
@@ -215,7 +232,7 @@ object Ui {
                 contentDescription = actionLabel
                 layoutParams = LinearLayout.LayoutParams(dp(TOUCH), dp(TOUCH))
                 val p = (dp(TOUCH) - dp(ICON)) / 2
-                setPadding(p, p, p, p)
+                setPaddingRelative(p, p, p, p)
                 isClickable = true
                 isFocusable = true
                 setOnClickListener { onAction() }
@@ -230,7 +247,7 @@ object Ui {
      */
     fun gridTile(
         ctx: Context, side: Int, kept: Boolean, dimmed: Boolean,
-        label: String = "Photo",
+        label: String = ctx.getString(R.string.a11y_photo),
     ): FrameLayout =
         FrameLayout(ctx).apply {
             // The tile is the tappable thing, so it carries the description and
@@ -257,13 +274,13 @@ object Ui {
 
     fun title(ctx: Context, t: String, style: Type = Type.HEADLINE): TextView =
         text(ctx, style, t).apply {
-            with(ctx) { setPadding(dp(MD), dp(MD), dp(MD), dp(XS)) }
+            with(ctx) { setPaddingRelative(dp(MD), dp(MD), dp(MD), dp(XS)) }
         }
 
     fun body(ctx: Context, t: String, muted: Boolean = true): TextView =
         text(ctx, Type.BODY, t,
             if (muted) R.color.pk_on_surface_variant else R.color.pk_on_surface).apply {
-            with(ctx) { setPadding(dp(MD), 0, dp(MD), dp(MD)) }
+            with(ctx) { setPaddingRelative(dp(MD), 0, dp(MD), dp(MD)) }
         }
 
     // ---------- cards ----------
@@ -279,7 +296,7 @@ object Ui {
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(MD), dp(XXS), dp(MD), dp(XXS)) }
+            ).apply { setMarginsRelative(dp(MD), dp(XXS), dp(MD), dp(XXS)) }
             radius = dp(R_MD).toFloat()
             cardElevation = 0f
             strokeWidth = if (accent) 0 else dp(1)
@@ -291,17 +308,18 @@ object Ui {
             // stop. A reader focusing a clickable ViewGroup will stitch the
             // child text together on its own, but the result depends on the
             // reader; this does not.
-            contentDescription = if (supporting.isEmpty()) label else "$label. $supporting"
+            contentDescription = if (supporting.isEmpty()) label
+                else ctx.getString(R.string.a11y_card, label, supporting)
             isScreenReaderFocusable = true
             addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(MD), dp(MD), dp(MD), dp(MD))
+                setPaddingRelative(dp(MD), dp(MD), dp(MD), dp(MD))
                 addView(text(ctx, Type.TITLE_SMALL, label,
                     if (accent) R.color.pk_on_primary_container else R.color.pk_on_surface))
                 if (supporting.isNotEmpty()) addView(text(ctx, Type.BODY_SMALL, supporting,
                     if (accent) R.color.pk_on_primary_container
                     else R.color.pk_on_surface_variant
-                ).apply { setPadding(0, dp(XXS), 0, 0) })
+                ).apply { setPaddingRelative(0, dp(XXS), 0, 0) })
             })
         }
         setOnClickListener { onClick() }
@@ -320,7 +338,7 @@ object Ui {
             with(ctx) {
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply { setMargins(0, dp(SM), 0, 0) }
+                ).apply { setMarginsRelative(0, dp(SM), 0, 0) }
             }
             visibility = View.GONE          // stays hidden until a thumbnail lands
         }
@@ -339,9 +357,11 @@ object Ui {
     fun toggleCell(ctx: Context, on: Boolean, onToggle: () -> Unit): View =
         MaterialCardView(ctx).apply {
             with(ctx) {
+                // WRAP_CONTENT, so this cell sets the row height: its caption
+                // is the longest text in the row in every language.
                 layoutParams = LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f
-                ).apply { setMargins(dp(XXS), 0, dp(XXS), 0) }
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                ).apply { setMarginsRelative(dp(XXS), 0, dp(XXS), 0) }
                 radius = dp(R_MD).toFloat()
                 cardElevation = 0f
                 strokeWidth = if (on) 0 else dp(1)
@@ -349,14 +369,21 @@ object Ui {
                 setCardBackgroundColor(if (on) primaryContainer(ctx) else surfaceVariant(ctx))
                 isClickable = true
                 isFocusable = true
-                contentDescription =
-                    if (on) "Auto-save is on. Tap to turn it off."
-                    else "Auto-save is off. Tap to turn it on."
+                contentDescription = ctx.getString(
+                    if (on) R.string.autosave_on_description
+                    else R.string.autosave_off_description)
                 isScreenReaderFocusable = true
                 addView(LinearLayout(ctx).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
-                    setPadding(dp(XS), dp(SM), dp(XS), dp(SM))
+                    // Fills the card, so a MATCH_PARENT caption has a width to
+                    // wrap against. A WRAP_CONTENT column is sized by its
+                    // widest child, which is the caption -- so the caption
+                    // never wrapped, it just overflowed and was clipped.
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT)
+                    setPaddingRelative(dp(XS), dp(SM), dp(XS), dp(SM))
                     addView(ImageView(ctx).apply {
                         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
                         setImageResource(if (on) R.drawable.ic_check else R.drawable.ic_block)
@@ -364,11 +391,27 @@ object Ui {
                             if (on) onPrimaryContainer(ctx) else onSurfaceVariant(ctx))
                         layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
                     })
-                    addView(text(ctx, Type.CAPTION, if (on) "Auto-save on" else "Auto-save off",
+                    addView(text(ctx, Type.CAPTION,
+                        ctx.getString(if (on) R.string.autosave_on else R.string.autosave_off),
                         if (on) R.color.pk_on_primary_container else R.color.pk_on_surface_variant
                     ).apply {
                         gravity = Gravity.CENTER
-                        setPadding(0, dp(XXS), 0, 0)
+                        // "Auto-save on" is two words; the Hebrew is five, and
+                        // the Spanish is "Guardado automático activado". A cell
+                        // a third of the screen wide cannot hold all of those
+                        // at one size, and the first attempt simply clipped the
+                        // Hebrew to its first word with no ellipsis to admit
+                        // it. So the caption is allowed two lines AND allowed
+                        // to shrink: whatever the locale, it fits.
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT)
+                        maxLines = 2
+                        androidx.core.widget.TextViewCompat
+                            .setAutoSizeTextTypeUniformWithConfiguration(
+                                this, 8, Type.CAPTION.size.toInt(), 1,
+                                TypedValue.COMPLEX_UNIT_SP)
+                        setPaddingRelative(0, dp(XXS), 0, 0)
                     })
                 })
                 setOnClickListener { onToggle() }
@@ -403,12 +446,14 @@ object Ui {
         val value = shortCount(count)
         return MaterialCardView(ctx).apply {
             // The exact figure stays available to a screen reader.
-            contentDescription = "$count $caption"
+            contentDescription = ctx.getString(R.string.a11y_stat, count, caption)
             isScreenReaderFocusable = true
             with(ctx) {
+                // MATCH_PARENT: stretches to whatever the tallest cell needs,
+                // so the three cards stay the same height in every locale.
                 layoutParams = LinearLayout.LayoutParams(
-                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
-                ).apply { setMargins(dp(XXS), 0, dp(XXS), 0) }
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f
+                ).apply { setMarginsRelative(dp(XXS), 0, dp(XXS), 0) }
                 radius = dp(R_MD).toFloat()
                 cardElevation = 0f
                 strokeWidth = dp(1)
@@ -417,13 +462,26 @@ object Ui {
                 addView(LinearLayout(ctx).apply {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
-                    setPadding(dp(XS), dp(SM), dp(XS), dp(SM))
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT)
+                    setPaddingRelative(dp(XS), dp(SM), dp(XS), dp(SM))
                     addView(text(ctx, Type.HEADLINE, value).apply {
                         gravity = Gravity.CENTER
                         maxLines = 1
                     })
                     addView(text(ctx, Type.CAPTION, caption, R.color.pk_on_surface_variant)
-                        .apply { gravity = Gravity.CENTER; maxLines = 1 })
+                        .apply {
+                            gravity = Gravity.CENTER
+                            layoutParams = LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT)
+                            maxLines = 2
+                            androidx.core.widget.TextViewCompat
+                                .setAutoSizeTextTypeUniformWithConfiguration(
+                                    this, 8, Type.CAPTION.size.toInt(), 1,
+                                    TypedValue.COMPLEX_UNIT_SP)
+                        })
                 })
             }
         }
@@ -432,26 +490,29 @@ object Ui {
     /** A row of cells built by the caller, sharing the width evenly. */
     fun cellRow(ctx: Context, cells: List<View>): View = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
-        with(ctx) { setPadding(dp(SM), dp(XXS), dp(SM), dp(SM)) }
+        // Baselines differ between a big number and a small caption; aligning
+        // them would push the cards out of line with each other.
+        isBaselineAligned = false
+        with(ctx) { setPaddingRelative(dp(SM), dp(XXS), dp(SM), dp(SM)) }
         for (c in cells) addView(c)
     }
 
     /** Pills showing a count each, like the stats block in the guide. */
     fun statRow(ctx: Context, pairs: List<Pair<String, String>>): View = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
-        with(ctx) { setPadding(dp(MD), dp(XXS), dp(MD), dp(SM)) }
+        with(ctx) { setPaddingRelative(dp(MD), dp(XXS), dp(MD), dp(SM)) }
         for ((i, p) in pairs.withIndex()) {
             val (value, caption) = p
             addView(MaterialCardView(ctx).apply {
                 // "48, backed up" as one stop rather than a number and then a
                 // word, which is what a reader makes of two stacked TextViews.
-                contentDescription = "$value $caption"
+                contentDescription = ctx.getString(R.string.a11y_stat_text, value, caption)
                 isScreenReaderFocusable = true
                 with(ctx) {
                     layoutParams = LinearLayout.LayoutParams(
                         0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
                     ).apply {
-                        setMargins(if (i == 0) 0 else dp(XXS), 0,
+                        setMarginsRelative(if (i == 0) 0 else dp(XXS), 0,
                             if (i == pairs.size - 1) 0 else dp(XXS), 0)
                     }
                     radius = dp(R_MD).toFloat()
@@ -462,7 +523,7 @@ object Ui {
                     addView(LinearLayout(ctx).apply {
                         orientation = LinearLayout.VERTICAL
                         gravity = Gravity.CENTER
-                        setPadding(dp(XS), dp(SM), dp(XS), dp(SM))
+                        setPaddingRelative(dp(XS), dp(SM), dp(XS), dp(SM))
                         addView(text(ctx, Type.HEADLINE, value).apply {
                             gravity = Gravity.CENTER
                         })
@@ -495,7 +556,7 @@ object Ui {
             with(ctx) {
                 cornerRadius = dp(TOUCH) / 2
                 insetTop = 0; insetBottom = 0
-                setPadding(dp(SM), 0, dp(SM), 0)
+                setPaddingRelative(dp(SM), 0, dp(SM), 0)
             }
             when (role) {
                 Btn.PRIMARY -> {
@@ -534,7 +595,7 @@ object Ui {
         pill(ctx, label, role, onClick).apply {
             with(ctx) {
                 layoutParams = LinearLayout.LayoutParams(0, dp(TOUCH), 1f)
-                    .apply { setMargins(dp(XXS), 0, dp(XXS), 0) }
+                    .apply { setMarginsRelative(dp(XXS), 0, dp(XXS), 0) }
             }
         }
 
@@ -544,7 +605,7 @@ object Ui {
             with(ctx) {
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(TOUCH)
-                ).apply { setMargins(dp(MD), dp(XXS), dp(MD), dp(XXS)) }
+                ).apply { setMarginsRelative(dp(MD), dp(XXS), dp(MD), dp(XXS)) }
             }
         }
 
@@ -571,7 +632,7 @@ object Ui {
     fun thumb(ctx: Context, sizeDp: Int): ShapeableImageView = photo(ctx).apply {
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
-                .apply { setMargins(0, 0, dp(XS), 0) }
+                .apply { setMarginsRelative(0, 0, dp(XS), 0) }
             shapeAppearanceModel = ShapeAppearanceModel.builder()
                 .setAllCorners(CornerFamily.ROUNDED, dp(R_SM).toFloat()).build()
         }
@@ -581,7 +642,7 @@ object Ui {
     fun previewTile(ctx: Context): ShapeableImageView = photo(ctx).apply {
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(0, dp(64), 1f)
-                .apply { setMargins(0, 0, dp(XS), 0) }
+                .apply { setMarginsRelative(0, 0, dp(XS), 0) }
             shapeAppearanceModel = ShapeAppearanceModel.builder()
                 .setAllCorners(CornerFamily.ROUNDED, dp(R_SM).toFloat()).build()
         }
@@ -600,9 +661,9 @@ object Ui {
         with(ctx) {
             val s = dp(20)
             layoutParams = FrameLayout.LayoutParams(s, s, Gravity.END or Gravity.BOTTOM)
-                .apply { setMargins(0, 0, dp(XXS), dp(XXS)) }
+                .apply { setMarginsRelative(0, 0, dp(XXS), dp(XXS)) }
             val p = dp(XXS) / 2
-            setPadding(p, p, p, p)
+            setPaddingRelative(p, p, p, p)
         }
     }
 
@@ -657,7 +718,7 @@ object Ui {
     ): View = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        with(ctx) { setPadding(dp(MD), dp(SM), dp(XS), 0) }
+        with(ctx) { setPaddingRelative(dp(MD), dp(SM), dp(XS), 0) }
         addView(text(ctx, Type.TITLE_SMALL, title).apply {
             layoutParams = LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -673,7 +734,7 @@ object Ui {
                 minimumWidth = 0
                 insetTop = 0
                 insetBottom = 0
-                setPadding(dp(SM), dp(XS), dp(SM), dp(XS))
+                setPaddingRelative(dp(SM), dp(XS), dp(SM), dp(XS))
             }
             setOnClickListener { onAction() }
         })
@@ -686,7 +747,7 @@ object Ui {
         val strip = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
-            with(ctx) { setPadding(dp(MD), dp(XXS), dp(MD), dp(XS)) }
+            with(ctx) { setPaddingRelative(dp(MD), dp(XXS), dp(MD), dp(XS)) }
         }
         for ((i, f) in faces.withIndex()) strip.addView(personCell(ctx, f) { onPerson(i) })
         return HorizontalScrollView(ctx).apply {
@@ -706,7 +767,7 @@ object Ui {
         gravity = Gravity.CENTER_HORIZONTAL
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(dp(72), ViewGroup.LayoutParams.WRAP_CONTENT)
-                .apply { setMargins(0, 0, dp(XS), 0) }
+                .apply { setMarginsRelative(0, 0, dp(XS), 0) }
         }
         isClickable = true
         isFocusable = true
@@ -745,17 +806,15 @@ object Ui {
                 gravity = Gravity.CENTER
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                with(ctx) { setPadding(0, dp(XXS), 0, 0) }
+                with(ctx) { setPaddingRelative(0, dp(XXS), 0, 0) }
             })
             if (f.caption.isNotEmpty())
                 addView(caption(ctx, f.caption, R.color.pk_on_surface_variant))
             // One stop that says who it is and what tapping does, instead of
             // three nameless nodes and a count.
-            contentDescription = buildString {
-                append(f.name)
-                if (f.caption.isNotEmpty()) append(", ${f.caption}")
-                append(". Opens their photos.")
-            }
+            contentDescription = if (f.caption.isEmpty())
+                ctx.getString(R.string.a11y_person_opens, f.name)
+            else ctx.getString(R.string.a11y_person_with_caption, f.name, f.caption)
             isScreenReaderFocusable = true
             setOnClickListener { onClick() }
         }
@@ -781,7 +840,7 @@ object Ui {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         with(ctx) {
-            setPadding(dp(MD), dp(XS), dp(MD), dp(XS))
+            setPaddingRelative(dp(MD), dp(XS), dp(MD), dp(XS))
             addView(ImageView(ctx).apply {
                 // Decorative: the line beside it is the content, and an
                 // unlabelled icon is just an extra stop that says nothing.
@@ -808,8 +867,8 @@ object Ui {
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(dp(MD), dp(XXS), dp(MD), dp(XXS)) }
-            setPadding(dp(SM), dp(SM), dp(SM), dp(SM))
+            ).apply { setMarginsRelative(dp(MD), dp(XXS), dp(MD), dp(XXS)) }
+            setPaddingRelative(dp(SM), dp(SM), dp(SM), dp(SM))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(R_MD).toFloat()
@@ -847,7 +906,7 @@ object Ui {
         setImageResource(R.drawable.ic_logo_mark)
         with(ctx) {
             layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
-                .apply { setMargins(dp(MD), dp(XS), dp(MD), dp(XS)) }
+                .apply { setMarginsRelative(dp(MD), dp(XS), dp(MD), dp(XS)) }
         }
     }
 
@@ -861,14 +920,14 @@ object Ui {
         gravity = Gravity.CENTER
         setBackgroundColor(surfaceVariant(ctx))
         with(ctx) {
-            setPadding(dp(LG), dp(XL), dp(LG), dp(XL))
+            setPaddingRelative(dp(LG), dp(XL), dp(LG), dp(XL))
             addView(ImageView(ctx).apply {
                 setImageResource(R.drawable.ic_logo_mark)
                 layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
             })
             addView(text(ctx, Type.TITLE_SMALL, line).apply {
                 gravity = Gravity.CENTER
-                setPadding(0, dp(MD), 0, 0)
+                setPaddingRelative(0, dp(MD), 0, 0)
             })
             if (action != null) addView(wideButton(ctx, action, Btn.PRIMARY, onAction).apply {
                 (layoutParams as LinearLayout.LayoutParams).setMargins(0, dp(MD), 0, 0)

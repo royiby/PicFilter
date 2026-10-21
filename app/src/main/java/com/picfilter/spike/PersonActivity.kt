@@ -12,6 +12,7 @@ import android.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.picfilter.spike.Ui.setMarginsRelative
 import com.picfilter.spike.data.Db
 import com.picfilter.spike.data.DbQueue
 import kotlinx.coroutines.Dispatchers
@@ -48,7 +49,7 @@ class PersonActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         db = Db(this)
         personId = intent?.getLongExtra("person_id", -1L) ?: -1L
-        personName = intent?.getStringExtra("person_name") ?: "This person"
+        personName = intent?.getStringExtra("person_name") ?: getString(R.string.person_fallback)
         if (personId <= 0) { finish(); return }
         setContentView(build())
         load()
@@ -66,9 +67,9 @@ class PersonActivity : ComponentActivity() {
         root = Ui.screen(this)
         root.addView(Ui.titleBar(this, personName) { finish() })
 
-        countLine = Ui.text(this, Ui.Type.BODY_SMALL, "Looking…",
+        countLine = Ui.text(this, Ui.Type.BODY_SMALL, getString(R.string.person_loading),
             R.color.pk_on_surface_variant).apply {
-            setPadding(dp(Ui.MD), dp(Ui.XS), dp(Ui.MD), dp(Ui.XS))
+            setPaddingRelative(dp(Ui.MD), dp(Ui.XS), dp(Ui.MD), dp(Ui.XS))
         }
         root.addView(countLine)
 
@@ -82,7 +83,9 @@ class PersonActivity : ComponentActivity() {
         }
         root.addView(grid)
 
-        root.addView(Ui.wideButton(this, "Remove $personName", Ui.Btn.OUTLINED) { confirmRemove() })
+        root.addView(Ui.wideButton(
+            this, getString(R.string.person_remove, personName), Ui.Btn.OUTLINED,
+        ) { confirmRemove() })
         Ui.applyInsets(root, this, extraBottom = Ui.SM)
         return root
     }
@@ -90,16 +93,16 @@ class PersonActivity : ComponentActivity() {
     private fun load() {
         lifecycleScope.launch {
             photos = withContext(dbq.context) { db.photosOf(personId) }
-            countLine.text = when (photos.size) {
-                0 -> "No photos matched to $personName yet."
-                1 -> "1 photo kept because $personName is in it."
-                else -> "${photos.size} photos kept because $personName is in them."
-            }
+            countLine.text = if (photos.isEmpty())
+                getString(R.string.person_none, personName)
+            else resources.getQuantityString(
+                R.plurals.person_kept_because, photos.size, personName, photos.size)
             adapter.submitList(photos.mapIndexed { i, photo ->
                 PhotoItem(
                     id = photo.first,
                     uri = photo.second,
-                    label = "A photo of $personName, ${i + 1} of ${photos.size}.",
+                    label = getString(
+                        R.string.person_photo_description, personName, i + 1, photos.size),
                 )
             })
         }
@@ -114,15 +117,10 @@ class PersonActivity : ComponentActivity() {
     private fun confirmRemove() {
         val kept = photos.size
         AlertDialog.Builder(this)
-            .setTitle("Remove $personName?")
-            .setMessage(
-                "PixKin will stop recognising $personName, so new photos of them " +
-                "will no longer be saved automatically.\n\n" +
-                "No photos are deleted. The $kept already saved stay where they are, " +
-                "and $personName can be added again later."
-            )
-            .setPositiveButton("Remove") { _, _ -> remove() }
-            .setNegativeButton("Cancel", null)
+            .setTitle(getString(R.string.person_remove_title, personName))
+            .setMessage(getString(R.string.person_remove_body, personName, kept))
+            .setPositiveButton(R.string.action_remove) { _, _ -> remove() }
+            .setNegativeButton(R.string.action_cancel, null)
             .show()
     }
 

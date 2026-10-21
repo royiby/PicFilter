@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lint had never been run on this project; the first run reported 108 findings.
+  This file records the ones that are deliberate, with the reason, so the
+  report stays worth reading. Anything not listed here is a real finding.
+-->
+<lint>
+
+    <!--
+      DevOps.kt is the adb-driven developer surface: ops that write their
+      results to a debug TextView and to logcat. Those strings are field names
+      and measurements, read by whoever is holding the cable, and translating
+      them would make them stop matching the log lines they are compared
+      against. The user-facing screens are fully localised.
+    -->
+    <issue id="SetTextI18n">
+        <ignore path="src/main/java/com/picfilter/spike/DevOps.kt" />
+    </issue>
+
+    <!--
+      The remaining candidates are diagnostic lines ("faces=3  matched=1") and
+      screen-reader strings that read a position aloud. A plural form of
+      "faces=%d" would be a translation of a column name.
+    -->
+    <issue id="PluralsCandidate" severity="informational" />
+
+</lint>

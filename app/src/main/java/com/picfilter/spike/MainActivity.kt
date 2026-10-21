@@ -288,7 +288,9 @@ class MainActivity : ComponentActivity() {
                 .personFaces(this, p.id).ifEmpty { p.thumbs }
             HomePerson(
                 p.id, p.name,
-                if (p.photos > 0) "${p.photos} photos" else "",
+                if (p.photos > 0)
+                    resources.getQuantityString(R.plurals.person_photo_count, p.photos, p.photos)
+                else "",
                 faces = crops,
                 // Chosen here, on the background pass that already reads this,
                 // rather than by decoding six crops per person at draw time.
@@ -333,14 +335,16 @@ class MainActivity : ComponentActivity() {
             // under the row -- "Photos of these people are kept automatically"
             // -- is gone. It restated what "Your people" plus the "saved" count
             // beside it already say.
-            col.addView(Ui.sectionHeader(this, "Your people", "Add") { managePeople() })
+            col.addView(Ui.sectionHeader(
+                this, getString(R.string.home_people_header), getString(R.string.home_add),
+            ) { managePeople() })
             col.addView(Ui.peopleRow(
                 this,
                 d.people.map { Ui.Face(it.name, it.subtitle, it.facePath) },
                 onPerson = { i -> openPerson(d.people[i]) },
             ))
         } else {
-            col.addView(Ui.body(this, "Start by telling PixKin who matters to you."))
+            col.addView(Ui.body(this, getString(R.string.home_no_people)))
         }
 
         // Saved, the switch that governs it, and what was held back. The middle
@@ -348,7 +352,7 @@ class MainActivity : ComponentActivity() {
         // routed to a queue whether or not anyone had looked at it -- so it
         // read 435 next to queues the user had emptied.
         col.addView(Ui.cellRow(this, listOf(
-            Ui.statCell(this, d.promoted, "saved"),
+            Ui.statCell(this, d.promoted, getString(R.string.stat_saved)),
             Ui.toggleCell(this, d.watchOn) {
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
@@ -358,7 +362,7 @@ class MainActivity : ComponentActivity() {
                     showHome()
                 }
             },
-            Ui.statCell(this, d.notSaved, "not saved"),
+            Ui.statCell(this, d.notSaved, getString(R.string.stat_not_saved)),
         )))
 
         // No "Manage people" card: the faces are the control now, and the
@@ -366,32 +370,34 @@ class MainActivity : ComponentActivity() {
         // when there is nobody to tap.
         if (people == 0) {
             col.addView(Ui.actionCard(this,
-                "Set up — find your people",
-                "Scans your library and finds recurring faces") { managePeople() })
+                getString(R.string.home_setup_title),
+                getString(R.string.home_setup_body)) { managePeople() })
         }
         // Every caption counts what is actually inside the card. A card that
         // says a number and then opens an empty list is the specific thing
         // this screen got wrong.
         val q = d.queues
-        preview("Saved for you",
-            if (q.verify == 0) "All ${d.promoted} checked"
-            else "${q.verify} of ${d.promoted} still to check",
+        preview(getString(R.string.card_saved_title),
+            if (q.verify == 0) resources.getQuantityString(
+                R.plurals.card_saved_all_checked, d.promoted, d.promoted)
+            else resources.getQuantityString(
+                R.plurals.card_saved_to_check, q.verify, q.verify, d.promoted),
             "verify", d.savedThumbs, col)
-        preview("Find more family photos",
-            if (q.rescue == 0) "Nothing left to look at"
-            else "${q.rescue} we were unsure about",
+        preview(getString(R.string.card_rescue_title),
+            if (q.rescue == 0) getString(R.string.card_nothing_left)
+            else resources.getQuantityString(R.plurals.card_rescue_unsure, q.rescue, q.rescue),
             "rescue", d.rescueThumbs, col)
-        preview("Photos with no faces",
-            if (q.noface == 0) "Nothing left to look at"
-            else "${q.noface} places, drawings, documents",
+        preview(getString(R.string.card_noface_title),
+            if (q.noface == 0) getString(R.string.card_nothing_left)
+            else resources.getQuantityString(R.plurals.card_noface_body, q.noface, q.noface),
             "noface", d.nofaceThumbs, col)
-        preview("Suspected junk",
-            if (q.junk == 0) "Nothing waiting"
-            else "${q.junk} look like forwards, memes or screenshots",
+        preview(getString(R.string.card_junk_title),
+            if (q.junk == 0) getString(R.string.card_junk_empty)
+            else resources.getQuantityString(R.plurals.card_junk_body, q.junk, q.junk),
             "junk", d.junkThumbs, col)
-        preview("Suspected duplicates",
-            if (q.dupes == 0) "No near-identical copies found"
-            else "${q.dupes} ${if (q.dupes == 1) "group" else "groups"} of near-identical copies",
+        preview(getString(R.string.card_dupes_title),
+            if (q.dupes == 0) getString(R.string.card_dupes_empty)
+            else resources.getQuantityString(R.plurals.card_dupes_body, q.dupes, q.dupes),
             "dupes", d.dupeThumbs, col)
 
         // The logo lockup is the home screen's top bar: it carries the brand,

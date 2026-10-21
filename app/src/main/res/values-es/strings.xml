@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="title_setup">Configuración de PixKin</string>
+    <string name="title_review">Revisión de PixKin</string>
+    <string name="tagline">Solo las fotos de tu gente, guardadas.</string>
+
+    <string name="home_people_header">Tu gente</string>
+    <string name="home_add">Añadir</string>
+    <string name="home_add_description">Añadir a alguien a las personas que PixKin guarda</string>
+    <string name="home_no_people">Empieza diciéndole a PixKin quién te importa.</string>
+    <string name="home_setup_title">Configurar: encuentra a tu gente</string>
+    <string name="home_setup_body">Analiza tu galería y encuentra las caras que se repiten</string>
+
+    <string name="stat_saved">guardadas</string>
+    <string name="stat_not_saved">sin guardar</string>
+    <string name="autosave_on">Guardado automático activado</string>
+    <string name="autosave_off">Guardado automático desactivado</string>
+    <string name="autosave_on_description">El guardado automático está activado. Toca para desactivarlo.</string>
+    <string name="autosave_off_description">El guardado automático está desactivado. Toca para activarlo.</string>
+
+    <string name="card_saved_title">Guardadas para ti</string>
+    <string name="card_rescue_title">Buscar más fotos de familia</string>
+    <string name="card_nothing_left">No queda nada por revisar</string>
+    <string name="card_noface_title">Fotos sin caras</string>
+    <string name="card_junk_title">Posible basura</string>
+    <string name="card_junk_empty">Nada en espera</string>
+    <string name="card_dupes_title">Posibles duplicados</string>
+    <string name="card_dupes_empty">No se han encontrado copias casi idénticas</string>
+
+    <plurals name="card_saved_all_checked">
+        <item quantity="one">La foto guardada está revisada</item>
+        <item quantity="many">Las %1$d revisadas</item>
+        <item quantity="other">Las %1$d revisadas</item>
+    </plurals>
+    <plurals name="card_saved_to_check">
+        <item quantity="one">Queda %1$d de %2$d por revisar</item>
+        <item quantity="many">Quedan %1$d de %2$d por revisar</item>
+        <item quantity="other">Quedan %1$d de %2$d por revisar</item>
+    </plurals>
+    <plurals name="card_rescue_unsure">
+        <item quantity="one">%1$d sobre la que teníamos dudas</item>
+        <item quantity="many">%1$d sobre las que teníamos dudas</item>
+        <item quantity="other">%1$d sobre las que teníamos dudas</item>
+    </plurals>
+    <plurals name="card_noface_body">
+        <item quantity="one">%1$d lugar, dibujo o documento</item>
+        <item quantity="many">%1$d lugares, dibujos, documentos</item>
+        <item quantity="other">%1$d lugares, dibujos, documentos</item>
+    </plurals>
+    <plurals name="card_junk_body">
+        <item quantity="one">%1$d parece un reenvío, un meme o una captura</item>
+        <item quantity="many">%1$d parecen reenvíos, memes o capturas</item>
+        <item quantity="other">%1$d parecen reenvíos, memes o capturas</item>
+    </plurals>
+    <plurals name="card_dupes_body">
+        <item quantity="one">%1$d grupo de copias casi idénticas</item>
+        <item quantity="many">%1$d grupos de copias casi idénticas</item>
+        <item quantity="other">%1$d grupos de copias casi idénticas</item>
+    </plurals>
+    <plurals name="person_photo_count">
+        <item quantity="one">%1$d foto</item>
+        <item quantity="many">%1$d fotos</item>
+        <item quantity="other">%1$d fotos</item>
+    </plurals>
+
+    <string name="person_fallback">Esta persona</string>
+    <string name="person_loading">Buscando…</string>
+    <string name="person_none">Todavía no hay fotos asociadas a %1$s.</string>
+    <plurals name="person_kept_because">
+        <item quantity="one">%2$d foto guardada porque %1$s aparece en ella.</item>
+        <item quantity="many">%2$d fotos guardadas porque %1$s aparece en ellas.</item>
+        <item quantity="other">%2$d fotos guardadas porque %1$s aparece en ellas.</item>
+    </plurals>
+    <string name="person_photo_description">Una foto de %1$s, %2$d de %3$d.</string>
+    <string name="person_remove">Quitar a %1$s</string>
+    <string name="person_remove_title">¿Quitar a %1$s?</string>
+    <string name="person_remove_body">PixKin dejará de reconocer a %1$s, así que las fotos nuevas en las que aparezca ya no se guardarán automáticamente.\n\nNo se elimina ninguna foto. Las %2$d ya guardadas se quedan donde están, y puedes volver a añadir a %1$s más adelante.</string>
+    <string name="action_remove">Quitar</string>
+    <string name="action_cancel">Cancelar</string>
+
+    <string name="queue_dupes">Posibles duplicados</string>
+    <string name="queue_junk">Posible basura</string>
+    <string name="queue_verify">Fotos guardadas</string>
+    <string name="queue_rescue">Más fotos de familia</string>
+    <string name="queue_noface">Fotos sin caras</string>
+    <string name="queue_golden">Revisar</string>
+
+    <string name="action_different">Diferentes</string>
+    <string name="action_same_photo">La misma foto</string>
+    <string name="action_not_mine">No es mía</string>
+    <string name="action_skip">Omitir</string>
+    <string name="action_correct">Correcto</string>
+    <string name="action_its_junk">Es basura</string>
+    <string name="action_keep">Guardar</string>
+    <string name="action_discard">Descartar</string>
+    <string name="action_undo_last">Deshacer último</string>
+    <string name="nothing_to_undo">no hay nada que deshacer</string>
+
+    <string name="grid_show_single">Mostrar una foto cada vez</string>
+    <string name="grid_show_grid">Mostrar todo en cuadrícula</string>
+    <string name="grid_tap_to_check">Toca una para revisarla.</string>
+    <string name="grid_tap_to_decide">Toca una para decidir.</string>
+    <string name="grid_tap_to_look">Toca una para verla.</string>
+    <plurals name="grid_photo_count">
+        <item quantity="one">%1$d foto</item>
+        <item quantity="many">%1$d fotos</item>
+        <item quantity="other">%1$d fotos</item>
+    </plurals>
+
+    <string name="empty_nothing_here">Aquí no hay nada que ver.</string>
+    <string name="empty_all_done">Todo listo por aquí.</string>
+    <string name="counter_position">%1$d de %2$d</string>
+
+    <string name="verify_prompt">PixKin guardó esta como familia%1$s.\n¿Es correcto?</string>
+    <string name="verify_matching">, coincidiendo con %1$s</string>
+    <string name="verify_matching_at">, coincidiendo con %1$s en %2$s</string>
+    <string name="junk_prompt">Ninguna de las personas que añadiste aparece en esta foto%1$s.</string>
+    <string name="junk_closest">, la más cercana era %1$s</string>
+    <string name="junk_closest_at">, la más cercana era %1$s en %2$s</string>
+    <string name="noface_prompt">No hay ninguna cara reconocible en esta foto.\nGuárdala si aún importa: un lugar, un dibujo, un documento.</string>
+    <string name="dupe_prompt">grupo %1$d · %2$d elementos\n¿Son la misma imagen?</string>
+    <string name="rescue_closest">coincidencia más cercana:  %1$s  %2$s</string>
+    <string name="rescue_near_miss">   ← casi coincide</string>
+    <string name="rescue_closest_similarity">similitud más cercana %1$s</string>
+    <string name="rescue_no_face">ninguna cara medible (demasiado pequeña o de perfil)</string>
+
+    <string name="a11y_photo">Foto</string>
+    <string name="a11y_back">Atrás</string>
+    <string name="a11y_more">Más</string>
+    <string name="a11y_person_opens">%1$s. Abre sus fotos.</string>
+    <string name="a11y_person_with_caption">%1$s, %2$s. Abre sus fotos.</string>
+    <string name="a11y_grid_item">%1$s Elemento %2$d de %3$d. Toca para abrir.</string>
+    <string name="a11y_card_position">%1$s %2$d de %3$d.</string>
+    <string name="a11y_stat">%1$d %2$s</string>
+    <string name="a11y_stat_text">%1$s %2$s</string>
+    <string name="a11y_card">%1$s. %2$s</string>
+    <string name="a11y_dupe_group">Un grupo de %1$d fotos que pueden ser la misma imagen.</string>
+    <string name="a11y_saved_as_family">Una foto que PixKin guardó como familia.%1$s</string>
+    <string name="a11y_not_yours">Una foto que PixKin cree que no es tuya.%1$s</string>
+    <string name="a11y_no_face">Una foto sin ninguna cara reconocible.</string>
+    <string name="a11y_unsure">Una foto sobre la que PixKin tenía dudas.%1$s %2$d caras encontradas.</string>
+    <string name="a11y_scored">Una foto puntuada como %1$s, %2$s, con %3$d caras encontradas.</string>
+    <string name="a11y_closest_match">" Coincidencia más cercana %1$s, %2$s."</string>
+    <string name="a11y_closest_match_plain">" Coincidencia más cercana %1$s."</string>
+
+    <string name="onboard_who_matters">¿Quién te importa?</string>
+    <string name="onboard_intro_body">Los chats de grupo llenan tu teléfono de fotos de otras personas. PixKin guarda aquellas en las que sale tu gente.</string>
+    <string name="onboard_reading">Leyendo tus carpetas de WhatsApp…</string>
+    <plurals name="onboard_whatsapp_count">
+        <item quantity="one">%1$d foto de WhatsApp en este teléfono</item>
+        <item quantity="many">%1$d fotos de WhatsApp en este teléfono</item>
+        <item quantity="other">%1$d fotos de WhatsApp en este teléfono</item>
+    </plurals>
+    <string name="onboard_no_whatsapp">No se han encontrado fotos de WhatsApp en este teléfono</string>
+    <string name="onboard_time">Unos cuatro minutos para encontrarlas, o segundos si eliges las fotos tú</string>
+    <string name="onboard_private">Nada sale de este teléfono</string>
+    <string name="onboard_find">Encontrar a mi gente</string>
+    <string name="onboard_pick_instead">Elegir fotos de alguien en su lugar</string>
+    <string name="onboard_continue_found">Continuar con las caras ya encontradas</string>
+    <string name="onboard_not_now">Ahora no</string>
+
+    <string name="onboard_looking">Buscando caras</string>
+    <string name="onboard_scan_keeps_going">Esto continúa aunque gires el teléfono o salgas de la aplicación. Nada sale del teléfono.</string>
+    <string name="onboard_progress">%1$s…  %2$d / %3$d</string>
+    <string name="onboard_starting">Empezando</string>
+
+    <string name="onboard_no_faces_title">No hay caras que mostrarte</string>
+    <string name="onboard_no_faces_body">Nada en la muestra tenía suficientes fotos claras y de frente de la misma persona, o las caras que encontramos antes ya no están en este teléfono.\n\nPuedes volver a buscar, o simplemente señalarnos unas cuantas fotos de alguien.</string>
+    <string name="onboard_pick_someone">Elegir fotos de alguien</string>
+    <string name="onboard_look_again">Buscar de nuevo</string>
+    <string name="onboard_done">Listo</string>
+
+    <string name="onboard_know_person">¿Conoces a esta persona?</string>
+    <string name="onboard_candidate_progress">%1$d de %2$d   ·   %3$d con nombre</string>
+    <plurals name="onboard_in_photos">
+        <item quantity="one">En %1$d de tus fotos</item>
+        <item quantity="many">En %1$d de tus fotos</item>
+        <item quantity="other">En %1$d de tus fotos</item>
+    </plurals>
+    <string name="onboard_claim_note">Si los añades, sus fotos se guardan siempre</string>
+    <string name="onboard_someone_i_care">Es alguien que me importa</string>
+    <string name="onboard_not_important">No importa</string>
+    <string name="onboard_not_same_person">No son la misma persona</string>
+
+    <string name="onboard_who_is_this">¿Quién es?</string>
+    <string name="onboard_name_hint_optional">Nombre (opcional)</string>
+    <string name="onboard_name_hint">Nombre</string>
+    <string name="onboard_name_help">El nombre solo sirve para que los reconozcas luego; puedes dejarlo en blanco.</string>
+    <string name="onboard_default_person">Persona %1$d</string>
+    <string name="action_save">Guardar</string>
+
+    <plurals name="onboard_who_in_photos">
+        <item quantity="one">¿Quién sale en esta foto?</item>
+        <item quantity="many">¿Quién sale en estas %1$d fotos?</item>
+        <item quantity="other">¿Quién sale en estas %1$d fotos?</item>
+    </plurals>
+    <string name="onboard_pick_help">Funcionan mejor las fotos donde esta persona es la única cara clara. Varias tomadas en momentos distintos valen más que un buen retrato.</string>
+    <string name="onboard_reading_photos">Leyendo esas fotos…</string>
+    <string name="onboard_added">%1$s añadido</string>
+    <string name="onboard_nothing_to_save">Nada que guardar</string>
+    <plurals name="onboard_saved_from">
+        <item quantity="one">%1$s guardado a partir de %2$d foto.</item>
+        <item quantity="many">%1$s guardado a partir de %2$d fotos.</item>
+        <item quantity="other">%1$s guardado a partir de %2$d fotos.</item>
+    </plurals>
+    <string name="onboard_could_not_use">No se ha podido usar ninguna de esas fotos.</string>
+    <plurals name="onboard_no_face_clear">
+        <item quantity="one">\n%1$d no tenía una cara lo bastante clara.</item>
+        <item quantity="many">\n%1$d no tenían una cara lo bastante clara.</item>
+        <item quantity="other">\n%1$d no tenían una cara lo bastante clara.</item>
+    </plurals>
+    <plurals name="onboard_too_many_faces">
+        <item quantity="one">\n%1$d tenía más de una cara clara, así que no pudimos saber cuál es %2$s.</item>
+        <item quantity="many">\n%1$d tenían más de una cara clara, así que no pudimos saber cuál es %2$s.</item>
+        <item quantity="other">\n%1$d tenían más de una cara clara, así que no pudimos saber cuál es %2$s.</item>
+    </plurals>
+    <string name="onboard_more_photos_help">\n\nMás fotos de %1$s ayudarían: con solo un par se nos escapa aproximadamente una cara de cada cinco.</string>
+    <string name="onboard_add_someone_else">Añadir a otra persona</string>
+    <string name="onboard_back">Atrás</string>
+
+    <plurals name="onboard_enrolled">
+        <item quantity="one">%1$d persona añadida</item>
+        <item quantity="many">%1$d personas añadidas</item>
+        <item quantity="other">%1$d personas añadidas</item>
+    </plurals>
+    <string name="onboard_second_look">Merece una segunda mirada</string>
+    <string name="onboard_second_look_body">Estas caras aparecen una y otra vez pero no las has añadido. Sus fotos pueden proponerse para eliminar. Si alguna es de tu familia, vuelve atrás y añádela.</string>
+    <string name="onboard_go_back_add">Volver y añadir a alguien</string>
+    <string name="onboard_none_unclaimed">No quedan otras caras recurrentes sin añadir.</string>
+    <string name="onboard_nobody_warning">No has añadido a nadie. Hasta que lo hagas, cada foto de grupo (incluidas las de tu propia familia) se tratará como candidata a eliminar. Conviene mucho añadir al menos a las personas más cercanas.</string>
+
+    <string name="backup_photos_settings">Ajustes de Photos › Copia de seguridad › Carpetas del dispositivo</string>
+    <string name="backup_making_folder">Creando la carpeta %1$s…</string>
+    <string name="backup_folder_exists">%1$s existe, así que aparecerá en esa lista</string>
+    <string name="backup_folder_later">PixKin creará esa carpeta con la primera foto que guarde</string>
+    <string name="backup_already_safe">Las fotos que ya tienen copia de seguridad se quedan donde están.</string>
+    <string name="backup_open_photos">Abrir Google Photos</string>
+</resources>

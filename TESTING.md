@@ -461,6 +461,40 @@ prove the mechanism is right, not that nothing else breaks at that size — the
 queries themselves are still unbounded, and `Paging 3` over them is the next
 step if a real library gets there.
 
+## Languages and layout direction
+
+Every user-facing string is in `res/values/strings.xml`, with Hebrew, Spanish,
+French and German beside it. Counted things are `<plurals>`, which matters more
+than it looks: Hebrew has a dual, and Spanish and French need a `many` form that
+English does not.
+
+The layout mirrors. `supportsRtl` is declared, padding is
+`setPaddingRelative`, margins go through `Ui.setMarginsRelative`, the back
+arrow is `autoMirrored`, and `GridGaps` flips its offsets when the layout
+direction is RTL.
+
+Lint is the check here, and it earns its place: it found three strings with no
+translation, sixteen plurals per locale missing Spanish and French `many`, and
+two French `one` forms that omitted the number — French `one` covers zero as
+well, so "La photo conservée est vérifiée" would have been shown for none.
+
+Test a locale without changing the phone's own language:
+
+```bash
+adb shell cmd locale set-app-locales com.picfilter.spike --locales he
+adb shell cmd locale set-app-locales com.picfilter.spike --locales ""   # back to default
+```
+
+**Verified by screenshot in all four**, because this is the class of bug that
+compiles and passes every test. The Hebrew layout mirrors correctly and the
+counts read right — and the auto-save caption was clipped to its first word,
+"שמירה", with no ellipsis to admit it. Three separate layout faults stacked:
+the caption could not wrap because it was `WRAP_CONTENT`, then could not wrap
+because its parent column was, and then wrapped but was cut off because the
+cell matched a row height set by its shorter neighbours. It now autosizes
+within two lines and the tallest cell sets the row height. Spanish, French and
+German hit the same wall and clear it the same way.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

@@ -1,8 +1,250 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every string the user can see.
+
+  They used to live in the Kotlin, which is why lint reported 48 SetTextI18n
+  warnings and why the app could only ever speak English — to a user whose
+  family are named גבע, דני and אמא.
+
+  Conventions here: %1$s and %1$d are positional on purpose, because word order
+  changes between languages and a translator has to be able to move them.
+  Anything counted is a <plurals>, because "1 photos" is wrong in English and
+  the rule is different again in Hebrew, which has a dual.
+-->
 <resources>
-    <string name="app_name">PixKin</string>
+
+    <!-- ==== brand -->
+    <string name="app_name" translatable="false">PixKin</string>
     <string name="title_setup">PixKin setup</string>
     <string name="title_review">PixKin review</string>
     <string name="tagline">Only your people’s photos, saved.</string>
-    <string name="logo_description">PixKin</string>
+    <string name="logo_description" translatable="false">PixKin</string>
+
+    <!-- ==== home -->
+    <string name="home_people_header">Your people</string>
+    <string name="home_add">Add</string>
+    <string name="home_add_description">Add someone to the people PixKin saves</string>
+    <string name="home_no_people">Start by telling PixKin who matters to you.</string>
+    <string name="home_setup_title">Set up — find your people</string>
+    <string name="home_setup_body">Scans your library and finds recurring faces</string>
+
+    <string name="stat_saved">saved</string>
+    <string name="stat_not_saved">not saved</string>
+    <string name="autosave_on">Auto-save on</string>
+    <string name="autosave_off">Auto-save off</string>
+    <string name="autosave_on_description">Auto-save is on. Tap to turn it off.</string>
+    <string name="autosave_off_description">Auto-save is off. Tap to turn it on.</string>
+
+    <string name="card_saved_title">Saved for you</string>
+    <plurals name="card_saved_all_checked">
+        <item quantity="one">The %1$d saved photo is checked</item>
+        <item quantity="other">All %1$d checked</item>
+    </plurals>
+    <plurals name="card_saved_to_check">
+        <item quantity="one">%1$d of %2$d still to check</item>
+        <item quantity="other">%1$d of %2$d still to check</item>
+    </plurals>
+    <string name="card_rescue_title">Find more family photos</string>
+    <string name="card_nothing_left">Nothing left to look at</string>
+    <string name="card_noface_title">Photos with no faces</string>
+    <string name="card_junk_title">Suspected junk</string>
+    <string name="card_junk_empty">Nothing waiting</string>
+    <string name="card_dupes_title">Suspected duplicates</string>
+    <string name="card_dupes_empty">No near-identical copies found</string>
+
+    <plurals name="card_rescue_unsure">
+        <item quantity="one">%1$d we were unsure about</item>
+        <item quantity="other">%1$d we were unsure about</item>
+    </plurals>
+    <plurals name="card_noface_body">
+        <item quantity="one">%1$d place, drawing or document</item>
+        <item quantity="other">%1$d places, drawings, documents</item>
+    </plurals>
+    <plurals name="card_junk_body">
+        <item quantity="one">%1$d looks like a forward, meme or screenshot</item>
+        <item quantity="other">%1$d look like forwards, memes or screenshots</item>
+    </plurals>
+    <plurals name="card_dupes_body">
+        <item quantity="one">%1$d group of near-identical copies</item>
+        <item quantity="other">%1$d groups of near-identical copies</item>
+    </plurals>
+    <plurals name="person_photo_count">
+        <item quantity="one">%1$d photo</item>
+        <item quantity="other">%1$d photos</item>
+    </plurals>
+
+    <!-- ==== person -->
+    <string name="person_fallback">This person</string>
+    <string name="person_loading">Looking…</string>
+    <string name="person_none">No photos matched to %1$s yet.</string>
+    <plurals name="person_kept_because">
+        <item quantity="one">%2$d photo kept because %1$s is in it.</item>
+        <item quantity="other">%2$d photos kept because %1$s is in them.</item>
+    </plurals>
+    <string name="person_photo_description">A photo of %1$s, %2$d of %3$d.</string>
+    <string name="person_remove">Remove %1$s</string>
+    <string name="person_remove_title">Remove %1$s?</string>
+    <string name="person_remove_body">PixKin will stop recognising %1$s, so new photos of them will no longer be saved automatically.\n\nNo photos are deleted. The %2$d already saved stay where they are, and %1$s can be added again later.</string>
+    <string name="action_remove">Remove</string>
+    <string name="action_cancel">Cancel</string>
+
+    <!-- ==== review -->
+    <string name="queue_dupes">Suspected duplicates</string>
+    <string name="queue_junk">Suspected junk</string>
+    <string name="queue_verify">Saved photos</string>
+    <string name="queue_rescue">More family photos</string>
+    <string name="queue_noface">Photos with no faces</string>
+    <string name="queue_golden">Review</string>
+
+    <string name="action_different">Different</string>
+    <string name="action_same_photo">Same photo</string>
+    <string name="action_not_mine">Not mine</string>
+    <string name="action_skip">Skip</string>
+    <string name="action_correct">Correct</string>
+    <string name="action_its_junk">It\'s junk</string>
+    <string name="action_keep">Keep</string>
+    <string name="action_discard">Discard</string>
+    <string name="action_undo_last">Undo last</string>
+    <string name="nothing_to_undo">nothing to undo</string>
+
+    <string name="grid_show_single">Show one photo at a time</string>
+    <string name="grid_show_grid">Show all as a grid</string>
+    <string name="grid_tap_to_check">Tap one to check it.</string>
+    <string name="grid_tap_to_decide">Tap one to decide.</string>
+    <string name="grid_tap_to_look">Tap one to look at it.</string>
+    <plurals name="grid_photo_count">
+        <item quantity="one">%1$d photo</item>
+        <item quantity="other">%1$d photos</item>
+    </plurals>
+
+    <string name="empty_nothing_here">Nothing here to look at.</string>
+    <string name="empty_all_done">All done here.</string>
+    <string name="counter_position">%1$d of %2$d</string>
+
+    <string name="verify_prompt">PixKin saved this as family%1$s.\nIs that right?</string>
+    <string name="verify_matching">, matching %1$s</string>
+    <string name="verify_matching_at">, matching %1$s at %2$s</string>
+    <string name="junk_prompt">No one you enrolled is in this photo%1$s.</string>
+    <string name="junk_closest">, closest was %1$s</string>
+    <string name="junk_closest_at">, closest was %1$s at %2$s</string>
+    <string name="noface_prompt">No recognisable face in this photo.\nKeep it if it still matters — a place, a drawing, a document.</string>
+    <string name="dupe_prompt">group %1$d · %2$d members\nAre these the same picture?</string>
+    <string name="rescue_closest">closest match:  %1$s  %2$s</string>
+    <string name="rescue_near_miss">   ← near miss</string>
+    <string name="rescue_closest_similarity">closest similarity %1$s</string>
+    <string name="rescue_no_face">no measurable face (too small or turned away)</string>
+
+    <!-- The scoring detail under a card. Field names stay as they are: they
+         are the names in the database and in the logs, and a translated one
+         would not match what the developer greps for. -->
+    <string name="detail_faces" translatable="false">%1$s\nfaces=%2$d  unidentifiable=%3$d  ·  %4$s</string>
+    <string name="detail_item" translatable="false">%1$s  ·  %2$s\nfaces=%3$d  matched=%4$d  indeterminate=%5$d  text=%6$s</string>
+    <string name="detail_dupe_group" translatable="false">  dupe_group=%1$d</string>
+
+    <!-- Spoken by a screen reader; never shown. -->
+    <string name="a11y_photo">Photo</string>
+    <string name="a11y_back">Back</string>
+    <string name="a11y_more">More</string>
+    <string name="a11y_person_opens">%1$s. Opens their photos.</string>
+    <string name="a11y_person_with_caption">%1$s, %2$s. Opens their photos.</string>
+    <string name="a11y_grid_item">%1$s Item %2$d of %3$d. Tap to open.</string>
+    <string name="a11y_card_position">%1$s %2$d of %3$d.</string>
+    <string name="a11y_stat">%1$d %2$s</string>
+    <string name="a11y_stat_text">%1$s %2$s</string>
+    <string name="a11y_card">%1$s. %2$s</string>
+    <string name="a11y_dupe_group">A group of %1$d photos that may be the same picture.</string>
+    <string name="a11y_saved_as_family">A photo PixKin saved as family.%1$s</string>
+    <string name="a11y_not_yours">A photo PixKin thinks is not yours.%1$s</string>
+    <string name="a11y_no_face">A photo with no recognisable face in it.</string>
+    <string name="a11y_unsure">A photo PixKin was unsure about.%1$s %2$d faces found.</string>
+    <string name="a11y_scored">A photo scored %1$s, %2$s, with %3$d faces found.</string>
+    <string name="a11y_closest_match">" Closest match %1$s, %2$s."</string>
+    <string name="a11y_closest_match_plain">" Closest match %1$s."</string>
+
+    <!-- ==== onboarding -->
+    <string name="onboard_who_matters">Who matters to you?</string>
+    <string name="onboard_intro_body">Group chats fill your phone with other people\'s photos. PixKin keeps the ones your people are in.</string>
+    <string name="onboard_reading">Reading your WhatsApp folders…</string>
+    <plurals name="onboard_whatsapp_count">
+        <item quantity="one">%1$d photo from WhatsApp on this phone</item>
+        <item quantity="other">%1$d photos from WhatsApp on this phone</item>
+    </plurals>
+    <string name="onboard_no_whatsapp">No WhatsApp photos found on this phone</string>
+    <string name="onboard_time">About four minutes to find them, or seconds if you pick photos yourself</string>
+    <string name="onboard_private">Nothing leaves this phone</string>
+    <string name="onboard_find">Find my people</string>
+    <string name="onboard_pick_instead">Pick photos of someone instead</string>
+    <string name="onboard_continue_found">Continue with faces already found</string>
+    <string name="onboard_not_now">Not now</string>
+
+    <string name="onboard_looking">Looking for faces</string>
+    <string name="onboard_scan_keeps_going">This keeps going if you turn the phone or leave the app. Nothing leaves the phone.</string>
+    <string name="onboard_progress">%1$s…  %2$d / %3$d</string>
+    <string name="onboard_starting">Starting</string>
+
+    <string name="onboard_no_faces_title">No faces to show you</string>
+    <string name="onboard_no_faces_body">Nothing in the sample had enough clear, front-facing photos of the same person — or the faces we found earlier are no longer on this phone.\n\nYou can look again, or just point us at a few photos of someone yourself.</string>
+    <string name="onboard_pick_someone">Pick photos of someone</string>
+    <string name="onboard_look_again">Look again</string>
+    <string name="onboard_done">Done</string>
+
+    <string name="onboard_know_person">Do you know this person?</string>
+    <string name="onboard_candidate_progress">%1$d of %2$d   ·   %3$d named</string>
+    <plurals name="onboard_in_photos">
+        <item quantity="one">In %1$d of your photos</item>
+        <item quantity="other">In %1$d of your photos</item>
+    </plurals>
+    <string name="onboard_claim_note">Claim them and their photos are always kept</string>
+    <string name="onboard_someone_i_care">This is someone I care about</string>
+    <string name="onboard_not_important">Not important</string>
+    <string name="onboard_not_same_person">These aren\'t the same person</string>
+
+    <string name="onboard_who_is_this">Who is this?</string>
+    <string name="onboard_name_hint_optional">Name (optional)</string>
+    <string name="onboard_name_hint">Name</string>
+    <string name="onboard_name_help">A name just helps you recognise them later — you can leave it blank.</string>
+    <string name="onboard_default_person">Person %1$d</string>
+    <string name="action_save">Save</string>
+
+    <plurals name="onboard_who_in_photos">
+        <item quantity="one">Who is in this photo?</item>
+        <item quantity="other">Who is in these %1$d photos?</item>
+    </plurals>
+    <string name="onboard_pick_help">Photos where this person is the only clear face work best. A few taken at different times beat one good portrait.</string>
+    <string name="onboard_reading_photos">Reading those photos…</string>
+    <string name="onboard_added">Added %1$s</string>
+    <string name="onboard_nothing_to_save">Nothing to save</string>
+    <plurals name="onboard_saved_from">
+        <item quantity="one">Saved %1$s from %2$d photo.</item>
+        <item quantity="other">Saved %1$s from %2$d photos.</item>
+    </plurals>
+    <string name="onboard_could_not_use">Could not use any of those photos.</string>
+    <plurals name="onboard_no_face_clear">
+        <item quantity="one">\n%1$d had no face clear enough.</item>
+        <item quantity="other">\n%1$d had no face clear enough.</item>
+    </plurals>
+    <plurals name="onboard_too_many_faces">
+        <item quantity="one">\n%1$d had more than one clear face, so we could not tell which one is %2$s.</item>
+        <item quantity="other">\n%1$d had more than one clear face, so we could not tell which one is %2$s.</item>
+    </plurals>
+    <string name="onboard_more_photos_help">\n\nMore photos of %1$s would help — with only a couple we miss roughly one face in five.</string>
+    <string name="onboard_add_someone_else">Add someone else</string>
+    <string name="onboard_back">Back</string>
+
+    <plurals name="onboard_enrolled">
+        <item quantity="one">%1$d person enrolled</item>
+        <item quantity="other">%1$d people enrolled</item>
+    </plurals>
+    <string name="onboard_second_look">Worth a second look</string>
+    <string name="onboard_second_look_body">These faces keep appearing but you didn\'t claim them. Photos of them can be suggested for deletion. If any of these is family, go back and add them.</string>
+    <string name="onboard_go_back_add">Go back and add someone</string>
+    <string name="onboard_none_unclaimed">No other recurring faces were left unclaimed.</string>
+    <string name="onboard_nobody_warning">You haven\'t enrolled anyone. Until you do, every group photo — including photos of your own family — will be treated as a deletion candidate. Strongly consider adding at least the people closest to you.</string>
+
+    <string name="backup_photos_settings">Photos settings › Backup › Back up device folders</string>
+    <string name="backup_making_folder">Making the %1$s folder…</string>
+    <string name="backup_folder_exists">%1$s exists, so it will be in that list</string>
+    <string name="backup_folder_later">PixKin makes that folder with the first photo it saves</string>
+    <string name="backup_already_safe">Photos already backed up stay where they are.</string>
+    <string name="backup_open_photos">Open Google Photos</string>
 </resources>

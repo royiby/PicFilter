@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Hebrew. The locale this app was actually built for: the people it recognises
+  are named גבע, דני, אבי, אמא and מישי.
+
+  Hebrew reads right to left, so the layout mirrors; see supportsRtl in the
+  manifest and setMarginsRelative in Ui.kt. It also has a dual, which is why
+  several plurals here carry a "two" that English does not have.
+-->
+<resources>
+    <string name="title_setup">הגדרת PixKin</string>
+    <string name="title_review">סקירה ב‑PixKin</string>
+    <string name="tagline">רק התמונות של האנשים שלך, שמורות.</string>
+
+    <string name="home_people_header">האנשים שלך</string>
+    <string name="home_add">הוספה</string>
+    <string name="home_add_description">הוספת אדם לרשימת האנשים ש‑PixKin שומרת</string>
+    <string name="home_no_people">אפשר להתחיל בכך שתספרו ל‑PixKin מי חשוב לכם.</string>
+    <string name="home_setup_title">הגדרה — איתור האנשים שלך</string>
+    <string name="home_setup_body">סורק את הספרייה ומוצא פנים שחוזרות</string>
+
+    <string name="stat_saved">נשמרו</string>
+    <string name="stat_not_saved">לא נשמרו</string>
+    <string name="autosave_on">שמירה אוטומטית פועלת</string>
+    <string name="autosave_off">שמירה אוטומטית כבויה</string>
+    <string name="autosave_on_description">שמירה אוטומטית פועלת. יש להקיש כדי לכבות.</string>
+    <string name="autosave_off_description">שמירה אוטומטית כבויה. יש להקיש כדי להפעיל.</string>
+
+    <string name="card_saved_title">נשמרו עבורך</string>
+    <string name="card_rescue_title">איתור עוד תמונות משפחה</string>
+    <string name="card_nothing_left">לא נשאר מה לבדוק</string>
+    <string name="card_noface_title">תמונות ללא פנים</string>
+    <string name="card_junk_title">חשד לזבל</string>
+    <string name="card_junk_empty">אין פריטים ממתינים</string>
+    <string name="card_dupes_title">חשד לכפילויות</string>
+    <string name="card_dupes_empty">לא נמצאו עותקים כמעט זהים</string>
+
+    <plurals name="card_saved_all_checked">
+        <item quantity="one">התמונה השמורה האחת נבדקה</item>
+        <item quantity="two">שתי התמונות השמורות נבדקו</item>
+        <item quantity="other">כל %1$d נבדקו</item>
+    </plurals>
+    <plurals name="card_saved_to_check">
+        <item quantity="one">נשארה %1$d מתוך %2$d לבדיקה</item>
+        <item quantity="two">נשארו %1$d מתוך %2$d לבדיקה</item>
+        <item quantity="other">נשארו %1$d מתוך %2$d לבדיקה</item>
+    </plurals>
+    <plurals name="card_rescue_unsure">
+        <item quantity="one">%1$d שלא היינו בטוחים לגביה</item>
+        <item quantity="two">%1$d שלא היינו בטוחים לגביהן</item>
+        <item quantity="other">%1$d שלא היינו בטוחים לגביהן</item>
+    </plurals>
+    <plurals name="card_noface_body">
+        <item quantity="one">מקום, ציור או מסמך אחד</item>
+        <item quantity="two">%1$d מקומות, ציורים או מסמכים</item>
+        <item quantity="other">%1$d מקומות, ציורים, מסמכים</item>
+    </plurals>
+    <plurals name="card_junk_body">
+        <item quantity="one">%1$d נראית כהעברה, מֶם או צילום מסך</item>
+        <item quantity="two">%1$d נראות כהעברות, מֶמים או צילומי מסך</item>
+        <item quantity="other">%1$d נראות כהעברות, מֶמים או צילומי מסך</item>
+    </plurals>
+    <plurals name="card_dupes_body">
+        <item quantity="one">קבוצה אחת של עותקים כמעט זהים</item>
+        <item quantity="two">%1$d קבוצות של עותקים כמעט זהים</item>
+        <item quantity="other">%1$d קבוצות של עותקים כמעט זהים</item>
+    </plurals>
+    <plurals name="person_photo_count">
+        <item quantity="one">תמונה אחת</item>
+        <item quantity="two">%1$d תמונות</item>
+        <item quantity="other">%1$d תמונות</item>
+    </plurals>
+
+    <string name="person_fallback">האדם הזה</string>
+    <string name="person_loading">מחפש…</string>
+    <string name="person_none">עדיין לא הותאמו תמונות ל%1$s.</string>
+    <plurals name="person_kept_because">
+        <item quantity="one">תמונה אחת נשמרה כי %1$s מופיע בה.</item>
+        <item quantity="two">%2$d תמונות נשמרו כי %1$s מופיע בהן.</item>
+        <item quantity="other">%2$d תמונות נשמרו כי %1$s מופיע בהן.</item>
+    </plurals>
+    <string name="person_photo_description">תמונה של %1$s, %2$d מתוך %3$d.</string>
+    <string name="person_remove">הסרת %1$s</string>
+    <string name="person_remove_title">להסיר את %1$s?</string>
+    <string name="person_remove_body">‏PixKin תפסיק לזהות את %1$s, ולכן תמונות חדשות שלו לא יישמרו עוד באופן אוטומטי.\n\nאף תמונה לא נמחקת. %2$d התמונות שכבר נשמרו יישארו במקומן, ואפשר להוסיף את %1$s שוב מאוחר יותר.</string>
+    <string name="action_remove">הסרה</string>
+    <string name="action_cancel">ביטול</string>
+
+    <string name="queue_dupes">חשד לכפילויות</string>
+    <string name="queue_junk">חשד לזבל</string>
+    <string name="queue_verify">תמונות שנשמרו</string>
+    <string name="queue_rescue">עוד תמונות משפחה</string>
+    <string name="queue_noface">תמונות ללא פנים</string>
+    <string name="queue_golden">סקירה</string>
+
+    <string name="action_different">שונות</string>
+    <string name="action_same_photo">אותה תמונה</string>
+    <string name="action_not_mine">לא שלי</string>
+    <string name="action_skip">דילוג</string>
+    <string name="action_correct">נכון</string>
+    <string name="action_its_junk">זה זבל</string>
+    <string name="action_keep">שמירה</string>
+    <string name="action_discard">מחיקה</string>
+    <string name="action_undo_last">ביטול האחרון</string>
+    <string name="nothing_to_undo">אין מה לבטל</string>
+
+    <string name="grid_show_single">הצגת תמונה אחת בכל פעם</string>
+    <string name="grid_show_grid">הצגת הכול כרשת</string>
+    <string name="grid_tap_to_check">יש להקיש על אחת כדי לבדוק אותה.</string>
+    <string name="grid_tap_to_decide">יש להקיש על אחת כדי להחליט.</string>
+    <string name="grid_tap_to_look">יש להקיש על אחת כדי להביט בה.</string>
+    <plurals name="grid_photo_count">
+        <item quantity="one">תמונה אחת</item>
+        <item quantity="two">%1$d תמונות</item>
+        <item quantity="other">%1$d תמונות</item>
+    </plurals>
+
+    <string name="empty_nothing_here">אין כאן מה לראות.</string>
+    <string name="empty_all_done">סיימנו כאן.</string>
+    <string name="counter_position">%1$d מתוך %2$d</string>
+
+    <string name="verify_prompt">‏PixKin שמרה את זו כמשפחה%1$s.\nהאם זה נכון?</string>
+    <string name="verify_matching">, בהתאמה ל%1$s</string>
+    <string name="verify_matching_at">, בהתאמה ל%1$s ברמת %2$s</string>
+    <string name="junk_prompt">איש מהאנשים שהגדרתם אינו מופיע בתמונה הזו%1$s.</string>
+    <string name="junk_closest">, הקרוב ביותר היה %1$s</string>
+    <string name="junk_closest_at">, הקרוב ביותר היה %1$s ברמת %2$s</string>
+    <string name="noface_prompt">אין בתמונה הזו פנים שניתן לזהות.\nכדאי לשמור אותה אם היא עדיין חשובה — מקום, ציור, מסמך.</string>
+    <string name="dupe_prompt">קבוצה %1$d · %2$d פריטים\nהאם זו אותה תמונה?</string>
+    <string name="rescue_closest">ההתאמה הקרובה ביותר:  %1$s  %2$s</string>
+    <string name="rescue_near_miss">   ← כמעט התאמה</string>
+    <string name="rescue_closest_similarity">הדמיון הקרוב ביותר %1$s</string>
+    <string name="rescue_no_face">אין פנים שניתן למדוד (קטנות מדי או מופנות הצידה)</string>
+
+    <string name="a11y_photo">תמונה</string>
+    <string name="a11y_back">חזרה</string>
+    <string name="a11y_more">עוד</string>
+    <string name="a11y_person_opens">%1$s. פותח את התמונות שלו.</string>
+    <string name="a11y_person_with_caption">%1$s, %2$s. פותח את התמונות שלו.</string>
+    <string name="a11y_grid_item">%1$s פריט %2$d מתוך %3$d. יש להקיש כדי לפתוח.</string>
+    <string name="a11y_card_position">%1$s %2$d מתוך %3$d.</string>
+    <string name="a11y_stat">%1$d %2$s</string>
+    <string name="a11y_stat_text">%1$s %2$s</string>
+    <string name="a11y_card">%1$s. %2$s</string>
+    <string name="a11y_dupe_group">קבוצה של %1$d תמונות שאולי הן אותה תמונה.</string>
+    <string name="a11y_saved_as_family">תמונה ש‑PixKin שמרה כמשפחה.%1$s</string>
+    <string name="a11y_not_yours">תמונה ש‑PixKin סבורה שאינה שלך.%1$s</string>
+    <string name="a11y_no_face">תמונה ללא פנים שניתן לזהות.</string>
+    <string name="a11y_unsure">תמונה ש‑PixKin לא הייתה בטוחה לגביה.%1$s נמצאו %2$d פנים.</string>
+    <string name="a11y_scored">תמונה שדורגה %1$s, %2$s, עם %3$d פנים שנמצאו.</string>
+    <string name="a11y_closest_match">" ההתאמה הקרובה ביותר %1$s, %2$s."</string>
+    <string name="a11y_closest_match_plain">" ההתאמה הקרובה ביותר %1$s."</string>
+
+    <string name="onboard_who_matters">מי חשוב לכם?</string>
+    <string name="onboard_intro_body">צ\'אטים קבוצתיים ממלאים את הטלפון בתמונות של אנשים אחרים. ‏PixKin שומרת את אלה שהאנשים שלכם מופיעים בהן.</string>
+    <string name="onboard_reading">קורא את תיקיות ה‑WhatsApp שלך…</string>
+    <plurals name="onboard_whatsapp_count">
+        <item quantity="one">תמונה אחת מ‑WhatsApp בטלפון הזה</item>
+        <item quantity="two">%1$d תמונות מ‑WhatsApp בטלפון הזה</item>
+        <item quantity="other">%1$d תמונות מ‑WhatsApp בטלפון הזה</item>
+    </plurals>
+    <string name="onboard_no_whatsapp">לא נמצאו תמונות WhatsApp בטלפון הזה</string>
+    <string name="onboard_time">כארבע דקות לאיתור, או שניות אם בוחרים תמונות בעצמכם</string>
+    <string name="onboard_private">שום דבר לא יוצא מהטלפון הזה</string>
+    <string name="onboard_find">איתור האנשים שלי</string>
+    <string name="onboard_pick_instead">בחירת תמונות של מישהו במקום</string>
+    <string name="onboard_continue_found">המשך עם פנים שכבר נמצאו</string>
+    <string name="onboard_not_now">לא עכשיו</string>
+
+    <string name="onboard_looking">מחפש פנים</string>
+    <string name="onboard_scan_keeps_going">התהליך ממשיך גם אם מסובבים את הטלפון או יוצאים מהאפליקציה. שום דבר לא יוצא מהטלפון.</string>
+    <string name="onboard_progress">%1$s…  %2$d / %3$d</string>
+    <string name="onboard_starting">מתחיל</string>
+
+    <string name="onboard_no_faces_title">אין פנים להציג לך</string>
+    <string name="onboard_no_faces_body">לא נמצאו בדגימה מספיק תמונות ברורות וחזיתיות של אותו אדם — או שהפנים שנמצאו קודם כבר אינן בטלפון הזה.\n\nאפשר לחפש שוב, או פשוט להצביע על כמה תמונות של מישהו בעצמכם.</string>
+    <string name="onboard_pick_someone">בחירת תמונות של מישהו</string>
+    <string name="onboard_look_again">חיפוש שוב</string>
+    <string name="onboard_done">סיום</string>
+
+    <string name="onboard_know_person">מכירים את האדם הזה?</string>
+    <string name="onboard_candidate_progress">%1$d מתוך %2$d   ·   %3$d קיבלו שם</string>
+    <plurals name="onboard_in_photos">
+        <item quantity="one">בתמונה אחת שלך</item>
+        <item quantity="two">ב‑%1$d מהתמונות שלך</item>
+        <item quantity="other">ב‑%1$d מהתמונות שלך</item>
+    </plurals>
+    <string name="onboard_claim_note">אם תסמנו אותם, התמונות שלהם יישמרו תמיד</string>
+    <string name="onboard_someone_i_care">זה מישהו שחשוב לי</string>
+    <string name="onboard_not_important">לא חשוב</string>
+    <string name="onboard_not_same_person">אלה לא אותו אדם</string>
+
+    <string name="onboard_who_is_this">מי זה?</string>
+    <string name="onboard_name_hint_optional">שם (לא חובה)</string>
+    <string name="onboard_name_hint">שם</string>
+    <string name="onboard_name_help">שם רק עוזר לכם לזהות אותם מאוחר יותר — אפשר להשאיר ריק.</string>
+    <string name="onboard_default_person">אדם %1$d</string>
+    <string name="action_save">שמירה</string>
+
+    <plurals name="onboard_who_in_photos">
+        <item quantity="one">מי נמצא בתמונה הזו?</item>
+        <item quantity="two">מי נמצא בשתי התמונות האלה?</item>
+        <item quantity="other">מי נמצא ב‑%1$d התמונות האלה?</item>
+    </plurals>
+    <string name="onboard_pick_help">תמונות שבהן האדם הזה הוא הפנים הברורות היחידות עובדות הכי טוב. כמה תמונות מזמנים שונים עדיפות על פורטרט אחד טוב.</string>
+    <string name="onboard_reading_photos">קורא את התמונות האלה…</string>
+    <string name="onboard_added">%1$s נוסף</string>
+    <string name="onboard_nothing_to_save">אין מה לשמור</string>
+    <plurals name="onboard_saved_from">
+        <item quantity="one">%1$s נשמר מתמונה אחת.</item>
+        <item quantity="two">%1$s נשמר מ‑%2$d תמונות.</item>
+        <item quantity="other">%1$s נשמר מ‑%2$d תמונות.</item>
+    </plurals>
+    <string name="onboard_could_not_use">לא ניתן היה להשתמש באף אחת מהתמונות האלה.</string>
+    <plurals name="onboard_no_face_clear">
+        <item quantity="one">\nבאחת לא היו פנים ברורות מספיק.</item>
+        <item quantity="two">\nב‑%1$d לא היו פנים ברורות מספיק.</item>
+        <item quantity="other">\nב‑%1$d לא היו פנים ברורות מספיק.</item>
+    </plurals>
+    <plurals name="onboard_too_many_faces">
+        <item quantity="one">\nבאחת היו יותר מפנים ברורות אחת, ולכן לא יכולנו לדעת אילו מהן %2$s.</item>
+        <item quantity="two">\nב‑%1$d היו יותר מפנים ברורות אחת, ולכן לא יכולנו לדעת אילו מהן %2$s.</item>
+        <item quantity="other">\nב‑%1$d היו יותר מפנים ברורות אחת, ולכן לא יכולנו לדעת אילו מהן %2$s.</item>
+    </plurals>
+    <string name="onboard_more_photos_help">\n\nעוד תמונות של %1$s יעזרו — עם שתיים‑שלוש בלבד אנחנו מפספסים בערך פנים אחת מכל חמש.</string>
+    <string name="onboard_add_someone_else">הוספת מישהו נוסף</string>
+    <string name="onboard_back">חזרה</string>
+
+    <plurals name="onboard_enrolled">
+        <item quantity="one">אדם אחד נוסף</item>
+        <item quantity="two">%1$d אנשים נוספו</item>
+        <item quantity="other">%1$d אנשים נוספו</item>
+    </plurals>
+    <string name="onboard_second_look">שווה מבט נוסף</string>
+    <string name="onboard_second_look_body">הפנים האלה חוזרות שוב ושוב אבל לא סימנתם אותן. תמונות שלהן עלולות להיות מוצעות למחיקה. אם מישהו מהם הוא בן משפחה, כדאי לחזור ולהוסיף אותו.</string>
+    <string name="onboard_go_back_add">חזרה והוספת מישהו</string>
+    <string name="onboard_none_unclaimed">לא נותרו פנים חוזרות אחרות שלא סומנו.</string>
+    <string name="onboard_nobody_warning">לא הוספתם אף אחד. עד שתעשו זאת, כל תמונה קבוצתית — כולל תמונות של המשפחה שלכם — תיחשב מועמדת למחיקה. מומלץ מאוד להוסיף לפחות את האנשים הקרובים אליכם.</string>
+
+    <string name="backup_photos_settings">הגדרות Photos ‹ גיבוי ‹ גיבוי תיקיות מכשיר</string>
+    <string name="backup_making_folder">יוצר את התיקייה %1$s…</string>
+    <string name="backup_folder_exists">‏%1$s קיימת, ולכן היא תופיע ברשימה</string>
+    <string name="backup_folder_later">‏PixKin תיצור את התיקייה עם התמונה הראשונה שתישמר</string>
+    <string name="backup_already_safe">תמונות שכבר גובו יישארו במקומן.</string>
+    <string name="backup_open_photos">פתיחת Google Photos</string>
+</resources>

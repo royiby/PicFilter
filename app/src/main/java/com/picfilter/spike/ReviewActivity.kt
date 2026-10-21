@@ -23,6 +23,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
 import coil.size.Scale
+import com.picfilter.spike.Ui.setMarginsRelative
 import com.picfilter.spike.data.Db
 import com.picfilter.spike.data.DbQueue
 import kotlinx.coroutines.Dispatchers
@@ -139,14 +140,14 @@ class ReviewActivity : ComponentActivity() {
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
     /** What this queue is, for the top bar. Inner screens get a text title. */
-    private fun screenTitle() = when (mode) {
-        "dupes" -> "Suspected duplicates"
-        "junk" -> "Suspected junk"
-        "verify" -> "Saved photos"
-        "rescue" -> "More family photos"
-        "noface" -> "Photos with no faces"
-        else -> "Review"
-    }
+    private fun screenTitle() = getString(when (mode) {
+        "dupes" -> R.string.queue_dupes
+        "junk" -> R.string.queue_junk
+        "verify" -> R.string.queue_verify
+        "rescue" -> R.string.queue_rescue
+        "noface" -> R.string.queue_noface
+        else -> R.string.queue_golden
+    })
 
     private fun buildUi(): View {
         val root = Ui.screen(this)
@@ -155,7 +156,7 @@ class ReviewActivity : ComponentActivity() {
         buildBar()
 
         counter = Ui.text(this, Ui.Type.CAPTION, "", R.color.pk_on_surface_variant).apply {
-            setPadding(dp(Ui.MD), dp(Ui.XS), dp(Ui.MD), dp(Ui.XXS))
+            setPaddingRelative(dp(Ui.MD), dp(Ui.XS), dp(Ui.MD), dp(Ui.XXS))
         }
         root.addView(counter)
 
@@ -168,7 +169,7 @@ class ReviewActivity : ComponentActivity() {
             scaleType = ImageView.ScaleType.FIT_CENTER
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-            ).apply { setMargins(dp(Ui.MD), 0, dp(Ui.MD), 0) }
+            ).apply { setMarginsRelative(dp(Ui.MD), 0, dp(Ui.MD), 0) }
         }
         root.addView(image)
 
@@ -177,7 +178,7 @@ class ReviewActivity : ComponentActivity() {
             gravity = android.view.Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-            ).apply { setMargins(dp(Ui.MD), 0, dp(Ui.MD), 0) }
+            ).apply { setMarginsRelative(dp(Ui.MD), 0, dp(Ui.MD), 0) }
             visibility = View.GONE
         }
         root.addView(empty)
@@ -195,7 +196,7 @@ class ReviewActivity : ComponentActivity() {
 
         strip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(Ui.MD), dp(Ui.SM), dp(Ui.MD), 0)
+            setPaddingRelative(dp(Ui.MD), dp(Ui.SM), dp(Ui.MD), 0)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(104))
             visibility = View.GONE
@@ -203,13 +204,13 @@ class ReviewActivity : ComponentActivity() {
         root.addView(strip)
 
         info = Ui.text(this, Ui.Type.BODY_SMALL).apply {
-            setPadding(dp(Ui.MD), dp(Ui.SM), dp(Ui.MD), dp(Ui.SM))
+            setPaddingRelative(dp(Ui.MD), dp(Ui.SM), dp(Ui.MD), dp(Ui.SM))
         }
         root.addView(info)
 
         val buttons = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(Ui.SM), 0, dp(Ui.SM), dp(Ui.XXS))
+            setPaddingRelative(dp(Ui.SM), 0, dp(Ui.SM), dp(Ui.XXS))
             // WRAP_CONTENT, not TOUCH. The buttons are themselves TOUCH tall
             // (Ui.filled), so a row fixed at TOUCH with XXS of bottom padding
             // left them 4dp short and sliced the bottom off every one of them --
@@ -220,34 +221,34 @@ class ReviewActivity : ComponentActivity() {
         }
         when (mode) {
             "dupes" -> {
-                buttons.addView(Ui.filled(this, "Different", Ui.Btn.OUTLINED) { verdict("DIFFERENT") })
-                buttons.addView(Ui.filled(this, "Same photo", Ui.Btn.PRIMARY) { verdict("SAME") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_different), Ui.Btn.OUTLINED) { verdict("DIFFERENT") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_same_photo), Ui.Btn.PRIMARY) { verdict("SAME") })
             }
             "verify" -> {
-                buttons.addView(Ui.filled(this, "Not mine", Ui.Btn.OUTLINED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, "Skip", Ui.Btn.TEXT) { label("SKIP") })
-                buttons.addView(Ui.filled(this, "Correct", Ui.Btn.PRIMARY) { label("KEEP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_not_mine), Ui.Btn.OUTLINED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { label("SKIP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_correct), Ui.Btn.PRIMARY) { label("KEEP") })
             }
             "junk" -> {
-                buttons.addView(Ui.filled(this, "It's junk", Ui.Btn.OUTLINED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, "Skip", Ui.Btn.TEXT) { label("SKIP") })
-                buttons.addView(Ui.filled(this, "Keep", Ui.Btn.PRIMARY) { label("KEEP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_its_junk), Ui.Btn.OUTLINED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { label("SKIP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_keep), Ui.Btn.PRIMARY) { label("KEEP") })
             }
             "rescue", "noface" -> {
-                buttons.addView(Ui.filled(this, "Not mine", Ui.Btn.OUTLINED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, "Skip", Ui.Btn.TEXT) { label("SKIP") })
-                buttons.addView(Ui.filled(this, "Keep", Ui.Btn.PRIMARY) { label("KEEP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_not_mine), Ui.Btn.OUTLINED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { label("SKIP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_keep), Ui.Btn.PRIMARY) { label("KEEP") })
             }
             else -> {
-                buttons.addView(Ui.filled(this, "Discard", Ui.Btn.OUTLINED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, "Skip", Ui.Btn.TEXT) { label("SKIP") })
-                buttons.addView(Ui.filled(this, "Keep", Ui.Btn.PRIMARY) { label("KEEP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_discard), Ui.Btn.OUTLINED) { label("DISCARD") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { label("SKIP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_keep), Ui.Btn.PRIMARY) { label("KEEP") })
             }
         }
         actionBar = buttons
         root.addView(buttons)
 
-        undoBtn = Ui.wideButton(this, "Undo last", Ui.Btn.LINK) { undo() }
+        undoBtn = Ui.wideButton(this, getString(R.string.action_undo_last), Ui.Btn.LINK) { undo() }
         root.addView(undoBtn)
 
         Ui.applyInsets(root, this, extraBottom = 4)
@@ -289,7 +290,8 @@ class ReviewActivity : ComponentActivity() {
         bar.addView(Ui.titleBar(
             this, screenTitle(),
             actionIcon = if (grid) R.drawable.ic_single_photo else R.drawable.ic_grid,
-            actionLabel = if (grid) "Show one photo at a time" else "Show all as a grid",
+            actionLabel = getString(
+                if (grid) R.string.grid_show_single else R.string.grid_show_grid),
             onAction = { grid = !grid; buildBar(); render() },
         ) { finish() })
     }
@@ -310,7 +312,7 @@ class ReviewActivity : ComponentActivity() {
                 is DupeCard -> card.groupId
             },
             uri = uriOf(card),
-            label = "${describe(card)} Item ${i + 1} of ${queue.size}. Tap to open.",
+            label = getString(R.string.a11y_grid_item, describe(card), i + 1, queue.size),
         )
     }
 
@@ -323,12 +325,13 @@ class ReviewActivity : ComponentActivity() {
             strip.visibility = View.GONE
             actionBar.visibility = View.GONE
             undoBtn.visibility = View.GONE
-            counter.text = "${queue.size} photos"
-            info.text = when (mode) {
-                "verify" -> "Tap one to check it."
-                "junk" -> "Tap one to decide."
-                else -> "Tap one to look at it."
-            }
+            counter.text = resources.getQuantityString(
+                R.plurals.grid_photo_count, queue.size, queue.size)
+            info.text = getString(when (mode) {
+                "verify" -> R.string.grid_tap_to_check
+                "junk" -> R.string.grid_tap_to_decide
+                else -> R.string.grid_tap_to_look
+            })
             return
         }
         gridView.visibility = View.GONE
@@ -341,8 +344,9 @@ class ReviewActivity : ComponentActivity() {
             image.setImageDrawable(null); strip.visibility = View.GONE
             actionBar.visibility = View.GONE
             undoBtn.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
-            if (empty.childCount == 0) empty.addView(Ui.emptyState(this,
-                if (history.isEmpty()) "Nothing here to look at." else "All done here."))
+            if (empty.childCount == 0) empty.addView(Ui.emptyState(this, getString(
+                if (history.isEmpty()) R.string.empty_nothing_here
+                else R.string.empty_all_done)))
             empty.visibility = View.VISIBLE
             image.visibility = View.GONE
             counter.text = ""
@@ -360,56 +364,53 @@ class ReviewActivity : ComponentActivity() {
         image.visibility = View.VISIBLE
         actionBar.visibility = View.VISIBLE
         undoBtn.visibility = View.VISIBLE
-        counter.text = "${idx + 1} of ${queue.size}"
+        counter.text = getString(R.string.counter_position, idx + 1, queue.size)
 
         val card = queue[idx]
-        image.contentDescription = "${describe(card)} ${idx + 1} of ${queue.size}."
+        image.contentDescription =
+            getString(R.string.a11y_card_position, describe(card), idx + 1, queue.size)
         if (card is DupeCard) {
             val gid = card.groupId
             val members = card.members
             showImage(members[0].second)
             fillStrip(members.map { it.second })
-            info.text = "group $gid · ${members.size} members\nAre these the same picture?"
+            info.text = getString(R.string.dupe_prompt, gid, members.size)
         } else if (card is RescueCard) {
             val r = card.row
             strip.visibility = View.GONE
             showImage(r.uri)
             if (mode == "verify") {
-                info.text = "PixKin saved this as family" +
-                    (r.nearName?.let { n -> ", matching $n" } ?: "") +
-                    (r.nearSim?.let { v -> " at ${"%.3f".format(v)}" } ?: "") +
-                    ".\nIs that right?"
+                info.text = getString(R.string.verify_prompt, matchSuffix(r, verify = true))
                 return
             }
             if (mode == "junk") {
                 showUpcoming()
-                info.text = "No one you enrolled is in this photo" +
-                    (r.nearName?.let { n -> ", closest was $n" } ?: "") +
-                    (r.nearSim?.let { v -> " at ${"%.3f".format(v)}" } ?: "") +
-                    ".\nfaces=${r.faces}  unidentifiable=${r.indet}  \u00b7  ${r.reason}"
+                info.text = getString(
+                    R.string.detail_faces,
+                    getString(R.string.junk_prompt, matchSuffix(r, verify = false)),
+                    r.faces, r.indet, r.reason)
                 return
             }
             if (mode == "noface") {
-                info.text = "No recognisable face in this photo.\n" +
-                    "Keep it if it still matters — a place, a drawing, a document."
+                info.text = getString(R.string.noface_prompt)
                 return
             }
             val near = when {
                 r.nearName != null && r.nearSim != null ->
-                    "closest match:  ${r.nearName}  ${"%.3f".format(r.nearSim)}" +
-                        (if (r.nearSim >= 0.50f) "   ← near miss" else "")
-                r.nearSim != null -> "closest similarity ${"%.3f".format(r.nearSim)}"
-                else -> "no measurable face (too small or turned away)"
+                    getString(R.string.rescue_closest, r.nearName, sim(r.nearSim)) +
+                        (if (r.nearSim >= 0.50f) getString(R.string.rescue_near_miss) else "")
+                r.nearSim != null -> getString(R.string.rescue_closest_similarity, sim(r.nearSim))
+                else -> getString(R.string.rescue_no_face)
             }
-            info.text = "$near\nfaces=${r.faces}  unidentifiable=${r.indet}  ·  ${r.reason}"
+            info.text = getString(R.string.detail_faces, near, r.faces, r.indet, r.reason)
         } else if (card is ItemCard) {
             val r = card.row
             strip.visibility = View.GONE
             showImage(r.uri)
-            info.text = "${r.decision}  ·  ${r.reason}\n" +
-                "faces=${r.faces}  matched=${r.matched}  indeterminate=${r.indet}  " +
-                "text=${"%.3f".format(r.textFrac)}" +
-                (r.dupeGroup?.let { "  dupe_group=$it" } ?: "")
+            info.text = getString(
+                R.string.detail_item, r.decision, r.reason,
+                r.faces, r.matched, r.indet, sim(r.textFrac),
+            ) + (r.dupeGroup?.let { getString(R.string.detail_dupe_group, it) } ?: "")
         }
     }
 
@@ -442,6 +443,21 @@ class ReviewActivity : ComponentActivity() {
         }
     }
 
+    /** Similarities are read, not computed from, so they format the same everywhere. */
+    private fun sim(v: Float) = "%.3f".format(v)
+
+    /** ", matching גבע at 0.752" — or nothing, when there is nobody close. */
+    private fun matchSuffix(r: Db.RescueRow, verify: Boolean): String {
+        val name = r.nearName ?: return ""
+        val v = r.nearSim
+        return when {
+            v != null && verify -> getString(R.string.verify_matching_at, name, sim(v))
+            v != null -> getString(R.string.junk_closest_at, name, sim(v))
+            verify -> getString(R.string.verify_matching, name)
+            else -> getString(R.string.junk_closest, name)
+        }
+    }
+
     /**
      * What a screen reader should say about the photo on screen.
      *
@@ -451,21 +467,22 @@ class ReviewActivity : ComponentActivity() {
      * flow was a row of buttons with no subject.
      */
     private fun describe(card: Card): String = when (card) {
-        is DupeCard -> "A group of ${card.members.size} photos that may be the same picture."
+        is DupeCard -> getString(R.string.a11y_dupe_group, card.members.size)
         is RescueCard -> {
             val r = card.row
             val who = r.nearName?.let { n ->
-                r.nearSim?.let { v -> " Closest match $n, ${"%.2f".format(v)}." } ?: " Closest match $n."
+                r.nearSim?.let { v -> getString(R.string.a11y_closest_match, n, "%.2f".format(v)) }
+                    ?: getString(R.string.a11y_closest_match_plain, n)
             } ?: ""
             when (mode) {
-                "verify" -> "A photo PixKin saved as family.$who"
-                "junk" -> "A photo PixKin thinks is not yours.$who"
-                "noface" -> "A photo with no recognisable face in it."
-                else -> "A photo PixKin was unsure about.$who ${r.faces} faces found."
+                "verify" -> getString(R.string.a11y_saved_as_family, who)
+                "junk" -> getString(R.string.a11y_not_yours, who)
+                "noface" -> getString(R.string.a11y_no_face)
+                else -> getString(R.string.a11y_unsure, who, r.faces)
             }
         }
-        is ItemCard -> "A photo scored ${card.row.decision}, ${card.row.reason}, " +
-            "with ${card.row.faces} faces found."
+        is ItemCard -> getString(
+            R.string.a11y_scored, card.row.decision, card.row.reason, card.row.faces)
     }
 
     /** The next few items in the queue, so the screen shows more than one
@@ -524,7 +541,7 @@ class ReviewActivity : ComponentActivity() {
 
     private fun undo() {
         val last = history.removeLastOrNull() ?: run {
-            Toast.makeText(this, "nothing to undo", Toast.LENGTH_SHORT).show(); return
+            Toast.makeText(this, R.string.nothing_to_undo, Toast.LENGTH_SHORT).show(); return
         }
         val dupes = mode == "dupes"
         // Ordered after the write it undoes: [DbQueue] is one thread.

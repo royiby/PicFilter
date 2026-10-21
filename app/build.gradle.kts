@@ -34,6 +34,13 @@ android {
     }
 
     buildFeatures { buildConfig = true }
+
+    lint {
+        // Deliberate exemptions and their reasons live in app/lint.xml.
+        lintConfig = file("lint.xml")
+        warningsAsErrors = false
+        abortOnError = true
+    }
 }
 
 dependencies {

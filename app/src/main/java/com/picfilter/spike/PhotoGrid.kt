@@ -86,8 +86,14 @@ class GridGaps(private val gap: Int) : RecyclerView.ItemDecoration() {
         val i = parent.getChildAdapterPosition(view)
         if (i == RecyclerView.NO_POSITION) return
         val col = i % GRID_COLS
-        outRect.left = col * gap / GRID_COLS
-        outRect.right = gap - (col + 1) * gap / GRID_COLS
+        // outRect is in physical sides, while the column index counts from the
+        // start of the line -- which is the right-hand side in Hebrew. Mirror
+        // it, or the outer column loses its gutter and the grid sits off centre.
+        val before = col * gap / GRID_COLS
+        val after = gap - (col + 1) * gap / GRID_COLS
+        val rtl = parent.layoutDirection == View.LAYOUT_DIRECTION_RTL
+        outRect.left = if (rtl) after else before
+        outRect.right = if (rtl) before else after
         if (i >= GRID_COLS) outRect.top = gap
     }
 }
