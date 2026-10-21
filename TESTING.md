@@ -10,19 +10,36 @@ made.
 
 ```bash
 ./gradlew :app:testDebugUnitTest         # 56 JVM tests, ~5s, no device
-scripts/db-backup.sh save                # ALWAYS, before the next line
-./gradlew :app:connectedDebugAndroidTest # 35 instrumented tests, needs a phone
+scripts/db-backup.sh save                # cheap insurance; see the note below
+./gradlew :app:connectedDebugAndroidTest # 39 instrumented tests, needs a phone
 scripts/smoke.sh static                  # repo checks, no device
 scripts/smoke.sh                         # full device walk-through
 ```
 
-> **Gradle uninstalls the app after an instrumented run, and uninstalling wipes
-> `/data/data`** — enrolled people, clusters, scores, promotion rows, human
-> labels, all of it. This is not hypothetical: it destroyed a hand-tagged
-> enrolment of five people and a 4.5-minute bootstrap, and the only reason it
-> was noticed was an unrelated command failing with "Activity class does not
-> exist". Rescued photos live on external storage and survive; nothing else
-> does. Run `scripts/db-backup.sh save` first, every time.
+> **Gradle used to uninstall the app after an instrumented run, and
+> uninstalling wipes `/data/data`** — enrolled people, clusters, scores,
+> promotion rows, human labels, face crops, and the WorkManager database that
+> holds whether auto-rescue is on. It destroyed a hand-tagged enrolment of five
+> people and a 4.5-minute bootstrap, and the only reason it was noticed was an
+> unrelated command failing with "Activity class does not exist".
+>
+> `gradle.properties` now sets
+> `android.injected.androidTest.leaveApksInstalledAfterRun=true`, which stops
+> it. The run still reinstalls the APK, so the code under test is current, but
+> the app data stays. Measured over two consecutive runs: the database came
+> back byte-identical by sha256, the 20 face crops survived, and auto-rescue
+> was still enabled and armed — where before, every run cost a database
+> restore plus about forty seconds of face detection to rebuild the avatars.
+>
+> **Back up anyway.** `scripts/db-backup.sh save` costs a second, the flag is
+> one line somebody could remove, and the data is the user's own manual work.
+> It is still the first line of the recipe above for that reason.
+
+The tests never touch the real database: every one of them opens a throwaway
+by name, which is what `Db(ctx, name)` exists for, and deletes it again in
+`tearDown`. That is also what makes leaving the app installed safe — a run
+leaves nothing behind for the next one to trip over, verified by listing
+`databases/` afterwards and by running the suite twice in a row.
 
 Only the first and third can run in CI. The instrumented tests need a device or
 emulator; `smoke.sh` needs a phone with a real WhatsApp library, so it is a
@@ -58,6 +75,7 @@ Real SQLite, real WorkManager, on a device.
 | `VouchedExtensionTest` | Attribution for `extendFromLabels`, clause by clause: a keep explained by an existing match teaches nothing, two near misses in one photo are ambiguous, a distant face is not a near miss, and a discard teaches nothing. A keep is a judgement about a *photo*, not about a face — getting this wrong means a centroid quietly drifted onto someone else. |
 | `LabelledNearMissTest` | The query supplying the below-the-bar half of a threshold, clause by clause — and the boundary with `vouchedNearMisses`: the same discarded near miss must give the fitter a negative point and teach a centroid nothing. |
 | `ScoreStalenessTest` *(also)* | Rewriting a threshold it already holds invalidates nothing. The bump restales every score — 641 of them, three passes and two minutes of face detection — so a fitter agreeing with itself must be free, or it becomes the most expensive thing it does. |
+| `PersonFaceTest` | A row is not a file. Crops live in the app's own storage while the database holds their paths, so a wipe leaves rows pointing at nothing — and an empty thumb list is what marks someone as needing repair, so it has to mean "no file", not "no row". Got this wrong twice: 160 candidate cards with no face on them, and the people row stuck on initials while the repair believed there was nothing to fix. |
 | `WatcherArmingTest` | Re-arming the content trigger never cancels a trigger already waiting. Arming used `REPLACE`, and since every app open re-arms to heal a broken chain, routine use kept resetting the trigger — and cancelled a run in progress during testing. Also: a cancelled slot is re-armable, so a force-stop is recoverable. |
 
 **Every DB test passes an explicit database name.** Instrumented tests run as
@@ -449,8 +467,9 @@ Ordered by the risk each one leaves open.
   respect to the user's photos; the heaviest thing it does is score photos
   already on the phone.
 - **Never trust a device result without checking which APK is installed.**
-- **Back up the database before any instrumented run.** See the warning above.
-  The enrolment is the user's own manual work and cannot be regenerated.
+- **Back up the database before any instrumented run.** The uninstall that made
+  this essential is switched off now, but the flag is one line and the
+  enrolment is the user's own manual work that cannot be regenerated.
 - **A check that cries wolf gets ignored.** A first version of the gitignore
   check fired on every new file; it was narrowed until it fired only on the real
   bug.
