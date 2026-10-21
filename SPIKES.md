@@ -1282,3 +1282,60 @@ a restore verified byte-identical by sha256. `db-backup.sh restore` needed a
 fix to survive that: a freshly reinstalled app has no `databases/` directory,
 so the restore reported a successful push and then failed to copy — in exactly
 the situation the command exists for.
+
+---
+
+# DISCARD_CANDIDATE precision, measured at last — 2026-10-21
+
+535 human labels now exist, 159 of them on items the scorer called
+`DISCARD_CANDIDATE`. That is the measurement the project has been deferring
+since Phase 1, and the one the README named as the condition for ever letting
+auto-discard run.
+
+```
+reason           correct  false positive  judged  precision
+TEXT_NO_FACE         130               0     130    100.0%
+CROWD_NO_MATCH        25               4      29     86.2%
+overall              155               4     159     97.5%
+```
+
+**The two classes are not the same decision and should stop being treated as
+one.** `TEXT_NO_FACE` is perfect over 130 items, which matches its behaviour in
+the 36-configuration gate sweep, where it was the single invariant signal.
+`CROWD_NO_MATCH` loses roughly one photo in seven.
+
+The four false positives are the same photo, four times over: 3 to 6 faces,
+**`indet=0` in every case**, so every face passed the quality gate and none
+matched anyone enrolled. The INDETERMINATE guard cannot help here, by
+construction — it protects against faces we could not read, and these were read
+perfectly well. They are photos of people who are not enrolled and are wanted
+anyway, which is exactly the failure the skipped-person warning in onboarding
+exists to predict. Not a threshold problem, and not fixable by tuning one.
+
+So the per-class policy in PLAN §4 — "auto-discard is only enabled per-class
+once the golden set proves it" — now has an answer for both classes: proved for
+`TEXT_NO_FACE`, refuted for `CROWD_NO_MATCH`. **Nothing has been enabled**;
+auto-discard remains off, and turning it on for one class is a decision for the
+person whose photos they are, not a conclusion of this measurement.
+
+The rest of the confusion table, for context:
+
+```
+INDETERMINATE_FACE -> DISCARD 156, KEEP 1
+FEW_FACES_NO_MATCH -> DISCARD 110
+NO_FACE_PLAIN      -> DISCARD  68, SKIP 33, KEEP 6
+ENROLLED_PERSON    -> KEEP      2
+```
+
+`REVIEW` is doing its job: 334 of the items routed there were junk the user
+confirmed, at the cost of looking at them. And `labelledMatches()` still yields
+only **2** rows, both גבע, because these 535 verdicts came from the junk and
+rescue queues. The `verify` queue — 109 unreviewed items, the only source of
+labelled matches — is still what blocks per-person threshold fitting:
+
+```
+FIT points=46 (above=2 below=44) floor=0.55 default=0.70
+FIT  גבע   == 0.70  (37 below the default) — held at the default
+FIT  מישי  only 2 point(s) — leaving at global 0.70
+FIT  דני   only 5 point(s) — leaving at global 0.70
+```

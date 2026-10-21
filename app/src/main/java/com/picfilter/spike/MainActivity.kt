@@ -37,7 +37,16 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var trashLauncher: ActivityResultLauncher<IntentSenderRequest>
     private lateinit var permLauncher: ActivityResultLauncher<Array<String>>
-    private var pendingOp: String = "scan"
+    /**
+     * The op an adb run asked for, or null when a person just opened the app.
+     *
+     * This used to default to "scan" -- the Phase 0 diagnostic -- so opening
+     * PixKin from the launcher queried every image on the device and logged
+     * them, on the main thread. StrictMode measured it at 1,460 ms per launch,
+     * for a result nobody reads outside a spike. A user opening the app wants
+     * the home screen and nothing else.
+     */
+    private var pendingOp: String? = null
     private val tv by lazy { TextView(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,13 +67,14 @@ class MainActivity : ComponentActivity() {
             grants.forEach { (k, v) -> Log.i(TAG, "PERM_RESULT $k=$v") }
             reportPermissions()
             if (hasFullImageAccess()) maybeOnboard()
-            dispatch(pendingOp)
+            pendingOp?.let { dispatch(it) }
         }
 
         Log.i(TAG, "INTENT action=${intent?.action} extras=${intent?.extras?.keySet()?.toList()} " +
             "op_raw=${intent?.getStringExtra("op")}")
-        pendingOp = intent?.getStringExtra("op") ?: "scan"
-        Log.i(TAG, "=== PicFilter spike start op=$pendingOp sdk=${Build.VERSION.SDK_INT} ===")
+        pendingOp = intent?.getStringExtra("op")
+        Log.i(TAG, "=== PixKin start op=${pendingOp ?: "(none, home screen)"} " +
+            "sdk=${Build.VERSION.SDK_INT} ===")
         reportPermissions()
 
         if (!hasFullImageAccess()) {
@@ -79,7 +89,7 @@ class MainActivity : ComponentActivity() {
         } else {
             maybeOnboard()
             relinkFaces()
-            dispatch(pendingOp)
+            pendingOp?.let { dispatch(it) }
         }
     }
 
@@ -137,7 +147,7 @@ class MainActivity : ComponentActivity() {
         if (onboardChecked) return
         onboardChecked = true
         // adb-driven ops are not a user opening the app; never hijack those.
-        if (pendingOp != "scan") return
+        if (pendingOp != null) return
         lifecycleScope.launch {
             val go = withContext(Dispatchers.IO) {
                 val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -398,10 +408,24 @@ class MainActivity : ComponentActivity() {
      */
     private fun dispatch(op: String) {
         when (op) {
-            "scan" -> scan()
-            "trash" -> trash()
-            "untrash" -> untrash()
-            "verify" -> verify()
+            // These four query MediaStore over the whole library. Scoped
+            // rather than bare-threaded because trash and untrash come back to
+            // the main thread to raise the system dialog.
+            "scan" -> lifecycleScope.launch { withContext(Dispatchers.IO) { scan() } }
+            "trash" -> lifecycleScope.launch {
+                val uris = withContext(Dispatchers.IO) { waUris() }
+                Log.i(TAG, "SPIKE2 requesting trash for ${uris.size} uris")
+                if (uris.isEmpty()) Log.w(TAG, "nothing to trash") else trashUris(uris)
+            }
+            "untrash" -> lifecycleScope.launch {
+                val uris = withContext(Dispatchers.IO) { waUrisIncludingTrashed() }
+                Log.i(TAG, "requesting UNtrash for ${uris.size} uris")
+                if (uris.isNotEmpty()) {
+                    val pi = MediaStore.createTrashRequest(contentResolver, uris, false)
+                    trashLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
+                }
+            }
+            "verify" -> lifecycleScope.launch { withContext(Dispatchers.IO) { verify() } }
             "spikewrite" -> promote()   // Phase 0 gatekeeper write test
             "bench" -> Thread {
                 Bench.run(this, intent?.getStringExtra("limit")?.toIntOrNull() ?: 300)
@@ -698,7 +722,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         Log.i(TAG, "SPIKE1 whatsapp_bytes_readable=$readable/${uris.size}")
-        tv.text = "images=$total whatsapp=$wa readable=$readable"
+        // Called from a background dispatcher now; the View has to be touched
+        // from the thread that owns it.
+        runOnUiThread { tv.text = "images=$total whatsapp=$wa readable=$readable" }
     }
 
     // ---------- spike 2: batched trash with one system dialog ----------
@@ -720,26 +746,10 @@ class MainActivity : ComponentActivity() {
         return out
     }
 
-    private fun trash() {
-        val uris = waUris()
-        Log.i(TAG, "SPIKE2 requesting trash for ${uris.size} uris")
-        if (uris.isEmpty()) { Log.w(TAG, "nothing to trash"); return }
-        val pi = MediaStore.createTrashRequest(contentResolver, uris, true)
-        trashLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
-    }
-
     /** One system dialog for a batch; the user confirms, Android keeps them 30 days. */
     private fun trashUris(uris: List<android.net.Uri>) {
         if (uris.isEmpty()) return
         val pi = MediaStore.createTrashRequest(contentResolver, uris, true)
-        trashLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
-    }
-
-    private fun untrash() {
-        val uris = waUrisIncludingTrashed()
-        Log.i(TAG, "requesting UNtrash for ${uris.size} uris")
-        if (uris.isEmpty()) return
-        val pi = MediaStore.createTrashRequest(contentResolver, uris, false)
         trashLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
     }
 

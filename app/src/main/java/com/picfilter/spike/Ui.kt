@@ -282,6 +282,12 @@ object Ui {
             setCardBackgroundColor(if (accent) primaryContainer(ctx) else surface(ctx))
             isClickable = true
             isFocusable = true
+            // The card is the tappable node, so it says the whole thing in one
+            // stop. A reader focusing a clickable ViewGroup will stitch the
+            // child text together on its own, but the result depends on the
+            // reader; this does not.
+            contentDescription = if (supporting.isEmpty()) label else "$label. $supporting"
+            isScreenReaderFocusable = true
             addView(LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(MD), dp(MD), dp(MD), dp(MD))

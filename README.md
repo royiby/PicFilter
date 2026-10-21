@@ -154,6 +154,15 @@ the results that killed ideas.
   lose data"; it does not mean "does not copy other people's children into your
   cloud".
 
+- **`DISCARD_CANDIDATE` precision is now measured: 97.5%** over 159 human
+  verdicts — but the two classes behind it are different decisions.
+  `TEXT_NO_FACE` is **130/130, no false positives**. `CROWD_NO_MATCH` is
+  **25/29**, losing about one photo in seven. All four misses had `indet=0`:
+  every face was read clearly and simply belonged to nobody enrolled, which is
+  the unclaimed-person failure onboarding warns about rather than anything a
+  threshold can fix. Auto-discard stays off regardless; this says *which* class
+  could ever justify it.
+
 **Signals**
 
 - **EXIF-based screenshot detection fails.** WhatsApp strips EXIF from ~91% of
@@ -261,18 +270,19 @@ ML Kit and TFLite needs testing this project has not done.
 Current state on the device:
 
 ```
-items 641   KEEP 48   REVIEW 434   DISCARD_CANDIDATE 159
-faces 1846  (MATCH 64 / NO_MATCH 1089 / INDETERMINATE 693)
-people 5, 10 centroids       labels 267 (264 DISCARD, 3 KEEP)
-promoted 111, of which 110 confirmed synced and reclaimed locally
+items 644   people 5, 11 centroids
+labels 535  (489 DISCARD, 13 KEEP, 33 SKIP)
+promoted 113, of which 110 confirmed synced and reclaimed locally
 ```
 
-Known gaps, in order of risk: no held-out precision figure; per-person
-thresholds are currently unfitted — every one of the 267 labels sits on a
-`REVIEW` item, and the `verify` queue that would supply labelled matches has
-111 items and none reviewed; 63 of the 111 rescued photos were promoted under
-the old 0.55 bar and would not be rescued today; 315 WhatsApp videos are
-entirely unhandled; no instrumented test clicks a review button.
+Known gaps, in order of risk: no held-out precision figure, and the 97.5%
+above is in-sample on the same corpus the thresholds were set from; per-person
+thresholds are still unfitted, because only **2** labelled matches exist
+against `Fitter`'s minimum of 6 — the 535 verdicts came from the junk and
+rescue queues, and the `verify` queue that supplies matches has 109 items and
+none reviewed; most of the rescued photos were promoted under the old 0.55 bar
+and would not be rescued today; 315 WhatsApp videos are entirely unhandled; no
+instrumented test clicks a review button.
 
 ## Build
 
