@@ -323,6 +323,85 @@ object Ui {
         return Preview(card, strip)
     }
 
+    /**
+     * The auto-rescue switch, as one cell of the stat row.
+     *
+     * It sits between the two numbers it governs: what has been saved, and what
+     * has been held back. A check when it is on, a block when it is off, and
+     * two words -- the card used to spend two lines of prose explaining itself
+     * in a place where the eye is reading counts.
+     */
+    fun toggleCell(ctx: Context, on: Boolean, onToggle: () -> Unit): View =
+        MaterialCardView(ctx).apply {
+            with(ctx) {
+                layoutParams = LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f
+                ).apply { setMargins(dp(XXS), 0, dp(XXS), 0) }
+                radius = dp(R_MD).toFloat()
+                cardElevation = 0f
+                strokeWidth = if (on) 0 else dp(1)
+                strokeColor = outlineVariant(ctx)
+                setCardBackgroundColor(if (on) primaryContainer(ctx) else surfaceVariant(ctx))
+                isClickable = true
+                isFocusable = true
+                contentDescription =
+                    if (on) "Auto-save is on. Tap to turn it off."
+                    else "Auto-save is off. Tap to turn it on."
+                isScreenReaderFocusable = true
+                addView(LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    setPadding(dp(XS), dp(SM), dp(XS), dp(SM))
+                    addView(ImageView(ctx).apply {
+                        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                        setImageResource(if (on) R.drawable.ic_check else R.drawable.ic_block)
+                        imageTintList = android.content.res.ColorStateList.valueOf(
+                            if (on) onPrimaryContainer(ctx) else onSurfaceVariant(ctx))
+                        layoutParams = LinearLayout.LayoutParams(dp(28), dp(28))
+                    })
+                    addView(text(ctx, Type.CAPTION, if (on) "Auto-save on" else "Auto-save off",
+                        if (on) R.color.pk_on_primary_container else R.color.pk_on_surface_variant
+                    ).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(XXS), 0, 0)
+                    })
+                })
+                setOnClickListener { onToggle() }
+            }
+        }
+
+    /** A single counted pill, for building a row by hand. */
+    fun statCell(ctx: Context, value: String, caption: String): View =
+        MaterialCardView(ctx).apply {
+            contentDescription = "$value $caption"
+            isScreenReaderFocusable = true
+            with(ctx) {
+                layoutParams = LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+                ).apply { setMargins(dp(XXS), 0, dp(XXS), 0) }
+                radius = dp(R_MD).toFloat()
+                cardElevation = 0f
+                strokeWidth = dp(1)
+                strokeColor = outlineVariant(ctx)
+                setCardBackgroundColor(surfaceVariant(ctx))
+                addView(LinearLayout(ctx).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    setPadding(dp(XS), dp(SM), dp(XS), dp(SM))
+                    addView(text(ctx, Type.HEADLINE, value).apply { gravity = Gravity.CENTER })
+                    addView(text(ctx, Type.CAPTION, caption, R.color.pk_on_surface_variant)
+                        .apply { gravity = Gravity.CENTER })
+                })
+            }
+        }
+
+    /** A row of cells built by the caller, sharing the width evenly. */
+    fun cellRow(ctx: Context, cells: List<View>): View = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        with(ctx) { setPadding(dp(SM), dp(XXS), dp(SM), dp(SM)) }
+        for (c in cells) addView(c)
+    }
+
     /** Pills showing a count each, like the stats block in the guide. */
     fun statRow(ctx: Context, pairs: List<Pair<String, String>>): View = LinearLayout(ctx).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -529,17 +608,44 @@ object Ui {
      * off the main thread; until one arrives (or if there is none) the circle
      * shows the person's initial.
      */
-    fun peopleRow(ctx: Context, faces: List<Face>, onClick: () -> Unit): View {
+    /**
+     * The people whose photos PixKin keeps.
+     *
+     * Add is pinned outside the scroller rather than sitting after the last
+     * face. It used to scroll away with them, so the only way to enrol anyone
+     * was to scroll to the end of a row that gets longer every time you
+     * succeed -- the control you need most when the row is full was the one
+     * hardest to reach.
+     */
+    fun peopleRow(
+        ctx: Context, faces: List<Face>,
+        onPerson: (Int) -> Unit, onAdd: () -> Unit,
+    ): View {
         val strip = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
-            with(ctx) { setPadding(dp(MD), dp(XXS), dp(MD), dp(XS)) }
+            // End padding so the last face can scroll clear of Add instead of
+            // stopping half underneath it.
+            with(ctx) { setPadding(dp(MD), dp(XXS), dp(SM), dp(XS)) }
         }
-        for (f in faces) strip.addView(personCell(ctx, f, onClick))
-        strip.addView(addCell(ctx, onClick))
-        return HorizontalScrollView(ctx).apply {
+        for ((i, f) in faces.withIndex()) strip.addView(personCell(ctx, f) { onPerson(i) })
+        val scroller = HorizontalScrollView(ctx).apply {
             isHorizontalScrollBarEnabled = false
+            // Fade the faces out as they pass behind Add, so a half-scrolled
+            // face reads as "there is more" rather than as a clipped mistake.
+            isHorizontalFadingEdgeEnabled = true
+            with(ctx) { setFadingEdgeLength(dp(LG)) }
             addView(strip)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        return LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.TOP
+            setBackgroundColor(background(ctx))
+            addView(scroller)
+            addView(addCell(ctx, onAdd).apply {
+                with(ctx) { setPadding(dp(XS), dp(XXS), dp(MD), dp(XS)) }
+            })
         }
     }
 
@@ -562,6 +668,7 @@ object Ui {
         }
 
     private fun personCell(ctx: Context, f: Face, onClick: () -> Unit): View {
+        @Suppress("NAME_SHADOWING")
         val size = 56
         val stack = FrameLayout(ctx).apply {
             with(ctx) { layoutParams = LinearLayout.LayoutParams(dp(size), dp(size)) }
@@ -593,7 +700,7 @@ object Ui {
             contentDescription = buildString {
                 append(f.name)
                 if (f.caption.isNotEmpty()) append(", ${f.caption}")
-                append(". Opens your people.")
+                append(". Opens their photos.")
             }
             isScreenReaderFocusable = true
             setOnClickListener { onClick() }
@@ -617,7 +724,7 @@ object Ui {
                 gravity = Gravity.CENTER
                 with(ctx) { setPadding(0, dp(XXS), 0, 0) }
             })
-            contentDescription = "Add someone"
+            contentDescription = "Add someone to the people PixKin saves"
             isScreenReaderFocusable = true
             setOnClickListener { onClick() }
         }

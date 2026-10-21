@@ -11,7 +11,7 @@ made.
 ```bash
 ./gradlew :app:testDebugUnitTest         # 56 JVM tests, ~5s, no device
 scripts/db-backup.sh save                # cheap insurance; see the note below
-./gradlew :app:connectedDebugAndroidTest # 39 instrumented tests, needs a phone
+./gradlew :app:connectedDebugAndroidTest # 44 instrumented tests, needs a phone
 scripts/smoke.sh static                  # repo checks, no device
 scripts/smoke.sh                         # full device walk-through
 ```
@@ -76,6 +76,7 @@ Real SQLite, real WorkManager, on a device.
 | `LabelledNearMissTest` | The query supplying the below-the-bar half of a threshold, clause by clause — and the boundary with `vouchedNearMisses`: the same discarded near miss must give the fitter a negative point and teach a centroid nothing. |
 | `ScoreStalenessTest` *(also)* | Rewriting a threshold it already holds invalidates nothing. The bump restales every score — 641 of them, three passes and two minutes of face detection — so a fitter agreeing with itself must be free, or it becomes the most expensive thing it does. |
 | `PersonFaceTest` | A row is not a file. Crops live in the app's own storage while the database holds their paths, so a wipe leaves rows pointing at nothing — and an empty thumb list is what marks someone as needing repair, so it has to mean "no file", not "no row". Got this wrong twice: 160 candidate cards with no face on them, and the people row stuck on initials while the repair believed there was nothing to fix. |
+| `RemovePersonTest` | Taking someone out of the enrolled set, by blast radius: everyone else untouched, photos already rescued left alone, their cluster returned to the unclaimed pool so a mistake is undone by naming rather than by re-running the scan, and only the items that matched *them* requeued — removing a person can turn a MATCH into a NO_MATCH and nothing else. |
 | `WatcherArmingTest` | Re-arming the content trigger never cancels a trigger already waiting. Arming used `REPLACE`, and since every app open re-arms to heal a broken chain, routine use kept resetting the trigger — and cancelled a run in progress during testing. Also: a cancelled slot is re-armable, so a force-stop is recoverable. |
 
 **Every DB test passes an explicit database name.** Instrumented tests run as

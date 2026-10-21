@@ -781,6 +781,135 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
      *
      * For rebuilding an avatar from the library when the stored crops are gone.
      */
+    /**
+     * Photos this person is in, one row each, biggest face first.
+     *
+     * [matchedItemsFor] can return the same photo twice when a person matched
+     * on two faces in it, which is fine for picking an avatar and wrong for a
+     * grid the user counts.
+     */
+    fun photosOf(personId: Long, limit: Int = 500): List<Pair<Long, String>> {
+        val out = mutableListOf<Pair<Long, String>>()
+        readableDatabase.rawQuery(
+            """SELECT i.id, i.uri, MAX(f.orig_px) AS px
+               FROM face f JOIN item i ON i.id = f.item_id
+               WHERE f.person_id = ? AND f.state = 'MATCH'
+               GROUP BY i.id ORDER BY px DESC LIMIT ?""",
+            arrayOf(personId.toString(), limit.toString())
+        ).use { c -> while (c.moveToNext()) out += c.getLong(0) to c.getString(1) }
+        return out
+    }
+
+    /**
+     * Take someone out of the enrolled set.
+     *
+     * Their centroids go, so nothing matches them again, and their clusters go
+     * back to being unclaimed candidates rather than vanishing -- a person
+     * removed by mistake can be named again without re-running the scan.
+     *
+     * Only the photos that matched THEM are requeued. Removing a person can
+     * turn a MATCH into a NO_MATCH and nothing else, so every other verdict in
+     * the database is still correct, and bumping the global revision would
+     * re-read the whole library to re-confirm answers that cannot have
+     * changed. The mirror of [invalidateUnmatched].
+     *
+     * Photos already rescued stay rescued. This changes who PixKin recognises
+     * from now on; it does not reach into the backed-up folder.
+     *
+     * @return how many items will be scored again.
+     */
+    fun removePerson(personId: Long): Int {
+        val db = writableDatabase
+        // Before the rows that identify them are gone.
+        db.execSQL(
+            """UPDATE score SET centroid_rev = -1
+               WHERE item_id IN (SELECT item_id FROM face WHERE person_id = ?)""",
+            arrayOf<Any>(personId))
+        val requeued = readableDatabase.rawQuery(
+            "SELECT COUNT(*) FROM score WHERE centroid_rev = -1", null
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        db.execSQL("UPDATE cluster SET person_id = NULL, status = NULL WHERE person_id = ?",
+            arrayOf<Any>(personId))
+        db.execSQL("UPDATE face SET person_id = NULL, similarity = NULL WHERE person_id = ?",
+            arrayOf<Any>(personId))
+        db.execSQL("DELETE FROM centroid WHERE person_id = ?", arrayOf<Any>(personId))
+        db.execSQL("DELETE FROM person WHERE id = ?", arrayOf<Any>(personId))
+        return requeued
+    }
+
+    /**
+     * Photos PixKin decided NOT to save, and that someone has actually decided
+     * about.
+     *
+     * The home screen used to show `decisionCounts()` here, which counts every
+     * item the scorer ever flagged whether or not a human has looked at it. So
+     * it read "159 junk found" while the junk queue was empty, because the
+     * queue hides what has been judged and the counter did not. A number next
+     * to an empty list is worse than no number.
+     *
+     * An item counts once: either a human said discard, or the scorer called it
+     * junk and nobody has overruled that.
+     */
+    fun notSavedCount(): Int =
+        readableDatabase.rawQuery(
+            """SELECT COUNT(*) FROM score s
+               LEFT JOIN label l ON l.item_id = s.item_id
+               WHERE l.label = 'DISCARD'
+                  OR (s.decision = 'DISCARD_CANDIDATE'
+                      AND (l.label IS NULL OR l.label <> 'KEEP'))""", null
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
+    /**
+     * How many items each review queue actually holds.
+     *
+     * Counted with the queue's own filter, not with `decisionCounts()`. Those
+     * two drifted apart the moment anyone reviewed anything -- the queues hide
+     * what has been judged and the counters did not -- so the home screen
+     * offered "159 junk found" above a list with nothing in it.
+     */
+    data class QueueSizes(
+        val verify: Int, val rescue: Int, val noface: Int, val junk: Int, val dupes: Int,
+    )
+
+    fun queueSizes(): QueueSizes {
+        fun one(sql: String, args: Array<String> = emptyArray()) =
+            readableDatabase.rawQuery(sql, args)
+                .use { if (it.moveToFirst()) it.getInt(0) else 0 }
+        return QueueSizes(
+            verify = one(
+                """SELECT COUNT(*) FROM promotion pr
+                   JOIN score s ON s.item_id = pr.item_id
+                   LEFT JOIN label l ON l.item_id = pr.item_id
+                   WHERE l.item_id IS NULL"""),
+            rescue = one(
+                """SELECT COUNT(*) FROM score s
+                   LEFT JOIN label l ON l.item_id = s.item_id
+                   LEFT JOIN promotion pr ON pr.item_id = s.item_id
+                   WHERE s.decision='REVIEW'
+                     AND s.reason IN ('INDETERMINATE_FACE','FEW_FACES_NO_MATCH')
+                     AND l.item_id IS NULL AND pr.item_id IS NULL"""),
+            noface = one(
+                """SELECT COUNT(*) FROM score s
+                   LEFT JOIN label l ON l.item_id = s.item_id
+                   LEFT JOIN promotion pr ON pr.item_id = s.item_id
+                   WHERE s.decision='REVIEW' AND s.reason='NO_FACE_PLAIN'
+                     AND l.item_id IS NULL AND pr.item_id IS NULL"""),
+            junk = one(
+                """SELECT COUNT(*) FROM score s
+                   LEFT JOIN label l ON l.item_id = s.item_id
+                   WHERE s.decision='DISCARD_CANDIDATE' AND l.item_id IS NULL"""),
+            dupes = dupeGroupCount(),
+        )
+    }
+
+    /** Items still waiting for a human, across every review queue. */
+    fun undecidedCount(): Int =
+        readableDatabase.rawQuery(
+            """SELECT COUNT(*) FROM score s
+               LEFT JOIN label l ON l.item_id = s.item_id
+               WHERE l.item_id IS NULL AND s.decision <> 'KEEP'""", null
+        ).use { if (it.moveToFirst()) it.getInt(0) else 0 }
+
     fun matchedItemsFor(personId: Long, limit: Int): List<Pair<Long, String>> {
         val out = mutableListOf<Pair<Long, String>>()
         readableDatabase.rawQuery(

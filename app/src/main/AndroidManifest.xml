@@ -33,6 +33,9 @@
             android:exported="false"
             android:label="@string/title_setup" />
         <activity
+            android:name=".PersonActivity"
+            android:exported="false" />
+        <activity
             android:name=".ReviewActivity"
             android:exported="false"
             android:label="@string/title_review" />

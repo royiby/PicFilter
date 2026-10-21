@@ -237,9 +237,9 @@ class MainActivity : ComponentActivity() {
 
     private data class HomeData(
         val promoted: Int,
-        val review: Int,
-        val discard: Int,
-        val dupeGroups: Int,
+        val notSaved: Int,
+        val undecided: Int,
+        val queues: com.picfilter.spike.data.Db.QueueSizes,
         val people: List<HomePerson>,
         val watchOn: Boolean,
         val armed: Boolean,
@@ -254,9 +254,12 @@ class MainActivity : ComponentActivity() {
     private fun readHome(): HomeData {
         val db = com.picfilter.spike.data.Db(this)
         val promoted = try { db.promotionCount() } catch (e: Exception) { 0 }
+        val notSaved = try { db.notSavedCount() } catch (e: Exception) { 0 }
+        val undecided = try { db.undecidedCount() } catch (e: Exception) { 0 }
         val persons = try { db.enrolledPeople() } catch (e: Exception) { emptyList() }
-        val counts = try { db.decisionCounts().toMap() } catch (e: Exception) { emptyMap() }
-        val dupeGroups = try { db.dupeGroupCount() } catch (e: Exception) { 0 }
+        val queues = try { db.queueSizes() } catch (e: Exception) {
+            com.picfilter.spike.data.Db.QueueSizes(0, 0, 0, 0, 0)
+        }
         val junkThumbs = try { db.junkQueue(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
         val dupeThumbs = try { db.dupePreview(limit = 5) } catch (e: Exception) { emptyList() }
         val savedThumbs = try { db.promotedForReview(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
@@ -293,9 +296,9 @@ class MainActivity : ComponentActivity() {
 
         return HomeData(
             promoted = promoted,
-            review = counts["REVIEW"] ?: 0,
-            discard = counts["DISCARD_CANDIDATE"] ?: 0,
-            dupeGroups = dupeGroups,
+            notSaved = notSaved,
+            undecided = undecided,
+            queues = queues,
             people = people,
             watchOn = watchOn,
             armed = armed,
@@ -318,50 +321,66 @@ class MainActivity : ComponentActivity() {
             })
         }
         if (people > 0) {
-            col.addView(Ui.peopleRow(this, d.people.map {
-                Ui.Face(it.name, it.subtitle, it.faces)
-            }, managePeople))
+            col.addView(Ui.peopleRow(
+                this,
+                d.people.map { Ui.Face(it.name, it.subtitle, it.faces) },
+                onPerson = { i -> openPerson(d.people[i]) },
+                onAdd = { managePeople() },
+            ))
             col.addView(Ui.body(this, "Photos of these people are kept automatically."))
         } else {
             col.addView(Ui.body(this, "Start by telling PixKin who matters to you."))
         }
-        col.addView(Ui.statRow(this, listOf(
-            "${d.promoted}" to "backed up",
-            "${d.review}" to "to review",
-            "${d.discard}" to "junk found",
+
+        // Saved, the switch that governs it, and what was held back. The middle
+        // cell used to be "to review", which counted every item the scorer ever
+        // routed to a queue whether or not anyone had looked at it -- so it
+        // read 435 next to queues the user had emptied.
+        col.addView(Ui.cellRow(this, listOf(
+            Ui.statCell(this, "${d.promoted}", "saved"),
+            Ui.toggleCell(this, d.watchOn) {
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) {
+                        if (d.watchOn) com.picfilter.spike.engine.Watcher.disable(this@MainActivity)
+                        else com.picfilter.spike.engine.Watcher.enable(this@MainActivity)
+                    }
+                    showHome()
+                }
+            },
+            Ui.statCell(this, "${d.notSaved}", "not saved"),
         )))
 
-        col.addView(Ui.actionCard(this,
-            if (d.watchOn) "Auto-rescue is on" else "Auto-rescue is off",
-            if (d.watchOn) "New WhatsApp photos of your people are saved for you"
-            else "Turn on to protect new photos automatically",
-            accent = d.watchOn) {
-            lifecycleScope.launch {
-                withContext(Dispatchers.IO) {
-                    if (d.watchOn) com.picfilter.spike.engine.Watcher.disable(this@MainActivity)
-                    else com.picfilter.spike.engine.Watcher.enable(this@MainActivity)
-                }
-                showHome()
-            }
-        })
-
-        col.addView(Ui.actionCard(this,
-            if (people == 0) "Set up — find your people" else "Manage people",
-            if (people == 0) "Scans your library and finds recurring faces"
-            else "$people enrolled · add or re-scan") { managePeople() })
-        preview("Saved for you", "${d.promoted} photos PixKin kept \u00b7 check for mistakes",
+        // No "Manage people" card: the faces are the control now, and the
+        // pinned + beside them is how anyone is added. It only earns a place
+        // when there is nobody to tap.
+        if (people == 0) {
+            col.addView(Ui.actionCard(this,
+                "Set up — find your people",
+                "Scans your library and finds recurring faces") { managePeople() })
+        }
+        // Every caption counts what is actually inside the card. A card that
+        // says a number and then opens an empty list is the specific thing
+        // this screen got wrong.
+        val q = d.queues
+        preview("Saved for you",
+            if (q.verify == 0) "All ${d.promoted} checked"
+            else "${q.verify} of ${d.promoted} still to check",
             "verify", d.savedThumbs, col)
-        preview("Find more family photos", "Photos we were unsure about",
+        preview("Find more family photos",
+            if (q.rescue == 0) "Nothing left to look at"
+            else "${q.rescue} we were unsure about",
             "rescue", d.rescueThumbs, col)
-        preview("Photos with no faces", "Places, drawings, documents",
+        preview("Photos with no faces",
+            if (q.noface == 0) "Nothing left to look at"
+            else "${q.noface} places, drawings, documents",
             "noface", d.nofaceThumbs, col)
         preview("Suspected junk",
-            if (d.discard == 0) "Nothing flagged yet"
-            else "${d.discard} look like forwards, memes or screenshots",
+            if (q.junk == 0) "Nothing waiting"
+            else "${q.junk} look like forwards, memes or screenshots",
             "junk", d.junkThumbs, col)
         preview("Suspected duplicates",
-            if (d.dupeGroups == 0) "No near-identical copies found"
-            else "${d.dupeGroups} ${if (d.dupeGroups == 1) "group" else "groups"} of near-identical copies",
+            if (q.dupes == 0) "No near-identical copies found"
+            else "${q.dupes} ${if (q.dupes == 1) "group" else "groups"} of near-identical copies",
             "dupes", d.dupeThumbs, col)
 
         // The logo lockup is the home screen's top bar: it carries the brand,
@@ -376,6 +395,15 @@ class MainActivity : ComponentActivity() {
         Ui.applyInsets(root, this, extraBottom = Ui.SM)
         tv.visibility = android.view.View.GONE
         return root
+    }
+
+    /** Tapping a face opens that person: their photos, and the way out. */
+    private fun openPerson(p: HomePerson) {
+        startActivity(android.content.Intent().apply {
+            component = ComponentName(this@MainActivity, PersonActivity::class.java)
+            putExtra("person_id", p.id)
+            putExtra("person_name", p.name)
+        })
     }
 
     /** A card that previews what is inside it, so junk and duplicates are
