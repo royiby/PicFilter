@@ -321,13 +321,16 @@ class MainActivity : ComponentActivity() {
             })
         }
         if (people > 0) {
-            col.addView(Ui.sectionHeader(this, "People", "Add") { managePeople() })
+            // The header carries the meaning, so the sentence that used to sit
+            // under the row -- "Photos of these people are kept automatically"
+            // -- is gone. It restated what "Your people" plus the "saved" count
+            // beside it already say.
+            col.addView(Ui.sectionHeader(this, "Your people", "Add") { managePeople() })
             col.addView(Ui.peopleRow(
                 this,
                 d.people.map { Ui.Face(it.name, it.subtitle, it.faces) },
                 onPerson = { i -> openPerson(d.people[i]) },
             ))
-            col.addView(Ui.body(this, "Photos of these people are kept automatically."))
         } else {
             col.addView(Ui.body(this, "Start by telling PixKin who matters to you."))
         }
@@ -337,7 +340,7 @@ class MainActivity : ComponentActivity() {
         // routed to a queue whether or not anyone had looked at it -- so it
         // read 435 next to queues the user had emptied.
         col.addView(Ui.cellRow(this, listOf(
-            Ui.statCell(this, "${d.promoted}", "saved"),
+            Ui.statCell(this, d.promoted, "saved"),
             Ui.toggleCell(this, d.watchOn) {
                 lifecycleScope.launch {
                     withContext(Dispatchers.IO) {
@@ -347,7 +350,7 @@ class MainActivity : ComponentActivity() {
                     showHome()
                 }
             },
-            Ui.statCell(this, "${d.notSaved}", "not saved"),
+            Ui.statCell(this, d.notSaved, "not saved"),
         )))
 
         // No "Manage people" card: the faces are the control now, and the

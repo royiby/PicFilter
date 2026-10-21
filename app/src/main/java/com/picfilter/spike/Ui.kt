@@ -370,10 +370,35 @@ object Ui {
             }
         }
 
+    /**
+     * Shorten a count so it always fits a stat cell.
+     *
+     * Probed on the device: six digits reaches the cell's padding with nothing
+     * to spare, and "148912" is not a number anyone reads at a glance. Four
+     * characters always fit and always read.
+     */
+    fun shortCount(n: Int): String {
+        fun scaled(v: Double, suffix: String): String {
+            // One decimal below ten, none above: 1.1K, 11K, 148K.
+            val r = if (v < 10) Math.round(v * 10) / 10.0 else Math.round(v).toDouble()
+            return if (r % 1.0 == 0.0) "${r.toInt()}$suffix" else "%.1f%s".format(r, suffix)
+        }
+        return when {
+            n < 1_000 -> n.toString()
+            // 999_500 and up round to 1000K, which is both wrong and five
+            // characters wide. The boundary has to account for the rounding,
+            // not sit where the arithmetic suggests.
+            n < 999_500 -> scaled(n / 1_000.0, "K")
+            else -> scaled(n / 1_000_000.0, "M")
+        }
+    }
+
     /** A single counted pill, for building a row by hand. */
-    fun statCell(ctx: Context, value: String, caption: String): View =
-        MaterialCardView(ctx).apply {
-            contentDescription = "$value $caption"
+    fun statCell(ctx: Context, count: Int, caption: String): View {
+        val value = shortCount(count)
+        return MaterialCardView(ctx).apply {
+            // The exact figure stays available to a screen reader.
+            contentDescription = "$count $caption"
             isScreenReaderFocusable = true
             with(ctx) {
                 layoutParams = LinearLayout.LayoutParams(
@@ -388,12 +413,16 @@ object Ui {
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
                     setPadding(dp(XS), dp(SM), dp(XS), dp(SM))
-                    addView(text(ctx, Type.HEADLINE, value).apply { gravity = Gravity.CENTER })
+                    addView(text(ctx, Type.HEADLINE, value).apply {
+                        gravity = Gravity.CENTER
+                        maxLines = 1
+                    })
                     addView(text(ctx, Type.CAPTION, caption, R.color.pk_on_surface_variant)
-                        .apply { gravity = Gravity.CENTER })
+                        .apply { gravity = Gravity.CENTER; maxLines = 1 })
                 })
             }
         }
+    }
 
     /** A row of cells built by the caller, sharing the width evenly. */
     fun cellRow(ctx: Context, cells: List<View>): View = LinearLayout(ctx).apply {
