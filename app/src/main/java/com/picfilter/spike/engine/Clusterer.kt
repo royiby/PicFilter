@@ -368,9 +368,21 @@ object Clusterer {
                     if (sim > best) { best = sim; bestId = cid }
                 }
                 if (bestId > 0 && best >= 0.6f) {
-                    keepPersonFaces(ctx, pid, bestId, db)
-                    fixed++
-                    Log.i(TAG, "RELINK person=$pid cluster=$bestId sim=${"%.3f".format(best)}")
+                    // Only a copy that landed is a fix. The cluster crops are
+                    // in the same storage as the person crops, so whatever took
+                    // one took the other -- and this used to report success for
+                    // every person while every copy failed with
+                    // NoSuchFileException, which is why nothing downstream ever
+                    // tried the repair that would have worked.
+                    val copied = keepPersonFaces(ctx, pid, bestId, db)
+                    if (copied > 0) {
+                        fixed++
+                        Log.i(TAG, "RELINK person=$pid cluster=$bestId " +
+                            "sim=${"%.3f".format(best)} crops=$copied")
+                    } else {
+                        Log.i(TAG, "RELINK person=$pid has no crop left to borrow; " +
+                            "the library is the only source now")
+                    }
                 }
             }
         }
@@ -633,16 +645,20 @@ object Clusterer {
         return PickOutcome(pid, vecs.size, noFace, tooMany)
     }
 
-    private fun keepPersonFaces(ctx: Context, personId: Long, clusterId: Long, db: Db) {
+    /** @return how many crops were actually copied. */
+    private fun keepPersonFaces(ctx: Context, personId: Long, clusterId: Long, db: Db): Int {
         personDir(ctx).listFiles { f -> f.name.startsWith("${personId}_") }
             ?.forEach { it.delete() }
+        var copied = 0
         for ((i, src) in db.clusterThumbs(clusterId, 6).withIndex()) {
             try {
                 File(src).copyTo(File(personDir(ctx), "${personId}_$i.jpg"), overwrite = true)
+                copied++
             } catch (e: Exception) {
                 Log.w(TAG, "PERSONFACE copy failed: ${e.javaClass.simpleName}")
             }
         }
+        return copied
     }
 
     private fun saveThumb(ctx: Context, bmp: Bitmap, name: String): String? = try {

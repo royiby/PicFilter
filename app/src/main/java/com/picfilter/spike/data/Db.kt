@@ -801,7 +801,14 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
                ORDER BY cf.orig_px DESC LIMIT ?""",
             arrayOf(personId.toString(), limit.toString())
         ).use { c -> while (c.moveToNext()) out += c.getString(0) }
-        return out
+        // A row is not a file. The crops live in the app's own storage while
+        // these rows hold their paths, so clearing app data or reinstalling
+        // takes the files and leaves 435 rows pointing at nothing. Handing a
+        // dead path to the caller is what made the people row fall back to
+        // initials while every piece of code that could have repaired it
+        // believed there was a face already. [candidates] carries this same
+        // filter, for the same reason.
+        return out.filter { java.io.File(it).exists() }
     }
 
     /** Suspected junk: DISCARD_CANDIDATE items the human has not judged yet. */

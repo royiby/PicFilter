@@ -121,6 +121,9 @@ class MainActivity : ComponentActivity() {
     private fun maybeRebuildAvatars(persons: List<HomePerson>) {
         if (avatarsChecked || persons.isEmpty()) return
         avatarsChecked = true
+        // faces is empty only when there is genuinely no crop on disk; see the
+        // invariant in readHome.
+        if (persons.none { it.faces.isEmpty() }) return
         lifecycleScope.launch {
             val rebuilt = withContext(Dispatchers.IO) {
                 try {
@@ -267,6 +270,13 @@ class MainActivity : ComponentActivity() {
         // kept; fall back for people enrolled before that existed. This lists
         // a directory per person, which is why it belongs here and not in the
         // render pass.
+        //
+        // BOTH sources must contain only files that exist. personFaces lists a
+        // directory so it already does; personThumbs reads rows and now filters
+        // them. That invariant is what [maybeRebuildAvatars] tests to decide
+        // whether anyone needs repairing, and when it was broken -- the row
+        // list went in unfiltered -- every person looked as though they already
+        // had a face, so the repair never ran and the row stayed on initials.
         val people = persons.map { p ->
             HomePerson(
                 p.id, p.name,
