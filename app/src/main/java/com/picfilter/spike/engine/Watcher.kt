@@ -20,6 +20,7 @@ import androidx.work.workDataOf
 import com.picfilter.spike.MainActivity
 import com.picfilter.spike.data.Db
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.ExecutionException
 
 private const val TAG = "PICFILTER"
 private const val NET = "picfilter-watch"
@@ -104,7 +105,9 @@ object Watcher {
     fun isEnabled(ctx: Context): Boolean = try {
         WorkManager.getInstance(ctx).getWorkInfosForUniqueWork(NET).get()
             .any { !it.state.isFinished }
-    } catch (e: Exception) { false }
+    } catch (e: ExecutionException) { false } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt(); false
+    }
 
     /** True when a content trigger is waiting. Enabling heals a broken chain. */
     fun isArmed(ctx: Context): Boolean = try {
@@ -112,14 +115,19 @@ object Watcher {
         listOf(SLOT_A, SLOT_B).any { slot ->
             wm.getWorkInfosForUniqueWork(slotWork(slot)).get().any { !it.state.isFinished }
         }
-    } catch (e: Exception) { false }
+    } catch (e: ExecutionException) { false } catch (e: InterruptedException) {
+        Thread.currentThread().interrupt(); false
+    }
 
     /** Logs what WorkManager actually holds, for `op=watchstat`. */
     fun status(ctx: Context) {
         val wm = WorkManager.getInstance(ctx)
         fun states(name: String) = try {
             wm.getWorkInfosForUniqueWork(name).get().map { it.state.name }
-        } catch (e: Exception) { listOf("ERR ${e.javaClass.simpleName}") }
+        } catch (e: ExecutionException) { listOf("ERR ${e.javaClass.simpleName}") }
+        catch (e: InterruptedException) {
+            Thread.currentThread().interrupt(); listOf("ERR interrupted")
+        }
         Log.i(TAG, "WATCH stat net=${states(NET)} " +
             "a=${states(slotWork(SLOT_A))} b=${states(slotWork(SLOT_B))} " +
             "enabled=${isEnabled(ctx)} armed=${isArmed(ctx)}")
@@ -285,7 +293,7 @@ class WatchWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params) 
             // would initialise a second copy of it against the same database.
             val left = try {
                 val d = Db(app); val n = d.unscoredCount(); d.close(); n
-            } catch (e: Exception) { 0 }
+            } catch (e: android.database.SQLException) { 0 }
             if (left > 0) {
                 Log.i(TAG, "WATCH $left still unscored, draining across passes")
                 Watcher.scheduleDrain(app)

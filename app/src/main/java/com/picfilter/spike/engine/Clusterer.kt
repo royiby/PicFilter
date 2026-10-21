@@ -70,6 +70,12 @@ object Clusterer {
                         meta += Triple(id, path, o.origPx)
                         faces++
                     }
+                    // Deliberately broad. One photo is decoded by the
+                    // platform decoder, measured by ML Kit and embedded by
+                    // TFLite -- three third-party surfaces that throw
+                    // IOException, MlKitException, IllegalStateException and
+                    // more between them. A single unreadable photo must not
+                    // end the pass over the other six hundred.
                 } catch (e: Exception) { /* dead row or unreadable; skip */ }
             }
         }
@@ -639,7 +645,9 @@ object Clusterer {
                 File(personDir(ctx), "${pid}_$i.jpg").outputStream().use { out ->
                     b.compress(Bitmap.CompressFormat.JPEG, 95, out)
                 }
-            } catch (e: Exception) { }
+            } catch (e: java.io.IOException) {
+                Log.w(TAG, "PICKENROL could not write a crop: ${e.message}")
+            }
         }
         crops.forEach { it.recycle() }
         Log.i(TAG, "PICKENROL '$name' used=${vecs.size} of ${uris.size} " +
@@ -657,7 +665,7 @@ object Clusterer {
             try {
                 File(src).copyTo(File(personDir(ctx), "${personId}_$i.jpg"), overwrite = true)
                 copied++
-            } catch (e: Exception) {
+            } catch (e: java.io.IOException) {
                 Log.w(TAG, "PERSONFACE copy failed: ${e.javaClass.simpleName}")
             }
         }
@@ -715,7 +723,7 @@ object Clusterer {
         val f = File(thumbDir(ctx), "$name.jpg")
         FileOutputStream(f).use { bmp.compress(Bitmap.CompressFormat.JPEG, 88, it) }
         f.absolutePath
-    } catch (e: Exception) { null }
+    } catch (e: java.io.IOException) { null }
 
     fun clearThumbs(ctx: Context) {
         thumbDir(ctx).listFiles()?.forEach { it.delete() }

@@ -16,6 +16,9 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,13 +50,15 @@ class MainActivity : ComponentActivity() {
      * for a result nobody reads outside a spike. A user opening the app wants
      * the home screen and nothing else.
      */
+    private val vm: HomeViewModel by viewModels()
+
     private var pendingOp: String? = null
     /** Phase 0 diagnostics write here; see DevOps.kt. */
     internal val tv by lazy { TextView(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        showHome()
+        observeHome()
 
         trashLauncher = registerForActivityResult(
             ActivityResultContracts.StartIntentSenderForResult()
@@ -90,7 +95,7 @@ class MainActivity : ComponentActivity() {
             )
         } else {
             maybeOnboard()
-            relinkFaces()
+            vm.relinkFaces()
             pendingOp?.let { dispatch(it) }
         }
     }
@@ -104,49 +109,6 @@ class MainActivity : ComponentActivity() {
      * deliberately enrolled no one is not dragged back in on every launch.
      */
     private var onboardChecked = false
-    private var avatarsChecked = false
-
-    /**
-     * Put a face back on anyone showing an initial.
-     *
-     * The crops live in the app's own storage while the database only holds
-     * their paths, so clearing app data or reinstalling takes the files and
-     * leaves the paths — and the people row quietly falls back to initials with
-     * nothing appearing broken. Rebuilding reads the library, which survives
-     * all of that.
-     *
-     * Only for people who have no face AND have photos to rebuild it from, so
-     * someone with no matches yet does not make every launch pay for a face
-     * detector. Once per process, off the main thread, and the home screen is
-     * rebuilt only if something was actually recovered.
-     */
-    private fun maybeRebuildAvatars(persons: List<HomePerson>) {
-        if (avatarsChecked || persons.isEmpty()) return
-        avatarsChecked = true
-        // faces is empty only when there is genuinely no crop on disk; see the
-        // invariant in readHome.
-        if (persons.none { it.faces.isEmpty() }) return
-        lifecycleScope.launch {
-            val rebuilt = withContext(Dispatchers.IO) {
-                try {
-                    val db = com.picfilter.spike.data.Db(this@MainActivity)
-                    val missing = persons.count { p ->
-                        p.faces.isEmpty() && db.matchedItemsFor(p.id, 1).isNotEmpty()
-                    }
-                    db.close()
-                    if (missing == 0) return@withContext 0
-                    Log.i(TAG, "AVATAR $missing of ${persons.size} have no face to show; rebuilding")
-                    com.picfilter.spike.engine.Clusterer.rebuildAvatars(this@MainActivity)
-                } catch (e: Exception) {
-                    Log.w(TAG, "AVATAR rebuild: ${e.javaClass.simpleName}: ${e.message}")
-                    0
-                }
-            }
-            // No isFinishing check needed: lifecycleScope has already cancelled
-            // this coroutine if the screen went away.
-            if (rebuilt > 0) showHome()
-        }
-    }
 
     private fun maybeOnboard() {
         if (onboardChecked) return
@@ -154,15 +116,7 @@ class MainActivity : ComponentActivity() {
         // adb-driven ops are not a user opening the app; never hijack those.
         if (pendingOp != null) return
         lifecycleScope.launch {
-            val go = withContext(Dispatchers.IO) {
-                val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
-                if (prefs.getBoolean(KEY_ONBOARDED, false)) return@withContext false
-                val db = com.picfilter.spike.data.Db(this@MainActivity)
-                val people = try { db.enrolledCount() } catch (e: Exception) { 0 }
-                db.close()
-                people == 0
-            }
-            if (!go) return@launch
+            if (!vm.shouldOnboard()) return@launch
             Log.i(TAG, "FIRSTRUN nobody enrolled - starting onboarding")
             startActivity(android.content.Intent().apply {
                 component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
@@ -178,42 +132,30 @@ class MainActivity : ComponentActivity() {
      */
     private var homeBuilt = false
 
+    /**
+     * Enrolling happens in another activity, so the figures are stale by the
+     * time the user comes back. A rotation is NOT a return, which is why this
+     * refreshes rather than rebuilding blindly: the ViewModel still holds the
+     * state, and re-reading it on every configuration change was the cost this
+     * screen used to pay.
+     */
     override fun onResume() {
         super.onResume()
-        if (homeBuilt) showHome() else homeBuilt = true
+        if (homeBuilt) vm.refresh() else homeBuilt = true
     }
 
     /**
-     * Read the home screen's figures off the main thread, then draw them on it.
+     * Draw whatever [HomeViewModel] currently holds.
      *
-     * This used to be one synchronous buildHome(): eight database queries, a
-     * directory listing per enrolled person, and two blocking WorkManager
-     * futures, all inside onCreate and again on every onResume. It never looked
-     * broken -- the database is a megabyte and the phone has eight cores -- but
-     * it is disk work on the thread that draws frames, and StrictMode in
-     * [PixKinApp] now says so.
-     *
-     * lifecycleScope, so a slow read cannot come back to an Activity that has
-     * already gone away. The previous version guarded that with an isFinishing
-     * check in one of the three places that needed one.
+     * Collection is scoped to STARTED, so a screen in the background is not
+     * rebuilding views, and the flow does not hold a reference to an Activity
+     * that has gone away.
      */
-    private fun showHome() {
+    private fun observeHome() {
         lifecycleScope.launch {
-            val data = withContext(Dispatchers.IO) { readHome() }
-            setContentView(renderHome(data))
-            maybeRebuildAvatars(data.people)
-        }
-    }
-
-    /** Once per launch: anyone whose face crops a re-scan orphaned gets them
-     *  back from the new clusters, and the people row redraws if that worked. */
-    private fun relinkFaces() {
-        lifecycleScope.launch {
-            val fixed = withContext(Dispatchers.IO) {
-                try { com.picfilter.spike.engine.Clusterer.relinkFaces(this@MainActivity) }
-                catch (e: Exception) { 0 }
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.home.collect { data -> if (data != null) setContentView(renderHome(data)) }
             }
-            if (fixed > 0) showHome()
         }
     }
 
@@ -230,94 +172,6 @@ class MainActivity : ComponentActivity() {
         if (op == null) return
         if (!hasFullImageAccess()) { pendingOp = op; return }
         dispatch(op)
-    }
-
-    /** Everything the home screen shows, read in one background pass. */
-    private data class HomePerson(
-        val id: Long, val name: String, val subtitle: String,
-        val faces: List<String>, val facePath: String?,
-    )
-
-    private data class HomeData(
-        val promoted: Int,
-        val notSaved: Int,
-        val undecided: Int,
-        val queues: com.picfilter.spike.data.Db.QueueSizes,
-        val people: List<HomePerson>,
-        val watchOn: Boolean,
-        val armed: Boolean,
-        val savedThumbs: List<String>,
-        val rescueThumbs: List<String>,
-        val nofaceThumbs: List<String>,
-        val junkThumbs: List<String>,
-        val dupeThumbs: List<String>,
-    )
-
-    /** Disk and WorkManager only. Must not touch a View. */
-    private fun readHome(): HomeData {
-        val db = com.picfilter.spike.data.Db(this)
-        val promoted = try { db.promotionCount() } catch (e: Exception) { 0 }
-        val notSaved = try { db.notSavedCount() } catch (e: Exception) { 0 }
-        val undecided = try { db.undecidedCount() } catch (e: Exception) { 0 }
-        val persons = try { db.enrolledPeople() } catch (e: Exception) { emptyList() }
-        val queues = try { db.queueSizes() } catch (e: Exception) {
-            com.picfilter.spike.data.Db.QueueSizes(0, 0, 0, 0, 0)
-        }
-        val junkThumbs = try { db.junkQueue(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
-        val dupeThumbs = try { db.dupePreview(limit = 5) } catch (e: Exception) { emptyList() }
-        val savedThumbs = try { db.promotedForReview(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
-        val rescueThumbs = try { db.rescueQueue(limit = 5).map { it.uri } } catch (e: Exception) { emptyList() }
-        val nofaceThumbs = try {
-            db.rescueQueue(listOf("NO_FACE_PLAIN"), limit = 5).map { it.uri }
-        } catch (e: Exception) { emptyList() }
-        db.close()
-
-        // A re-scan wipes the cluster crops, so prefer the copies enrolment
-        // kept; fall back for people enrolled before that existed. This lists
-        // a directory per person, which is why it belongs here and not in the
-        // render pass.
-        //
-        // BOTH sources must contain only files that exist. personFaces lists a
-        // directory so it already does; personThumbs reads rows and now filters
-        // them. That invariant is what [maybeRebuildAvatars] tests to decide
-        // whether anyone needs repairing, and when it was broken -- the row
-        // list went in unfiltered -- every person looked as though they already
-        // had a face, so the repair never ran and the row stayed on initials.
-        val people = persons.map { p ->
-            val crops = com.picfilter.spike.engine.Clusterer
-                .personFaces(this, p.id).ifEmpty { p.thumbs }
-            HomePerson(
-                p.id, p.name,
-                if (p.photos > 0)
-                    resources.getQuantityString(R.plurals.person_photo_count, p.photos, p.photos)
-                else "",
-                faces = crops,
-                // Chosen here, on the background pass that already reads this,
-                // rather than by decoding six crops per person at draw time.
-                facePath = com.picfilter.spike.engine.Clusterer.cleanestCrop(crops),
-            )
-        }
-
-        val watchOn = try { com.picfilter.spike.engine.Watcher.isEnabled(this) } catch (e: Exception) { false }
-        // A force-stop or a failed run can break the content-trigger chain while
-        // the periodic net keeps going. Re-arm it whenever the app is opened.
-        val armed = try { com.picfilter.spike.engine.Watcher.isArmed(this) } catch (e: Exception) { false }
-        if (watchOn && !armed) com.picfilter.spike.engine.Watcher.enable(this)
-
-        return HomeData(
-            promoted = promoted,
-            notSaved = notSaved,
-            undecided = undecided,
-            queues = queues,
-            people = people,
-            watchOn = watchOn,
-            armed = armed,
-            savedThumbs = savedThumbs,
-            rescueThumbs = rescueThumbs,
-            nofaceThumbs = nofaceThumbs,
-            junkThumbs = junkThumbs,
-            dupeThumbs = dupeThumbs,
-        )
     }
 
     /** Home. Photos-style: the people row, a stat row, then tappable cards. */
@@ -359,7 +213,7 @@ class MainActivity : ComponentActivity() {
                         if (d.watchOn) com.picfilter.spike.engine.Watcher.disable(this@MainActivity)
                         else com.picfilter.spike.engine.Watcher.enable(this@MainActivity)
                     }
-                    showHome()
+                    observeHome()
                 }
             },
             Ui.statCell(this, d.notSaved, getString(R.string.stat_not_saved)),

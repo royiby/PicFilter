@@ -211,6 +211,12 @@ object Pipeline {
                     done++
                 } catch (e: FileNotFoundException) {
                     dead++   // stale MediaStore row: rows outlive files (SPIKES.md)
+                // Deliberately broad. One photo is decoded by the
+                // platform decoder, measured by ML Kit and embedded by
+                // TFLite -- three third-party surfaces that throw
+                // IOException, MlKitException, IllegalStateException and
+                // more between them. A single unreadable photo must not
+                // end the pass over the other six hundred.
                 } catch (e: Exception) {
                     failed++
                     if (failed <= 3) Log.w(TAG, "SCORE err ${e.javaClass.simpleName}: ${e.message}")

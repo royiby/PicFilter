@@ -10,6 +10,7 @@ import android.media.MediaScannerConnection
 import androidx.exifinterface.media.ExifInterface
 import com.picfilter.spike.data.Db
 import java.text.SimpleDateFormat
+import java.io.IOException
 import java.util.Date
 import java.util.Locale
 
@@ -141,7 +142,7 @@ object Promoter {
 
     private fun readableBytes(ctx: Context, uri: Uri): Long = try {
         ctx.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: -1L
-    } catch (e: Exception) { -1L }
+    } catch (e: IOException) { -1L } catch (e: SecurityException) { -1L }
 
     /**
      * What to write a photo as, or null when the folder already has it.
@@ -328,7 +329,7 @@ object Promoter {
                 ctx.contentResolver.openInputStream(there.uri)?.use { ins ->
                     ExifInterface(ins).getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL) != null
                 } ?: false
-            } catch (e: Exception) { false }
+            } catch (e: IOException) { false } catch (e: SecurityException) { false }
             if (already) { skipped++; continue }
             val taken = originalDateMs(name, System.currentTimeMillis() / 1000)
             if (stampDate(ctx, Uri.parse(uriStr), taken, name)) ok++ else bad++
@@ -353,7 +354,7 @@ object Promoter {
                     "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND ${MediaStore.MediaColumns.DISPLAY_NAME}=?",
                     arrayOf("$DEST/", name))
                 removed = n > 0
-            } catch (e: Exception) {
+            } catch (e: SecurityException) {
                 Log.w(TAG, "UNPROMOTE delete failed for $name: ${e.javaClass.simpleName}")
             }
             // No filesystem fallback: this app created the entry, so deleting
@@ -406,7 +407,7 @@ object Promoter {
                         }
                     } ?: continue
                     md.digest().joinToString("") { "%02x".format(it) }
-                } catch (e: Exception) { continue }
+                } catch (e: IOException) { continue } catch (e: SecurityException) { continue }
                 byHash.getOrPut(hash) { mutableListOf() } += uri to name
             }
         }
@@ -534,7 +535,7 @@ object Promoter {
         WA_DATE.find(name)?.groupValues?.get(1)?.let { d ->
             try {
                 return SimpleDateFormat("yyyyMMdd", Locale.US).parse(d)!!.time
-            } catch (e: Exception) { /* fall through */ }
+            } catch (e: java.text.ParseException) { /* fall through */ }
         }
         return fallbackSeconds * 1000
     }

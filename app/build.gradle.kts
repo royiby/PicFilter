@@ -49,6 +49,10 @@ dependencies {
     // lifecycleScope: work started by a screen is cancelled when that screen
     // goes away, rather than posting back into a dead Activity.
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    // State that outlives a rotation without being hand-packed into a Bundle,
+    // and a scope that outlives the Activity rather than the other way round.
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.mlkit:face-detection:16.1.7")
     implementation("com.google.mlkit:text-recognition:16.0.1")

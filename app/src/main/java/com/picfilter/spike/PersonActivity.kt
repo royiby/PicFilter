@@ -1,63 +1,43 @@
 package com.picfilter.spike
 
-import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.activity.ComponentActivity
-import android.app.AlertDialog
+import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.picfilter.spike.Ui.setMarginsRelative
-import com.picfilter.spike.data.Db
-import com.picfilter.spike.data.DbQueue
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-
-private const val TAG = "PICFILTER"
 
 /**
  * One person: the photos PixKin keeps because they are in them, and the way to
  * stop it.
  *
- * This is what tapping a face does now. Before, every face opened the same
- * setup flow, so the people row was five different buttons that all did one
- * thing, and there was no way to see WHY someone was enrolled -- which photos
- * that enrolment was actually protecting -- or to undo it.
+ * The Activity draws; [PersonViewModel] remembers. Rotating no longer reloads
+ * the grid, because the list it is drawn from was never thrown away.
  */
 class PersonActivity : ComponentActivity() {
 
-    private lateinit var db: Db
-    private val dbq by lazy { DbQueue(db) }
-    private var personId = -1L
-    private var personName = ""
-    private var photos: List<Pair<Long, String>> = emptyList()
+    private val vm: PersonViewModel by viewModels()
 
     private lateinit var root: LinearLayout
     private lateinit var grid: RecyclerView
     private lateinit var countLine: android.widget.TextView
+    private lateinit var removeButton: View
     private val adapter by lazy {
         PhotoGridAdapter(this, gridTileSide(this, dp(Ui.GRID_GAP)), kept = false)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        db = Db(this)
-        personId = intent?.getLongExtra("person_id", -1L) ?: -1L
-        personName = intent?.getStringExtra("person_name") ?: getString(R.string.person_fallback)
-        if (personId <= 0) { finish(); return }
+        if (vm.personId <= 0) { finish(); return }
         setContentView(build())
-        load()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        dbq.closeAfterPending()
+        observe()
     }
 
     private fun dp(v: Int) = TypedValue.applyDimension(
@@ -65,7 +45,7 @@ class PersonActivity : ComponentActivity() {
 
     private fun build(): View {
         root = Ui.screen(this)
-        root.addView(Ui.titleBar(this, personName) { finish() })
+        root.addView(Ui.titleBar(this, vm.personName) { finish() })
 
         countLine = Ui.text(this, Ui.Type.BODY_SMALL, getString(R.string.person_loading),
             R.color.pk_on_surface_variant).apply {
@@ -83,31 +63,47 @@ class PersonActivity : ComponentActivity() {
         }
         root.addView(grid)
 
-        root.addView(Ui.wideButton(
-            this, getString(R.string.person_remove, personName), Ui.Btn.OUTLINED,
-        ) { confirmRemove() })
+        removeButton = Ui.wideButton(
+            this, getString(R.string.person_remove, vm.personName), Ui.Btn.OUTLINED,
+        ) { confirmRemove() }
+        removeButton.visibility = View.GONE   // until we know how many there are
+        root.addView(removeButton)
         Ui.applyInsets(root, this, extraBottom = Ui.SM)
         return root
     }
 
-    private fun load() {
+    /**
+     * Collect only while the screen is actually visible.
+     *
+     * repeatOnLifecycle(STARTED) rather than a bare launch: a collector started
+     * in onCreate and never stopped keeps the Activity referenced from the
+     * ViewModel's flow for as long as the process lives.
+     */
+    private fun observe() {
         lifecycleScope.launch {
-            photos = withContext(dbq.context) { db.photosOf(personId) }
-            countLine.text = if (photos.isEmpty())
-                getString(R.string.person_none, personName)
-            else resources.getQuantityString(
-                R.plurals.person_kept_because, photos.size, personName, photos.size)
-            adapter.submitList(photos.mapIndexed { i, photo ->
-                PhotoItem(
-                    id = photo.first,
-                    uri = photo.second,
-                    label = getString(
-                        R.string.person_photo_description, personName, i + 1, photos.size),
-                )
-            })
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { vm.photos.collect { render(it) } }
+                launch { vm.removed.collect { if (it) finish() } }
+            }
         }
     }
 
+    private fun render(photos: List<Pair<Long, String>>?) {
+        if (photos == null) return      // still loading; the line already says so
+        countLine.text = if (photos.isEmpty())
+            getString(R.string.person_none, vm.personName)
+        else resources.getQuantityString(
+            R.plurals.person_kept_because, photos.size, vm.personName, photos.size)
+        removeButton.visibility = View.VISIBLE
+        adapter.submitList(photos.mapIndexed { i, photo ->
+            PhotoItem(
+                id = photo.first,
+                uri = photo.second,
+                label = getString(
+                    R.string.person_photo_description, vm.personName, i + 1, photos.size),
+            )
+        })
+    }
 
     /**
      * Removing someone is not deleting their photos, and the dialog has to say
@@ -115,30 +111,12 @@ class PersonActivity : ComponentActivity() {
      * under it, which is a sentence that reads the wrong way if left alone.
      */
     private fun confirmRemove() {
-        val kept = photos.size
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.person_remove_title, personName))
-            .setMessage(getString(R.string.person_remove_body, personName, kept))
-            .setPositiveButton(R.string.action_remove) { _, _ -> remove() }
+        val kept = vm.photos.value?.size ?: 0
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.person_remove_title, vm.personName))
+            .setMessage(getString(R.string.person_remove_body, vm.personName, kept))
+            .setPositiveButton(R.string.action_remove) { _, _ -> vm.remove() }
             .setNegativeButton(R.string.action_cancel, null)
             .show()
-    }
-
-    private fun remove() {
-        lifecycleScope.launch {
-            val requeued = withContext(dbq.context) {
-                try { db.removePerson(personId) } catch (e: Exception) {
-                    Log.w(TAG, "REMOVEPERSON ${e.javaClass.simpleName}: ${e.message}")
-                    -1
-                }
-            }
-            if (requeued < 0) return@launch
-            withContext(Dispatchers.IO) {
-                com.picfilter.spike.engine.Clusterer.personFaces(
-                    this@PersonActivity, personId).forEach { java.io.File(it).delete() }
-            }
-            Log.i(TAG, "REMOVEPERSON '$personName' removed; $requeued items to score again")
-            finish()
-        }
     }
 }

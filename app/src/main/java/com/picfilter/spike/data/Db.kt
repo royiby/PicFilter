@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.database.SQLException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -97,7 +98,9 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
     }
 
     private fun createV5(d: SQLiteDatabase) {
-        try { d.execSQL("ALTER TABLE person ADD COLUMN threshold REAL") } catch (e: Exception) { }
+        // Already there on a database that has been upgraded once before.
+        try { d.execSQL("ALTER TABLE person ADD COLUMN threshold REAL") }
+        catch (e: SQLException) { }
     }
 
     private fun createV6(d: SQLiteDatabase) {
@@ -109,7 +112,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         // below any live revision, so enrolling anyone marks the whole corpus stale.
         try {
             d.execSQL("ALTER TABLE score ADD COLUMN centroid_rev INTEGER NOT NULL DEFAULT 0")
-        } catch (e: Exception) { }
+        } catch (e: SQLException) { }
         // On an existing database the scores predate this column and the people
         // may have been enrolled after them, which is exactly the bug this
         // column exists to catch. Start the revision at 1 so those rows read as
@@ -117,7 +120,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         val enrolled = try {
             d.rawQuery("SELECT COUNT(*) FROM centroid", null)
                 .use { if (it.moveToFirst()) it.getInt(0) else 0 }
-        } catch (e: Exception) { 0 }
+        } catch (e: SQLException) { 0 }
         if (enrolled > 0) {
             d.execSQL("INSERT OR REPLACE INTO meta(k, v) VALUES('centroid_rev', '1')")
         }
@@ -127,7 +130,8 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         // When a rescued copy reached the cloud. Once set, the local file in
         // Pictures/PicFilter has done its job and can be removed -- and must NOT
         // be copied again just because it is no longer there.
-        try { d.execSQL("ALTER TABLE promotion ADD COLUMN synced_at INTEGER") } catch (e: Exception) { }
+        try { d.execSQL("ALTER TABLE promotion ADD COLUMN synced_at INTEGER") }
+        catch (e: SQLException) { }
     }
 
     /**

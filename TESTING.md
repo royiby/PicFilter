@@ -461,6 +461,48 @@ prove the mechanism is right, not that nothing else breaks at that size — the
 queries themselves are still unbounded, and `Paging 3` over them is the next
 step if a real library gets there.
 
+## State, and what happens when the screen is destroyed
+
+Every screen has a ViewModel now. Before, the Activities held the queue, the
+position, the undo history, the candidate list and the database handle in
+fields, and a rotation threw all of it away: the handle was closed and
+reopened, the queue re-read, the candidate list re-queried, and the position
+restored by hand from a Bundle the Activity packed itself.
+
+`SavedStateHandle` still carries the things a ViewModel alone cannot keep —
+the review position and the undo stack — because those survive the process
+being killed and are the user's own work rather than something re-derivable.
+The queue deliberately is not saved: reloading is more correct, since a
+verdict recorded before the rotation has taken that item out of it.
+
+Work that must finish moved with it. Un-promoting a photo runs on
+`Background.io`, not a screen scope, because half an un-promotion leaves a
+copy in the backed-up folder with no record of it. Removing a person runs on
+`viewModelScope`, because the screen closes immediately after the tap.
+
+Verified by rotating each screen on the device: review holds "5 of 109",
+person holds its count, onboarding holds its step.
+
+## Exceptions
+
+47 blanket `catch (e: Exception)` became 28, and the ones that remain are
+deliberate rather than leftover.
+
+The one that was a real bug: a `catch (e: Exception)` inside a coroutine also
+catches `CancellationException`, so cancelling the enrolment coroutine would
+have been swallowed and reported as a failed enrolment. It rethrows now.
+
+Narrowed where the throwing surface is known — `SQLException` for the
+migrations, `ExecutionException`/`InterruptedException` for WorkManager's
+futures, `IOException`/`SecurityException` for file and provider work,
+`RemoteException` for the `:scoring` reply, `ParseException` for a date.
+
+Left broad, with the reason written next to them, where a single call reaches
+three third-party surfaces: decoding one photo goes through the platform
+decoder, ML Kit and TFLite, which throw `IOException`, `MlKitException` and
+`IllegalStateException` between them, and one unreadable photo must not end a
+pass over six hundred.
+
 ## Languages and layout direction
 
 Every user-facing string is in `res/values/strings.xml`, with Hebrew, Spanish,

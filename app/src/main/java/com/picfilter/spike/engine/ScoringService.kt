@@ -60,8 +60,9 @@ class ScoringService : Service() {
                 } catch (e: Exception) {
                     Log.e(TAG, "SCORINGSVC failed ${e.javaClass.simpleName}: ${e.message}")
                 }
-                try { reply?.send(Message.obtain(null, what)) } catch (e: Exception) {
-                    Log.w(TAG, "SCORINGSVC could not reply: ${e.javaClass.simpleName}")
+                try { reply?.send(Message.obtain(null, what)) }
+                catch (e: android.os.RemoteException) {
+                    Log.w(TAG, "SCORINGSVC could not reply: the client is gone")
                 }
                 stopSelf()
             }
@@ -158,7 +159,9 @@ object ScoringClient {
             Log.w(TAG, "WATCH handoff ${e.javaClass.simpleName}: ${e.message}")
             null
         } finally {
-            try { ctx.unbindService(conn) } catch (e: Exception) { }
+            // Throws if the binding is already gone, which is the normal
+            // outcome when :scoring exited before we unbound.
+            try { ctx.unbindService(conn) } catch (e: IllegalArgumentException) { }
             cbThread.quitSafely()
         }
     }

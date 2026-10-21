@@ -19,7 +19,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import coil.load
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -46,40 +49,15 @@ private const val PICK_MAX = 10
 
 class OnboardingActivity : ComponentActivity() {
 
-    private lateinit var db: Db
+    private val vm: OnboardingViewModel by viewModels()
     private lateinit var root: LinearLayout
-    private var candidates: List<Db.Candidate> = emptyList()
-    private var idx = 0
-    private var named = 0
-    private var firstRun = false
 
-    /**
-     * Which screen of the flow is showing.
-     *
-     * The step used to live only in which show*() had last been called, so a
-     * rotation sent the user back to the intro with their naming progress gone.
-     */
-    private var step = STEP_INTRO
-
-    /** Read once per visit to the summary, off the main thread. */
-    private var skippedCache: List<Db.Candidate>? = null
-
-    /** Every database touch from this screen, serialised; see [DbQueue]. */
-    private val dbq by lazy { com.picfilter.spike.data.DbQueue(db) }
-
-    private companion object {
-        const val STEP_INTRO = "intro"
-        const val STEP_SCAN = "scan"
-        const val STEP_NOFACES = "nofaces"
-        const val STEP_CANDIDATE = "candidate"
-        const val STEP_SUMMARY = "summary"
-        const val STEP_BACKUP = "backup"
-
-        const val S_STEP = "step"
-        const val S_IDX = "idx"
-        const val S_NAMED = "named"
-        const val S_FIRST = "first_run"
-    }
+    private var candidates: List<Db.Candidate>
+        get() = vm.candidates
+        set(_) { }
+    private val idx get() = vm.idx
+    private val named get() = vm.named
+    private val firstRun get() = vm.firstRun
 
     /**
      * The photo picker needs no permission at all: the user hands over exactly
@@ -89,81 +67,64 @@ class OnboardingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        db = Db(this)
         pickPhotos = registerForActivityResult(
             ActivityResultContracts.PickMultipleVisualMedia(PICK_MAX)
         ) { uris -> if (uris.isNotEmpty()) promptNameForPicked(uris) }
         root = Ui.screen(this)
         Ui.applyInsets(root, this, extraBottom = 8)
         setContentView(root)
-        firstRun = savedInstanceState?.getBoolean(S_FIRST)
-            ?: (intent?.getStringExtra("first_run") == "1")
 
-        if (savedInstanceState != null) {
-            idx = savedInstanceState.getInt(S_IDX)
-            named = savedInstanceState.getInt(S_NAMED)
-            restore(savedInstanceState.getString(S_STEP) ?: STEP_INTRO)
-            return
+        if (savedInstanceState == null) {
+            vm.markFirstRun(intent?.getStringExtra("first_run") == "1")
+            // "step" jumps straight to one screen, for looking at it alone.
+            val jump = intent?.getStringExtra("step")
+            // "resume" skips the scan and works from clusters already
+            // extracted -- for adding people later, and for regrouping.
+            when {
+                jump == "backup" -> vm.goTo(OnboardingViewModel.STEP_BACKUP)
+                // "Add" from the home screen resumes into the cards rather
+                // than the intro: the user has been through setup already.
+                intent?.getStringExtra("resume") == "1" -> vm.loadCandidates {
+                    vm.goTo(
+                        if (candidates.isEmpty()) OnboardingViewModel.STEP_NOFACES
+                        else OnboardingViewModel.STEP_CANDIDATE)
+                }
+                else -> vm.goTo(OnboardingViewModel.STEP_INTRO)
+            }
         }
-
-        // "step" jumps straight to one screen, for looking at it in isolation.
-        val jump = intent?.getStringExtra("step")
-        // "resume" skips the scan and works from clusters already extracted —
-        // used for adding people later, and for re-grouping experiments.
-        if (jump == "backup") {
-            showBackup()
-        } else if (intent?.getStringExtra("resume") == "1") {
-            loadCandidates()
-        } else {
-            showIntro()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                vm.step.collect { showForStep() }
+            }
         }
     }
 
-    /**
-     * Put the user back where they were after a rotation or process death.
-     *
-     * A scan still running is re-attached to rather than restarted: [Scan] owns
-     * it now, so the progress screen comes back showing where it has got to.
-     * One that finished while the screen was gone goes straight to the faces it
-     * found, which is where it would have gone anyway.
-     */
-    private fun restore(saved: String) {
-        when (saved) {
-            STEP_SCAN -> when {
-                Scan.running -> showScanProgress()
-                else -> loadCandidates()
-            }
-            STEP_CANDIDATE -> loadCandidates(keepIndex = true)
-            STEP_SUMMARY -> showSummary()
-            STEP_BACKUP -> showBackup()
-            STEP_NOFACES -> showNoFaces()
+    /** Ask the ViewModel for the candidate list, then show one. */
+    private fun loadCandidates(keepIndex: Boolean = false) {
+        vm.loadCandidates(keepIndex) {
+            // Move the step, not the view: showForStep draws whatever the
+            // ViewModel says, so the two cannot drift apart.
+            vm.goTo(
+                if (candidates.isEmpty()) OnboardingViewModel.STEP_NOFACES
+                else OnboardingViewModel.STEP_CANDIDATE)
+            showForStep()
+        }
+    }
+
+    /** Draw whichever step the ViewModel says we are on. */
+    private fun showForStep() {
+        when (vm.step.value) {
+            OnboardingViewModel.STEP_SCAN ->
+                if (Scan.running) showScanProgress() else loadCandidates()
+            OnboardingViewModel.STEP_CANDIDATE ->
+                if (candidates.isEmpty()) loadCandidates(keepIndex = true) else showCandidate()
+            OnboardingViewModel.STEP_SUMMARY -> showSummary()
+            OnboardingViewModel.STEP_BACKUP -> showBackup()
+            OnboardingViewModel.STEP_NOFACES -> showNoFaces()
             else -> showIntro()
         }
     }
 
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putString(S_STEP, step)
-        outState.putInt(S_IDX, idx)
-        outState.putInt(S_NAMED, named)
-        outState.putBoolean(S_FIRST, firstRun)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // Must happen, or Scan keeps this Activity alive for the whole process.
-        Scan.observe(null)
-        dbq.closeAfterPending()
-    }
-
-    /** Read the candidate clusters off the main thread, then show one. */
-    private fun loadCandidates(keepIndex: Boolean = false) {
-        lifecycleScope.launch {
-            candidates = withContext(dbq.context) { db.candidates(limit = 20, thumbsEach = 6) }
-            if (!keepIndex) idx = 0
-            if (candidates.isEmpty()) showNoFaces() else showCandidate()
-        }
-    }
 
     private fun dp(v: Int) = TypedValue.applyDimension(
         TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
@@ -181,7 +142,7 @@ class OnboardingActivity : ComponentActivity() {
     // ------------------------------------------------------------- 1. intro
 
     private fun showIntro() {
-        step = STEP_INTRO
+        vm.goTo(OnboardingViewModel.STEP_INTRO)
         root.removeAllViews()
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -216,16 +177,12 @@ class OnboardingActivity : ComponentActivity() {
         root.addView(scroll)
 
         lifecycleScope.launch {
-            val already = withContext(dbq.context) {
-                db.candidates(limit = 1, thumbsEach = 1).isNotEmpty()
-            }
+            val already = vm.hasCandidates()
             if (already) continueBtn.visibility = View.VISIBLE
         }
 
         lifecycleScope.launch {
-            val (n, uris) = withContext(Dispatchers.IO) {
-                Clusterer.whatsAppPreview(this@OnboardingActivity, 4)
-            }
+            val (n, uris) = vm.whatsAppPreview(4)
             count.text = if (n > 0)
                 resources.getQuantityString(R.plurals.onboard_whatsapp_count, n, n)
             else getString(R.string.onboard_no_whatsapp)
@@ -259,7 +216,7 @@ class OnboardingActivity : ComponentActivity() {
      * finds one already running.
      */
     private fun showScanProgress() {
-        step = STEP_SCAN
+        vm.goTo(OnboardingViewModel.STEP_SCAN)
         root.removeAllViews()
         root.addView(title(getString(R.string.onboard_looking)))
         val status = body("${Scan.phase}\u2026")
@@ -299,7 +256,7 @@ class OnboardingActivity : ComponentActivity() {
     }
 
     private fun showNoFaces() {
-        step = STEP_NOFACES
+        vm.goTo(OnboardingViewModel.STEP_NOFACES)
         root.removeAllViews()
         root.addView(title(getString(R.string.onboard_no_faces_title)))
         root.addView(body(getString(R.string.onboard_no_faces_body)))
@@ -320,7 +277,7 @@ class OnboardingActivity : ComponentActivity() {
 
     private fun showCandidate() {
         if (idx >= candidates.size) { showSummary(); return }
-        step = STEP_CANDIDATE
+        vm.goTo(OnboardingViewModel.STEP_CANDIDATE)
         val c = candidates[idx]
         root.removeAllViews()
         root.addView(Ui.text(this, Ui.Type.CAPTION,
@@ -362,12 +319,7 @@ class OnboardingActivity : ComponentActivity() {
             .setPositiveButton("Save") { _, _ ->
                 val typed = input.text.toString().trim()
                 val name = typed.ifEmpty { getString(R.string.onboard_default_person, named + 1) }
-                lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
-                        Clusterer.enrolCluster(this@OnboardingActivity, c.id, name)
-                    }
-                    named++; idx++; showCandidate()
-                }
+                vm.enrolCluster(c.id, name) { showCandidate() }
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -394,16 +346,8 @@ class OnboardingActivity : ComponentActivity() {
                 val busy = AlertDialog.Builder(this)
                     .setMessage(getString(R.string.onboard_reading_photos))
                     .setCancelable(false).show()
-                lifecycleScope.launch {
-                    val r = withContext(Dispatchers.IO) {
-                        try {
-                            Clusterer.enrolFromUris(this@OnboardingActivity, name, uris)
-                        } catch (e: Exception) {
-                            Clusterer.PickOutcome(-1, 0, uris.size, 0)
-                        }
-                    }
+                vm.enrolFromUris(name, uris) { r ->
                     busy.dismiss()
-                    if (r.ok) named++
                     showPickResult(name, r)
                 }
             }
@@ -441,17 +385,13 @@ class OnboardingActivity : ComponentActivity() {
             .show()
     }
 
-    private fun decide(c: Db.Candidate, status: String) {
-        lifecycleScope.launch {
-            withContext(dbq.context) { db.setClusterStatus(c.id, status, null) }
-            idx++; showCandidate()
-        }
-    }
+    private fun decide(c: Db.Candidate, status: String) =
+        vm.decide(c.id, status) { showCandidate() }
 
     // ----------------------------------------------------------- 4. summary
 
     private fun showSummary() {
-        step = STEP_SUMMARY
+        vm.goTo(OnboardingViewModel.STEP_SUMMARY)
         root.removeAllViews()
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -462,12 +402,9 @@ class OnboardingActivity : ComponentActivity() {
         // The part that matters: who did they NOT claim? Read on this thread
         // only because the whole screen is already built synchronously; the
         // decode below is what actually cost frames and that is now scoped.
-        val skipped = skippedCache
+        val skipped = vm.skipped
         if (skipped == null) {
-            lifecycleScope.launch {
-                skippedCache = withContext(dbq.context) { db.skippedClusters(minSize = 5) }
-                showSummary()
-            }
+            vm.loadSkipped { showSummary() }
             root.addView(scroll)
             return
         }
@@ -519,7 +456,7 @@ class OnboardingActivity : ComponentActivity() {
      * and the WhatsApp folders have to stop being one.
      */
     private fun showBackup() {
-        step = STEP_BACKUP
+        vm.goTo(OnboardingViewModel.STEP_BACKUP)
         root.removeAllViews()
         val scroll = ScrollView(this)
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -545,9 +482,7 @@ class OnboardingActivity : ComponentActivity() {
         // Google Photos only lists a folder that exists, and on a fresh install
         // nothing has been rescued into it yet.
         lifecycleScope.launch {
-            val ok = withContext(Dispatchers.IO) {
-                Promoter.ensureDestFolder(this@OnboardingActivity)
-            }
+            val ok = vm.ensureDestFolder()
             status.text = if (ok)
                 getString(R.string.backup_folder_exists, Promoter.DEST_LABEL)
             else getString(R.string.backup_folder_later)

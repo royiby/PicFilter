@@ -16,6 +16,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
@@ -49,7 +52,6 @@ private const val CARD_PX = 1400
 
 class ReviewActivity : ComponentActivity() {
 
-    private lateinit var db: Db
     private lateinit var image: ImageView
     private lateinit var empty: LinearLayout
     private lateinit var bar: android.widget.FrameLayout
@@ -59,7 +61,7 @@ class ReviewActivity : ComponentActivity() {
             this, gridTileSide(this, dp(Ui.GRID_GAP)),
             kept = mode == "verify",   // everything here is already saved
             dimmed = mode == "junk",   // and everything here is not
-        ) { at -> idx = at; grid = false; buildBar(); render() }
+        ) { at -> vm.goTo(at) }
     }
     private lateinit var strip: LinearLayout
     private lateinit var info: TextView
@@ -67,71 +69,21 @@ class ReviewActivity : ComponentActivity() {
     private lateinit var actionBar: LinearLayout
     private lateinit var undoBtn: View
 
-    private sealed interface Card
-    private data class ItemCard(val row: Db.ReviewRow) : Card
-    private data class DupeCard(val groupId: Long, val members: List<Pair<Long, String>>) : Card
-    private data class RescueCard(val row: Db.RescueRow) : Card
-
-    private var mode = "golden"
-    /** Grid first for the screens you come to look at; card first for the ones
-     *  you come to decide. Either way the toggle in the bar switches. */
-    private var grid = false
-    private var queue: List<Card> = emptyList()
-    private var idx = 0
-    private val history = ArrayDeque<Pair<Int, Long>>()   // (index, id) for undo
-
-    /** Every database touch from this screen, serialised; see [DbQueue]. */
-    private val dbq by lazy { DbQueue(db) }
-
-    private companion object {
-        const val S_MODE = "mode"
-        const val S_GRID = "grid"
-        const val S_IDX = "idx"
-        const val S_HIST_AT = "hist_at"
-        const val S_HIST_ID = "hist_id"
-    }
+    private val vm: ReviewViewModel by viewModels()
+    private val mode get() = vm.mode
+    private val queue get() = vm.queue.value ?: emptyList()
+    private val idx get() = vm.idx.value
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        db = Db(this)
-        mode = savedInstanceState?.getString(S_MODE)
-            ?: intent?.getStringExtra("mode") ?: "golden"
-        grid = savedInstanceState?.getBoolean(S_GRID) ?: (mode == "verify")
-        idx = savedInstanceState?.getInt(S_IDX) ?: 0
-        val at = savedInstanceState?.getIntArray(S_HIST_AT)
-        val ids = savedInstanceState?.getLongArray(S_HIST_ID)
-        if (at != null && ids != null && at.size == ids.size) {
-            for (i in at.indices) history.addLast(at[i] to ids[i])
-        }
         setContentView(buildUi())
-        loadQueue()
-    }
-
-    /**
-     * Survive a rotation, and process death.
-     *
-     * Without this the Activity was rebuilt from scratch: queue reloaded, index
-     * back to zero, undo history gone. Turning the phone sideways halfway
-     * through a review of 111 photos started it again from the first one, and
-     * the only reason it was never reported is that the person reviewing was
-     * the person who wrote it.
-     *
-     * The queue itself is not saved -- it is derivable from the database, and
-     * reloading is the right thing anyway, since a verdict recorded before the
-     * rotation has removed that item from it.
-     */
-    override fun onSaveInstanceState(outState: Bundle) {
-        super.onSaveInstanceState(outState)
-        outState.putString(S_MODE, mode)
-        outState.putBoolean(S_GRID, grid)
-        outState.putInt(S_IDX, idx)
-        outState.putIntArray(S_HIST_AT, history.map { it.first }.toIntArray())
-        outState.putLongArray(S_HIST_ID, history.map { it.second }.toLongArray())
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        dbq.closeAfterPending()
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                launch { vm.queue.collect { if (it != null) { gridAdapter.submitList(gridItems()); render() } } }
+                launch { vm.idx.collect { render() } }
+                launch { vm.grid.collect { buildBar(); render() } }
+            }
+        }
     }
 
     // ------------------------------------------------------------------ ui
@@ -221,34 +173,36 @@ class ReviewActivity : ComponentActivity() {
         }
         when (mode) {
             "dupes" -> {
-                buttons.addView(Ui.filled(this, getString(R.string.action_different), Ui.Btn.OUTLINED) { verdict("DIFFERENT") })
-                buttons.addView(Ui.filled(this, getString(R.string.action_same_photo), Ui.Btn.PRIMARY) { verdict("SAME") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_different), Ui.Btn.OUTLINED) { vm.verdict("DIFFERENT") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_same_photo), Ui.Btn.PRIMARY) { vm.verdict("SAME") })
             }
             "verify" -> {
-                buttons.addView(Ui.filled(this, getString(R.string.action_not_mine), Ui.Btn.OUTLINED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { label("SKIP") })
-                buttons.addView(Ui.filled(this, getString(R.string.action_correct), Ui.Btn.PRIMARY) { label("KEEP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_not_mine), Ui.Btn.OUTLINED) { vm.label("DISCARD") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { vm.label("SKIP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_correct), Ui.Btn.PRIMARY) { vm.label("KEEP") })
             }
             "junk" -> {
-                buttons.addView(Ui.filled(this, getString(R.string.action_its_junk), Ui.Btn.OUTLINED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { label("SKIP") })
-                buttons.addView(Ui.filled(this, getString(R.string.action_keep), Ui.Btn.PRIMARY) { label("KEEP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_its_junk), Ui.Btn.OUTLINED) { vm.label("DISCARD") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { vm.label("SKIP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_keep), Ui.Btn.PRIMARY) { vm.label("KEEP") })
             }
             "rescue", "noface" -> {
-                buttons.addView(Ui.filled(this, getString(R.string.action_not_mine), Ui.Btn.OUTLINED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { label("SKIP") })
-                buttons.addView(Ui.filled(this, getString(R.string.action_keep), Ui.Btn.PRIMARY) { label("KEEP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_not_mine), Ui.Btn.OUTLINED) { vm.label("DISCARD") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { vm.label("SKIP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_keep), Ui.Btn.PRIMARY) { vm.label("KEEP") })
             }
             else -> {
-                buttons.addView(Ui.filled(this, getString(R.string.action_discard), Ui.Btn.OUTLINED) { label("DISCARD") })
-                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { label("SKIP") })
-                buttons.addView(Ui.filled(this, getString(R.string.action_keep), Ui.Btn.PRIMARY) { label("KEEP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_discard), Ui.Btn.OUTLINED) { vm.label("DISCARD") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_skip), Ui.Btn.TEXT) { vm.label("SKIP") })
+                buttons.addView(Ui.filled(this, getString(R.string.action_keep), Ui.Btn.PRIMARY) { vm.label("KEEP") })
             }
         }
         actionBar = buttons
         root.addView(buttons)
 
-        undoBtn = Ui.wideButton(this, getString(R.string.action_undo_last), Ui.Btn.LINK) { undo() }
+        undoBtn = Ui.wideButton(this, getString(R.string.action_undo_last), Ui.Btn.LINK) {
+            if (!vm.undo()) Toast.makeText(this, R.string.nothing_to_undo, Toast.LENGTH_SHORT).show()
+        }
         root.addView(undoBtn)
 
         Ui.applyInsets(root, this, extraBottom = 4)
@@ -257,59 +211,31 @@ class ReviewActivity : ComponentActivity() {
 
     // --------------------------------------------------------------- queue
 
-    /**
-     * Read the queue off the main thread, then draw it.
-     *
-     * Every one of these is a multi-table query with sub-selects per row --
-     * rescueQueue sorts by a correlated MAX(similarity) -- and it ran inside
-     * onCreate on the thread that draws frames.
-     */
-    private fun loadQueue(keepIndex: Boolean = true) {
-        lifecycleScope.launch {
-            val loaded = withContext(dbq.context) {
-                when (mode) {
-                    "dupes" -> db.dupeGroups().map { DupeCard(it.first, it.second) }
-                    "rescue" -> db.rescueQueue().map { RescueCard(it) }
-                    "noface" -> db.rescueQueue(listOf("NO_FACE_PLAIN")).map { RescueCard(it) }
-                    "verify" -> db.promotedForReview().map { RescueCard(it) }
-                    "junk" -> db.junkQueue().map { RescueCard(it) }
-                    else -> db.goldenQueue(perReason = 40).map { ItemCard(it) }
-                }
-            }
-            queue = loaded
-            // A restored index can be past the end: verdicts recorded before
-            // the rotation have taken their items out of the queue.
-            idx = if (keepIndex) idx.coerceIn(0, maxOf(loaded.size, 0)) else 0
-            gridAdapter.submitList(gridItems())
-            render()
-        }
-    }
-
     private fun buildBar() {
         bar.removeAllViews()
         bar.addView(Ui.titleBar(
             this, screenTitle(),
-            actionIcon = if (grid) R.drawable.ic_single_photo else R.drawable.ic_grid,
+            actionIcon = if (vm.grid.value) R.drawable.ic_single_photo else R.drawable.ic_grid,
             actionLabel = getString(
-                if (grid) R.string.grid_show_single else R.string.grid_show_grid),
-            onAction = { grid = !grid; buildBar(); render() },
+                if (vm.grid.value) R.string.grid_show_single else R.string.grid_show_grid),
+            onAction = { vm.setGrid(!vm.grid.value) },
         ) { finish() })
     }
 
     /** The uri a card shows in the grid — for a dupe group, its first member. */
-    private fun uriOf(card: Card): String? = when (card) {
-        is ItemCard -> card.row.uri
-        is RescueCard -> card.row.uri
-        is DupeCard -> card.members.firstOrNull()?.second
+    private fun uriOf(card: ReviewViewModel.Card): String? = when (card) {
+        is ReviewViewModel.ItemCard -> card.row.uri
+        is ReviewViewModel.RescueCard -> card.row.uri
+        is ReviewViewModel.DupeCard -> card.members.firstOrNull()?.second
     }
 
     /** What the grid shows, derived from the queue. */
     private fun gridItems(): List<PhotoItem> = queue.mapIndexed { i, card ->
         PhotoItem(
             id = when (card) {
-                is ItemCard -> card.row.id
-                is RescueCard -> card.row.id
-                is DupeCard -> card.groupId
+                is ReviewViewModel.ItemCard -> card.row.id
+                is ReviewViewModel.RescueCard -> card.row.id
+                is ReviewViewModel.DupeCard -> card.groupId
             },
             uri = uriOf(card),
             label = getString(R.string.a11y_grid_item, describe(card), i + 1, queue.size),
@@ -318,7 +244,7 @@ class ReviewActivity : ComponentActivity() {
 
 
     private fun render() {
-        if (grid && queue.isNotEmpty()) {
+        if (vm.grid.value && queue.isNotEmpty()) {
             gridView.visibility = View.VISIBLE
             image.visibility = View.GONE
             empty.visibility = View.GONE
@@ -343,21 +269,15 @@ class ReviewActivity : ComponentActivity() {
             // Empty state: the mark, one line, nothing to decide.
             image.setImageDrawable(null); strip.visibility = View.GONE
             actionBar.visibility = View.GONE
-            undoBtn.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
+            undoBtn.visibility = if (vm.historyEmpty) View.GONE else View.VISIBLE
             if (empty.childCount == 0) empty.addView(Ui.emptyState(this, getString(
-                if (history.isEmpty()) R.string.empty_nothing_here
+                if (vm.historyEmpty) R.string.empty_nothing_here
                 else R.string.empty_all_done)))
             empty.visibility = View.VISIBLE
             image.visibility = View.GONE
             counter.text = ""
             info.text = ""
-            lifecycleScope.launch {
-                info.text = withContext(dbq.context) {
-                    if (mode == "dupes")
-                        db.dupeVerdictCounts().joinToString("  ") { "${it.first}=${it.second}" }
-                    else db.labelCounts().joinToString("  ") { "${it.first}=${it.second}" }
-                }
-            }
+            lifecycleScope.launch { info.text = vm.summary() }
             return
         }
         empty.visibility = View.GONE
@@ -369,13 +289,13 @@ class ReviewActivity : ComponentActivity() {
         val card = queue[idx]
         image.contentDescription =
             getString(R.string.a11y_card_position, describe(card), idx + 1, queue.size)
-        if (card is DupeCard) {
+        if (card is ReviewViewModel.DupeCard) {
             val gid = card.groupId
             val members = card.members
             showImage(members[0].second)
             fillStrip(members.map { it.second })
             info.text = getString(R.string.dupe_prompt, gid, members.size)
-        } else if (card is RescueCard) {
+        } else if (card is ReviewViewModel.RescueCard) {
             val r = card.row
             strip.visibility = View.GONE
             showImage(r.uri)
@@ -403,7 +323,7 @@ class ReviewActivity : ComponentActivity() {
                 else -> getString(R.string.rescue_no_face)
             }
             info.text = getString(R.string.detail_faces, near, r.faces, r.indet, r.reason)
-        } else if (card is ItemCard) {
+        } else if (card is ReviewViewModel.ItemCard) {
             val r = card.row
             strip.visibility = View.GONE
             showImage(r.uri)
@@ -466,9 +386,9 @@ class ReviewActivity : ComponentActivity() {
      * that is what the person is being asked about. Without this the review
      * flow was a row of buttons with no subject.
      */
-    private fun describe(card: Card): String = when (card) {
-        is DupeCard -> getString(R.string.a11y_dupe_group, card.members.size)
-        is RescueCard -> {
+    private fun describe(card: ReviewViewModel.Card): String = when (card) {
+        is ReviewViewModel.DupeCard -> getString(R.string.a11y_dupe_group, card.members.size)
+        is ReviewViewModel.RescueCard -> {
             val r = card.row
             val who = r.nearName?.let { n ->
                 r.nearSim?.let { v -> getString(R.string.a11y_closest_match, n, "%.2f".format(v)) }
@@ -481,7 +401,7 @@ class ReviewActivity : ComponentActivity() {
                 else -> getString(R.string.a11y_unsure, who, r.faces)
             }
         }
-        is ItemCard -> getString(
+        is ReviewViewModel.ItemCard -> getString(
             R.string.a11y_scored, card.row.decision, card.row.reason, card.row.faces)
     }
 
@@ -489,69 +409,13 @@ class ReviewActivity : ComponentActivity() {
      *  suspect at a time. Tapping one jumps straight to it. */
     private fun showUpcoming() {
         val next = queue.drop(idx + 1).take(8)
-        val uris = next.mapNotNull { (it as? RescueCard)?.row?.uri }
+        val uris = next.mapNotNull { (it as? ReviewViewModel.RescueCard)?.row?.uri }
         val base = idx + 1
-        fillStrip(uris) { offset -> idx = base + offset; render() }
+        fillStrip(uris) { offset -> vm.goTo(base + offset) }
     }
 
     // ------------------------------------------------------------ actions
 
-    private fun label(v: String) {
-        // Exhaustive on purpose: an unhandled card type must shout, not silently
-        // return. A missing branch here made every rescue button a no-op.
-        val id = when (val c = queue.getOrNull(idx)) {
-            is ItemCard -> c.row.id
-            is RescueCard -> c.row.id
-            is DupeCard -> { Log.w(TAG, "label() on a DupeCard"); return }
-            null -> return
-        }
-        // The screen advances now and the row is written behind it, in tap
-        // order on [DbQueue]. A verdict that took 30ms of disk to record used
-        // hold the frame that showed the next photo.
-        //
-        // Un-promoting runs on the same queue rather than its own thread: it
-        // must not overtake the DISCARD label that explains it, and it must
-        // still finish if the screen closes straight afterwards -- which is why
-        // it is NOT on lifecycleScope.
-        // NOT lifecycleScope: it cancels on destroy, and a rotation right after
-        // a tap would throw the verdict away.
-        dbq.submit { db.putLabel(id, v) }
-        if (mode == "verify" && v == "DISCARD") {
-            // Outlives this screen on purpose; see [Background].
-            val app = applicationContext
-            Background.io.execute {
-                try { com.picfilter.spike.engine.Promoter.unpromote(app, id) }
-                catch (e: Exception) {
-                    Log.w(TAG, "UNPROMOTE ${e.javaClass.simpleName}: ${e.message}")
-                }
-            }
-        }
-        gridAdapter.submitList(gridItems())   // the queue changed under the grid
-        history.addLast(idx to id)
-        idx++; render()
-    }
 
-
-    private fun verdict(v: String) {
-        val g = queue.getOrNull(idx) as? DupeCard ?: return
-        dbq.submit { db.putDupeVerdict(g.groupId, v) }
-        history.addLast(idx to g.groupId)
-        idx++; render()
-    }
-
-    private fun undo() {
-        val last = history.removeLastOrNull() ?: run {
-            Toast.makeText(this, R.string.nothing_to_undo, Toast.LENGTH_SHORT).show(); return
-        }
-        val dupes = mode == "dupes"
-        // Ordered after the write it undoes: [DbQueue] is one thread.
-        dbq.submit {
-            if (dupes) db.writableDatabase.execSQL(
-                "DELETE FROM dupe_verdict WHERE group_id=?", arrayOf<Any>(last.second))
-            else db.deleteLabel(last.second)
-        }
-        idx = last.first
-        render()
-    }
 
 }

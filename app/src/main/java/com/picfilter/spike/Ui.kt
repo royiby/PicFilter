@@ -127,7 +127,9 @@ object Ui {
     fun font(ctx: Context, weight: Int): Typeface = fonts.getOrPut(weight) {
         val base = try {
             ResourcesCompat.getFont(ctx, R.font.nunito)
-        } catch (e: Exception) { null } ?: Typeface.SANS_SERIF
+        } catch (e: android.content.res.Resources.NotFoundException) {
+            null
+        } ?: Typeface.SANS_SERIF
         Typeface.create(base, weight, false)
     }
 
