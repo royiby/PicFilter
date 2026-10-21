@@ -233,9 +233,9 @@ object Ui {
             // the image are announced as two more nameless nodes.
             contentDescription = label
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            // A row of the grid is a LinearLayout, and the caller sets the gap
-            // as a margin — so these have to be LinearLayout params.
-            layoutParams = LinearLayout.LayoutParams(side, side)
+            // Plain ViewGroup params: a RecyclerView wraps these into its own,
+            // and the gaps are an ItemDecoration rather than margins now.
+            layoutParams = ViewGroup.LayoutParams(side, side)
             addView(ImageView(ctx).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
                 setBackgroundColor(surfaceVariant(ctx))
@@ -608,44 +608,61 @@ object Ui {
      * off the main thread; until one arrives (or if there is none) the circle
      * shows the person's initial.
      */
+    /** The people whose photos PixKin keeps. Add lives in [sectionHeader]. */
     /**
-     * The people whose photos PixKin keeps.
+     * A labelled section with one action on the right.
      *
-     * Add is pinned outside the scroller rather than sitting after the last
-     * face. It used to scroll away with them, so the only way to enrol anyone
-     * was to scroll to the end of a row that gets longer every time you
-     * succeed -- the control you need most when the row is full was the one
-     * hardest to reach.
+     * Add used to be a 56dp circle with a caption, sitting in a row of 56dp
+     * circles with captions -- so it read as a person called "Add". Moving it
+     * into a header makes it a control rather than a face, gives the row the
+     * name it never had, and fixes its position whatever the row is doing.
      */
+    fun sectionHeader(
+        ctx: Context, title: String, actionLabel: String, onAction: () -> Unit,
+    ): View = LinearLayout(ctx).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        with(ctx) { setPadding(dp(MD), dp(SM), dp(XS), 0) }
+        addView(text(ctx, Type.TITLE_SMALL, title).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        addView(MaterialButton(ctx, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+            text = actionLabel
+            setTextColor(primary(ctx))
+            typeface = font(ctx, 600)
+            isAllCaps = false
+            with(ctx) {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, Type.LABEL.size)
+                minWidth = 0
+                minimumWidth = 0
+                insetTop = 0
+                insetBottom = 0
+                setPadding(dp(SM), dp(XS), dp(SM), dp(XS))
+            }
+            setOnClickListener { onAction() }
+        })
+    }
+
     fun peopleRow(
         ctx: Context, faces: List<Face>,
-        onPerson: (Int) -> Unit, onAdd: () -> Unit,
+        onPerson: (Int) -> Unit,
     ): View {
         val strip = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
-            // End padding so the last face can scroll clear of Add instead of
-            // stopping half underneath it.
-            with(ctx) { setPadding(dp(MD), dp(XXS), dp(SM), dp(XS)) }
+            with(ctx) { setPadding(dp(MD), dp(XXS), dp(MD), dp(XS)) }
         }
         for ((i, f) in faces.withIndex()) strip.addView(personCell(ctx, f) { onPerson(i) })
-        val scroller = HorizontalScrollView(ctx).apply {
+        return HorizontalScrollView(ctx).apply {
             isHorizontalScrollBarEnabled = false
-            // Fade the faces out as they pass behind Add, so a half-scrolled
-            // face reads as "there is more" rather than as a clipped mistake.
+            // A half-scrolled face reads as "there is more" rather than as a
+            // clipped mistake.
             isHorizontalFadingEdgeEnabled = true
             with(ctx) { setFadingEdgeLength(dp(LG)) }
             addView(strip)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        return LinearLayout(ctx).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.TOP
-            setBackgroundColor(background(ctx))
-            addView(scroller)
-            addView(addCell(ctx, onAdd).apply {
-                with(ctx) { setPadding(dp(XS), dp(XXS), dp(MD), dp(XS)) }
-            })
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         }
     }
 
@@ -702,29 +719,6 @@ object Ui {
                 if (f.caption.isNotEmpty()) append(", ${f.caption}")
                 append(". Opens their photos.")
             }
-            isScreenReaderFocusable = true
-            setOnClickListener { onClick() }
-        }
-    }
-
-    private fun addCell(ctx: Context, onClick: () -> Unit): View {
-        val size = 56
-        val plus = text(ctx, Type.HEADLINE, "+", R.color.pk_primary).apply {
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(surfaceVariant(ctx))
-            }
-            with(ctx) { layoutParams = ViewGroup.LayoutParams(dp(size), dp(size)) }
-        }
-        return cellColumn(ctx).apply {
-            addView(plus)
-            addView(text(ctx, Type.TITLE_SMALL, "Add",
-                R.color.pk_on_surface_variant).apply {
-                gravity = Gravity.CENTER
-                with(ctx) { setPadding(0, dp(XXS), 0, 0) }
-            })
-            contentDescription = "Add someone to the people PixKin saves"
             isScreenReaderFocusable = true
             setOnClickListener { onClick() }
         }

@@ -1,6 +1,5 @@
 package com.picfilter.spike
 
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
@@ -20,10 +19,13 @@ import androidx.activity.ComponentActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import coil.load
+import coil.size.Scale
 import com.picfilter.spike.data.Db
 import com.picfilter.spike.data.DbQueue
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -41,6 +43,12 @@ import kotlinx.coroutines.withContext
  * judgements, which is what the thresholds are then fitted against.
  */
 private const val TAG = "PICFILTER"
+private const val GRID_COLS = 3
+/** Decode target for a grid tile. Bigger than it looks on screen, so a tile
+ *  stays sharp, and far smaller than the source JPEG. */
+private const val THUMB_PX = 320
+/** Decode target for the single large card. */
+private const val CARD_PX = 1400
 
 class ReviewActivity : ComponentActivity() {
 
@@ -48,10 +56,8 @@ class ReviewActivity : ComponentActivity() {
     private lateinit var image: ImageView
     private lateinit var empty: LinearLayout
     private lateinit var bar: android.widget.FrameLayout
-    private lateinit var gridScroll: android.widget.ScrollView
-    private val gridRows by lazy {
-        LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-    }
+    private lateinit var gridView: RecyclerView
+    private val gridAdapter by lazy { GridAdapter() }
     private lateinit var strip: LinearLayout
     private lateinit var info: TextView
     private lateinit var counter: TextView
@@ -67,16 +73,12 @@ class ReviewActivity : ComponentActivity() {
     /** Grid first for the screens you come to look at; card first for the ones
      *  you come to decide. Either way the toggle in the bar switches. */
     private var grid = false
-    private var gridGeneration = 0
     private var queue: List<Card> = emptyList()
     private var idx = 0
     private val history = ArrayDeque<Pair<Int, Long>>()   // (index, id) for undo
 
     /** Every database touch from this screen, serialised; see [DbQueue]. */
     private val dbq by lazy { DbQueue(db) }
-
-    /** The card currently being decoded, so a fast swipe cancels the last one. */
-    private var decode: Job? = null
 
     private companion object {
         const val S_MODE = "mode"
@@ -126,7 +128,6 @@ class ReviewActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        decode?.cancel()
         dbq.closeAfterPending()
     }
 
@@ -179,13 +180,16 @@ class ReviewActivity : ComponentActivity() {
         }
         root.addView(empty)
 
-        gridScroll = android.widget.ScrollView(this).apply {
+        gridView = RecyclerView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
             visibility = View.GONE
-            addView(gridRows)
+            layoutManager = GridLayoutManager(this@ReviewActivity, GRID_COLS)
+            addItemDecoration(GapDecoration(dp(Ui.GRID_GAP)))
+            setHasFixedSize(true)
+            adapter = gridAdapter
         }
-        root.addView(gridScroll)
+        root.addView(gridView)
 
         strip = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -273,7 +277,7 @@ class ReviewActivity : ComponentActivity() {
             // A restored index can be past the end: verdicts recorded before
             // the rotation have taken their items out of the queue.
             idx = if (keepIndex) idx.coerceIn(0, maxOf(loaded.size, 0)) else 0
-            gridRows.removeAllViews()
+            gridAdapter.notifyDataSetChanged()
             render()
         }
     }
@@ -296,57 +300,77 @@ class ReviewActivity : ComponentActivity() {
     }
 
     /**
-     * Three columns, 2dp gaps, square tiles, nothing rounded inside the grid.
-     * Thumbnails arrive off the main thread; [gridGeneration] stops a stale
-     * pass from drawing into a grid that has already been rebuilt.
+     * Three columns, square tiles, 2dp gaps.
+     *
+     * A RecyclerView, because the hand-built version created one FrameLayout
+     * and one ImageView per item inside a ScrollView and recycled nothing. At
+     * 109 items that is invisible; at five thousand it is about 11,700 views
+     * in one layout pass and, since every decoded thumbnail stayed attached to
+     * its ImageView, something like 1.25 GB of bitmaps in an app that already
+     * fights ML Kit for native heap. Now the cost is the tiles on screen --
+     * roughly thirty -- whatever the queue is holding.
+     *
+     * Coil loads them: it keeps a bounded memory cache, cancels the request
+     * when a tile is recycled, and decodes in parallel. The loop it replaces
+     * fetched them one at a time and kept every one.
      */
-    private fun buildGrid() {
-        gridRows.removeAllViews()
-        val gen = ++gridGeneration
-        val cols = 3
-        val gap = dp(Ui.GRID_GAP)
-        val side = (resources.displayMetrics.widthPixels - gap * (cols - 1)) / cols
-        val kept = mode == "verify"          // everything here is already saved
-        val dimmed = mode == "junk"          // and everything here is not
-        val tiles = ArrayList<ImageView>(queue.size)
+    private inner class GridAdapter : RecyclerView.Adapter<GridAdapter.Tile>() {
 
-        var row: LinearLayout? = null
-        for ((i, card) in queue.withIndex()) {
-            if (i % cols == 0) {
-                row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = gap }
-                }
-                gridRows.addView(row)
-            }
-            val tile = Ui.gridTile(
-                this, side, kept, dimmed,
-                label = "${describe(card)} Item ${i + 1} of ${queue.size}. Tap to open.",
-            ).apply {
-                if (i % cols != 0) (layoutParams as LinearLayout.LayoutParams).marginStart = gap
-                setOnClickListener { idx = i; grid = false; buildBar(); render() }
-            }
-            row!!.addView(tile)
-            tiles += tile.getChildAt(0) as ImageView
+        inner class Tile(val view: android.widget.FrameLayout) :
+            RecyclerView.ViewHolder(view) {
+            val image: ImageView = view.getChildAt(0) as ImageView
         }
 
-        lifecycleScope.launch {
-            for ((i, card) in queue.withIndex()) {
-                if (gen != gridGeneration) return@launch
-                val u = uriOf(card) ?: continue
-                val bmp = withContext(Dispatchers.IO) { quickThumb(u) } ?: continue
-                if (gen == gridGeneration) tiles[i].setImageBitmap(bmp)
+        private val side: Int
+            get() = (resources.displayMetrics.widthPixels -
+                dp(Ui.GRID_GAP) * (GRID_COLS - 1)) / GRID_COLS
+
+        override fun getItemCount() = queue.size
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = Tile(
+            Ui.gridTile(
+                this@ReviewActivity, side,
+                kept = mode == "verify",     // everything here is already saved
+                dimmed = mode == "junk",     // and everything here is not
+            )
+        )
+
+        override fun onBindViewHolder(holder: Tile, position: Int) {
+            val card = queue[position]
+            holder.view.contentDescription =
+                "${describe(card)} Item ${position + 1} of ${queue.size}. Tap to open."
+            holder.view.setOnClickListener {
+                idx = holder.bindingAdapterPosition
+                if (idx == RecyclerView.NO_POSITION) return@setOnClickListener
+                grid = false; buildBar(); render()
             }
+            val uri = uriOf(card)
+            if (uri == null) holder.image.setImageDrawable(null)
+            else holder.image.load(Uri.parse(uri)) {
+                size(THUMB_PX)
+                scale(Scale.FILL)
+            }
+        }
+    }
+
+    /** Even gaps between tiles, so the grid needs no margins of its own. */
+    private class GapDecoration(private val gap: Int) : RecyclerView.ItemDecoration() {
+        override fun getItemOffsets(
+            outRect: android.graphics.Rect, view: View,
+            parent: RecyclerView, state: RecyclerView.State,
+        ) {
+            val i = parent.getChildAdapterPosition(view)
+            if (i == RecyclerView.NO_POSITION) return
+            val col = i % GRID_COLS
+            outRect.left = col * gap / GRID_COLS
+            outRect.right = gap - (col + 1) * gap / GRID_COLS
+            if (i >= GRID_COLS) outRect.top = gap
         }
     }
 
     private fun render() {
         if (grid && queue.isNotEmpty()) {
-            if (gridRows.childCount == 0) buildGrid()
-            gridScroll.visibility = View.VISIBLE
+            gridView.visibility = View.VISIBLE
             image.visibility = View.GONE
             empty.visibility = View.GONE
             strip.visibility = View.GONE
@@ -360,7 +384,7 @@ class ReviewActivity : ComponentActivity() {
             }
             return
         }
-        gridScroll.visibility = View.GONE
+        gridView.visibility = View.GONE
         renderCard()
     }
 
@@ -446,39 +470,28 @@ class ReviewActivity : ComponentActivity() {
      * Put a photo on screen without decoding it on the thread that draws.
      *
      * This was `image.setImageBitmap(thumb(uri, 1400))` inline in renderCard:
-     * two full passes over the file (bounds, then pixels) for a 1400px bitmap,
-     * per card, on the UI thread. It is the single heaviest main-thread call in
-     * the app and the reason moving through a queue felt sticky.
+     * two full passes over the file for a 1400px bitmap, per card, on the UI
+     * thread. It is the heaviest main-thread call the app had and the reason
+     * moving through a queue felt sticky.
      *
-     * One decode at a time: moving on cancels the previous card's, so holding
-     * the Keep button down does not queue up a dozen full-size decodes.
+     * Coil now owns it, which also means the previous card's decode is
+     * cancelled when this one starts, and a card you come back to is already
+     * in memory.
      */
-    private fun showImage(uriStr: String, target: Int = 1400) {
-        decode?.cancel()
-        image.setImageDrawable(null)
-        val u = Uri.parse(uriStr)
-        decode = lifecycleScope.launch {
-            val bmp = withContext(Dispatchers.IO) { thumb(u, target) }
-            if (bmp != null) image.setImageBitmap(bmp)
-        }
+    private fun showImage(uriStr: String, target: Int = CARD_PX) {
+        image.load(Uri.parse(uriStr)) { size(target) }
     }
 
-    /** A row of small thumbnails, each decoded off the main thread. */
+    /** A row of small thumbnails. */
     private fun fillStrip(uris: List<String>, onTap: ((Int) -> Unit)? = null) {
         strip.removeAllViews()
         if (uris.isEmpty()) { strip.visibility = View.GONE; return }
         strip.visibility = View.VISIBLE
-        val tiles = uris.mapIndexed { i, _ ->
-            Ui.thumb(this, 80).also { t ->
+        for ((i, u) in uris.withIndex()) {
+            strip.addView(Ui.thumb(this, 80).also { t ->
                 if (onTap != null) t.setOnClickListener { onTap(i) }
-                strip.addView(t)
-            }
-        }
-        lifecycleScope.launch {
-            for ((i, u) in uris.withIndex()) {
-                val bmp = withContext(Dispatchers.IO) { quickThumb(u) } ?: continue
-                tiles[i].setImageBitmap(bmp)
-            }
+                t.load(Uri.parse(u)) { size(THUMB_PX); scale(Scale.FILL) }
+            })
         }
     }
 
@@ -508,11 +521,6 @@ class ReviewActivity : ComponentActivity() {
             "with ${card.row.faces} faces found."
     }
 
-    /** MediaStore's own thumbnail — fast enough to fill a strip on the fly. */
-    private fun quickThumb(uri: String) = try {
-        contentResolver.loadThumbnail(Uri.parse(uri), android.util.Size(256, 256), null)
-    } catch (e: Exception) { null }
-
     /** The next few items in the queue, so the screen shows more than one
      *  suspect at a time. Tapping one jumps straight to it. */
     private fun showUpcoming() {
@@ -521,17 +529,6 @@ class ReviewActivity : ComponentActivity() {
         val base = idx + 1
         fillStrip(uris) { offset -> idx = base + offset; render() }
     }
-
-    private fun thumb(u: Uri, target: Int) = try {
-        val b = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        contentResolver.openInputStream(u)?.use { BitmapFactory.decodeStream(it, null, b) }
-        var s = 1
-        val maxDim = maxOf(b.outWidth, b.outHeight)
-        while (maxDim / (s * 2) >= target) s *= 2
-        contentResolver.openInputStream(u)?.use {
-            BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = s })
-        }
-    } catch (e: Exception) { null }
 
     // ------------------------------------------------------------ actions
 
@@ -565,7 +562,7 @@ class ReviewActivity : ComponentActivity() {
                 }
             }
         }
-        gridRows.removeAllViews()        // the queue changed under the grid
+        gridAdapter.notifyDataSetChanged()   // the queue changed under the grid
         history.addLast(idx to id)
         idx++; render()
     }

@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- PixKin color roles — light theme. Generated from design-tokens.json -->
+<!--
+  PixKin color roles — light.
+
+  "Gallery": paper-white surfaces, ink text, one deep accent used sparingly.
+
+  Three things changed from the first palette, all of them reasons it read as
+  confectionery rather than as something expensive:
+
+  1. The surfaces were within six points of each other (#FFFAF6 / #FFFFFF /
+     #FFF1E6), so a card floated on nothing. They are separated now.
+  2. The accent was full-saturation cherry at #D7263D and it was doing routine
+     work — the loudest colour in the palette sat on a toggle. The claret below
+     is the same hue family, darker and calmer, so it still belongs to the
+     cherry logo while costing less attention.
+  3. Text was #1D1B19 on warm cream. Ink on paper-white carries more contrast
+     and lets the photographs be the colourful thing on screen, which on a
+     photo app is the whole point.
+
+  The brand_* values are the logo's own and are deliberately untouched.
+-->
 <resources>
     <!-- Brand (logo and illustrations only) -->
     <color name="brand_cherry">#FFD7263D</color>
@@ -8,24 +27,24 @@
     <color name="brand_cream">#FFFFF1E6</color>
 
     <!-- Theme roles -->
-    <color name="pk_primary">#FFD7263D</color>
+    <color name="pk_primary">#FF8C1C2B</color>
     <color name="pk_on_primary">#FFFFFFFF</color>
-    <color name="pk_primary_container">#FFFFDADC</color>
-    <color name="pk_on_primary_container">#FF40000B</color>
-    <color name="pk_secondary">#FF237247</color>
+    <color name="pk_primary_container">#FFF6E7E7</color>
+    <color name="pk_on_primary_container">#FF3A0A11</color>
+    <color name="pk_secondary">#FF2F5D45</color>
     <color name="pk_on_secondary">#FFFFFFFF</color>
-    <color name="pk_secondary_container">#FFC9F0D6</color>
-    <color name="pk_on_secondary_container">#FF002110</color>
-    <color name="pk_background">#FFFFFAF6</color>
-    <color name="pk_on_background">#FF1D1B19</color>
+    <color name="pk_secondary_container">#FFDDE8E0</color>
+    <color name="pk_on_secondary_container">#FF102A1E</color>
+    <color name="pk_background">#FFFAF9F7</color>
+    <color name="pk_on_background">#FF16140F</color>
     <color name="pk_surface">#FFFFFFFF</color>
-    <color name="pk_on_surface">#FF1D1B19</color>
-    <color name="pk_surface_variant">#FFFFF1E6</color>
-    <color name="pk_on_surface_variant">#FF5F5A55</color>
-    <color name="pk_outline">#FF8C847D</color>
-    <color name="pk_outline_variant">#FFE7E2DC</color>
-    <color name="pk_error">#FF9A3412</color>
+    <color name="pk_on_surface">#FF16140F</color>
+    <color name="pk_surface_variant">#FFF1EFEB</color>
+    <color name="pk_on_surface_variant">#FF5C564E</color>
+    <color name="pk_outline">#FF8A837A</color>
+    <color name="pk_outline_variant">#FFE3DFD8</color>
+    <color name="pk_error">#FF8A2B10</color>
     <color name="pk_on_error">#FFFFFFFF</color>
-    <color name="pk_success">#FF237247</color>
-    <color name="pk_warning">#FFB45309</color>
+    <color name="pk_success">#FF2F5D45</color>
+    <color name="pk_warning">#FF8A5A12</color>
 </resources>

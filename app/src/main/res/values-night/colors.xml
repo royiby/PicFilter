@@ -1,24 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- PixKin color roles — dark theme. Generated from design-tokens.json -->
+<!--
+  PixKin color roles — dark. The "Gallery" palette after dark: the same ink and
+  paper inverted, with the claret lightened enough to stay legible on it.
+
+  Surfaces are near-neutral rather than warm-brown, because a photograph shown
+  on a tinted ground picks up that tint.
+-->
 <resources>
-    <color name="pk_primary">#FFFF6B7D</color>
-    <color name="pk_on_primary">#FF3B0010</color>
-    <color name="pk_primary_container">#FF8E0F23</color>
-    <color name="pk_on_primary_container">#FFFFDADC</color>
-    <color name="pk_secondary">#FF6FD39A</color>
-    <color name="pk_on_secondary">#FF00391D</color>
-    <color name="pk_secondary_container">#FF0F5132</color>
-    <color name="pk_on_secondary_container">#FFC9F0D6</color>
-    <color name="pk_background">#FF161312</color>
-    <color name="pk_on_background">#FFF5EFEA</color>
-    <color name="pk_surface">#FF221D1B</color>
-    <color name="pk_on_surface">#FFF5EFEA</color>
-    <color name="pk_surface_variant">#FF2E2725</color>
-    <color name="pk_on_surface_variant">#FFB8AFA8</color>
-    <color name="pk_outline">#FF8C847D</color>
-    <color name="pk_outline_variant">#FF3D3532</color>
+    <color name="pk_primary">#FFE39AA4</color>
+    <color name="pk_on_primary">#FF40080F</color>
+    <color name="pk_primary_container">#FF6E1522</color>
+    <color name="pk_on_primary_container">#FFF6E7E7</color>
+    <color name="pk_secondary">#FF8FC2A8</color>
+    <color name="pk_on_secondary">#FF0E2C1E</color>
+    <color name="pk_secondary_container">#FF27503B</color>
+    <color name="pk_on_secondary_container">#FFDDE8E0</color>
+    <color name="pk_background">#FF141312</color>
+    <color name="pk_on_background">#FFEDE9E4</color>
+    <color name="pk_surface">#FF1C1A19</color>
+    <color name="pk_on_surface">#FFEDE9E4</color>
+    <color name="pk_surface_variant">#FF252220</color>
+    <color name="pk_on_surface_variant">#FFB3ABA3</color>
+    <color name="pk_outline">#FF8A837A</color>
+    <color name="pk_outline_variant">#FF35302D</color>
     <color name="pk_error">#FFFFB59E</color>
     <color name="pk_on_error">#FF5C1A06</color>
-    <color name="pk_success">#FF6FD39A</color>
-    <color name="pk_warning">#FFF5A524</color>
+    <color name="pk_success">#FF8FC2A8</color>
+    <color name="pk_warning">#FFE0A94A</color>
 </resources>

@@ -411,6 +411,36 @@ Work that must outlive the screen that started it — un-promoting a photo — g
 to `Background.io` instead, because `lifecycleScope` would cancel it and half an
 un-promotion leaves a file in the backed-up folder with no record of it.
 
+## The review grids at scale
+
+Both photo grids used to build one `FrameLayout` and one `ImageView` per item
+inside a `ScrollView`, recycling nothing, and every decoded thumbnail stayed
+attached to its view. At the 109 items in the verify queue that is invisible.
+Extrapolated to five thousand it is roughly 11,700 views in a single layout
+pass and about 1.25 GB of retained bitmaps, in an app that already fights ML
+Kit for native heap. The queue queries made it reachable too: `limit = -1` is
+SQL `LIMIT -1`, which is unbounded.
+
+They are `RecyclerView` + `GridLayoutManager` now, with Coil loading the
+thumbnails — a bounded memory cache, cancellation when a tile is recycled, and
+parallel decode.
+
+**Measured on the device rather than argued**, on the 109-item verify grid:
+
+| | attached tiles | showing |
+|---|---|---|
+| at the top | 15 | items 1–15 |
+| after scrolling nine rows | **15** | items 61–75 |
+
+Fifteen is what fits on the screen, and it does not move. That is the whole
+claim: the cost of a grid is now its viewport, not its length. Native heap sat
+at 32 MB and Java heap at 20 MB while scrolling.
+
+What is still unmeasured: an actual five-thousand-item queue. The numbers above
+prove the mechanism is right, not that nothing else breaks at that size — the
+queries themselves are still unbounded, and `Paging 3` over them is the next
+step if a real library gets there.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

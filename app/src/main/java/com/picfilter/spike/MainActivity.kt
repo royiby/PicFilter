@@ -321,11 +321,11 @@ class MainActivity : ComponentActivity() {
             })
         }
         if (people > 0) {
+            col.addView(Ui.sectionHeader(this, "People", "Add") { managePeople() })
             col.addView(Ui.peopleRow(
                 this,
                 d.people.map { Ui.Face(it.name, it.subtitle, it.faces) },
                 onPerson = { i -> openPerson(d.people[i]) },
-                onAdd = { managePeople() },
             ))
             col.addView(Ui.body(this, "Photos of these people are kept automatically."))
         } else {

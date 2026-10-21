@@ -8,10 +8,13 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import androidx.activity.ComponentActivity
 import android.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import coil.load
+import coil.size.Scale
 import com.picfilter.spike.data.Db
 import com.picfilter.spike.data.DbQueue
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +22,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val TAG = "PICFILTER"
+private const val GRID_COLS = 3
+private const val THUMB_PX = 320
 
 /**
  * One person: the photos PixKin keeps because they are in them, and the way to
@@ -38,8 +43,9 @@ class PersonActivity : ComponentActivity() {
     private var photos: List<Pair<Long, String>> = emptyList()
 
     private lateinit var root: LinearLayout
-    private lateinit var grid: LinearLayout
+    private lateinit var grid: RecyclerView
     private lateinit var countLine: android.widget.TextView
+    private val adapter by lazy { PhotoAdapter() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -69,12 +75,15 @@ class PersonActivity : ComponentActivity() {
         }
         root.addView(countLine)
 
-        grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(ScrollView(this).apply {
-            addView(grid)
+        grid = RecyclerView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
-        })
+            layoutManager = GridLayoutManager(this@PersonActivity, GRID_COLS)
+            addItemDecoration(GapDecoration(dp(Ui.GRID_GAP)))
+            setHasFixedSize(true)
+            adapter = this@PersonActivity.adapter
+        }
+        root.addView(grid)
 
         root.addView(Ui.wideButton(this, "Remove $personName", Ui.Btn.OUTLINED) { confirmRemove() })
         Ui.applyInsets(root, this, extraBottom = Ui.SM)
@@ -89,50 +98,55 @@ class PersonActivity : ComponentActivity() {
                 1 -> "1 photo kept because $personName is in it."
                 else -> "${photos.size} photos kept because $personName is in them."
             }
-            fillGrid()
+            adapter.notifyDataSetChanged()
         }
     }
 
-    /** Three columns, square tiles, thumbnails off the main thread. */
-    private fun fillGrid() {
-        grid.removeAllViews()
-        val cols = 3
-        val gap = dp(Ui.GRID_GAP)
-        val side = (resources.displayMetrics.widthPixels - gap * (cols - 1)) / cols
-        val tiles = ArrayList<ImageView>(photos.size)
-        var row: LinearLayout? = null
-        for (i in photos.indices) {
-            if (i % cols == 0) {
-                row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply { bottomMargin = gap }
-                }
-                grid.addView(row)
-            }
-            // No kept badge: the line above already says every photo here is
-            // kept, so a tick on all 23 is decoration that has to be read.
-            val tile = Ui.gridTile(
-                this, side, kept = false, dimmed = false,
-                label = "A photo of $personName, ${i + 1} of ${photos.size}.",
-            ).apply {
-                if (i % cols != 0) (layoutParams as LinearLayout.LayoutParams).marginStart = gap
-            }
-            row!!.addView(tile)
-            tiles += tile.getChildAt(0) as ImageView
+    /**
+     * Three columns, recycled. Someone with 2,000 photos is the normal case for
+     * a child, not an edge case, and a view per photo in a ScrollView does not
+     * survive it.
+     */
+    private inner class PhotoAdapter : RecyclerView.Adapter<PhotoAdapter.Tile>() {
+
+        inner class Tile(val view: android.widget.FrameLayout) :
+            RecyclerView.ViewHolder(view) {
+            val image: ImageView = view.getChildAt(0) as ImageView
         }
-        lifecycleScope.launch {
-            for ((i, photo) in photos.withIndex()) {
-                val bmp = withContext(Dispatchers.IO) {
-                    try {
-                        contentResolver.loadThumbnail(
-                            Uri.parse(photo.second), android.util.Size(256, 256), null)
-                    } catch (e: Exception) { null }
-                } ?: continue
-                tiles[i].setImageBitmap(bmp)
+
+        private val side: Int
+            get() = (resources.displayMetrics.widthPixels -
+                dp(Ui.GRID_GAP) * (GRID_COLS - 1)) / GRID_COLS
+
+        override fun getItemCount() = photos.size
+
+        // No kept badge: the line above already says every photo here is kept,
+        // so a tick on all of them is decoration that has to be read.
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
+            Tile(Ui.gridTile(this@PersonActivity, side, kept = false, dimmed = false))
+
+        override fun onBindViewHolder(holder: Tile, position: Int) {
+            holder.view.contentDescription =
+                "A photo of $personName, ${position + 1} of ${photos.size}."
+            holder.image.load(Uri.parse(photos[position].second)) {
+                size(THUMB_PX)
+                scale(Scale.FILL)
             }
+        }
+    }
+
+    /** Even gaps between tiles. */
+    private class GapDecoration(private val gap: Int) : RecyclerView.ItemDecoration() {
+        override fun getItemOffsets(
+            outRect: android.graphics.Rect, view: View,
+            parent: RecyclerView, state: RecyclerView.State,
+        ) {
+            val i = parent.getChildAdapterPosition(view)
+            if (i == RecyclerView.NO_POSITION) return
+            val col = i % GRID_COLS
+            outRect.left = col * gap / GRID_COLS
+            outRect.right = gap - (col + 1) * gap / GRID_COLS
+            if (i >= GRID_COLS) outRect.top = gap
         }
     }
 
