@@ -26,7 +26,15 @@ class DbUpgradeTest {
     @Before fun setUp() = ctx.deleteDatabase(dbName).let { }
     @After fun tearDown() = ctx.deleteDatabase(dbName).let { }
 
-    /** Just enough of the v5 schema for the upgrade to act on. */
+    /**
+     * A real v5 database: everything migrations 1-5 would have built.
+     *
+     * This was "just enough of the v5 schema for the upgrade to act on", and it
+     * passed only because no migration before v8 touched the tables it left
+     * out. v8 adds an index on `label`, which a real v5 database has had since
+     * v2 and this fixture did not -- so the test failed on a schema that cannot
+     * exist. A fixture that is a subset of reality tests a database nobody has.
+     */
     private fun writeV5(withCentroid: Boolean) {
         val f = ctx.getDatabasePath(dbName)
         f.parentFile?.mkdirs()
@@ -50,6 +58,25 @@ class DbUpgradeTest {
             indet INTEGER, text_frac REAL, text_blocks INTEGER, dupe_group INTEGER,
             decision TEXT NOT NULL, reason TEXT, confidence REAL,
             scored_at INTEGER NOT NULL)""")
+        // v2
+        d.execSQL("""CREATE TABLE label(
+            item_id INTEGER PRIMARY KEY, label TEXT NOT NULL, at INTEGER NOT NULL,
+            note TEXT)""")
+        d.execSQL("""CREATE TABLE dupe_verdict(
+            group_id INTEGER PRIMARY KEY, verdict TEXT NOT NULL, at INTEGER NOT NULL)""")
+        // v3
+        d.execSQL("""CREATE TABLE cluster(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, size INTEGER NOT NULL,
+            centroid BLOB NOT NULL, status TEXT, person_id INTEGER,
+            created_at INTEGER NOT NULL)""")
+        d.execSQL("""CREATE TABLE cluster_face(
+            id INTEGER PRIMARY KEY AUTOINCREMENT, cluster_id INTEGER NOT NULL,
+            item_id INTEGER, thumb_path TEXT, orig_px INTEGER, vec BLOB NOT NULL)""")
+        // v4
+        d.execSQL("""CREATE TABLE promotion(
+            item_id INTEGER PRIMARY KEY, dest_uri TEXT, dest_name TEXT,
+            bytes INTEGER, at INTEGER NOT NULL)""")
+
         d.execSQL("INSERT INTO item(id, uri) VALUES(7, 'content://test/7')")
         d.execSQL("""INSERT INTO score(item_id, faces, matched, indet, decision, scored_at)
             VALUES(7, 2, 0, 0, 'DISCARD_CANDIDATE', 1)""")
@@ -78,6 +105,21 @@ class DbUpgradeTest {
         assertEquals(0, db.staleScoreCount())
         assertEquals(0, db.unscoredCount())
         db.close()
+    }
+
+    @Test fun the_upgrade_adds_the_v8_indices() {
+        // v8's indices are what broke this fixture, so pin that they arrive.
+        writeV5(withCentroid = true)
+        Db(ctx, dbName).use { it.readableDatabase }
+        val d = SQLiteDatabase.openOrCreateDatabase(ctx.getDatabasePath(dbName), null)
+        val names = mutableListOf<String>()
+        d.rawQuery("SELECT name FROM sqlite_master WHERE type='index'", null).use { c ->
+            while (c.moveToNext()) names += c.getString(0)
+        }
+        d.close()
+        for (ix in listOf("idx_face_person", "idx_label_label", "idx_score_decision")) {
+            assertTrue("$ix missing after upgrade; have $names", ix in names)
+        }
     }
 
     @Test fun the_upgrade_keeps_the_scored_corpus() {

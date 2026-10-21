@@ -1,7 +1,6 @@
 package com.picfilter.spike
 
 import android.app.AlertDialog
-import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
@@ -21,6 +20,7 @@ import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
+import coil.load
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -224,20 +224,14 @@ class OnboardingActivity : ComponentActivity() {
         }
 
         lifecycleScope.launch {
-            val (n, bmps) = withContext(Dispatchers.IO) {
-                val (count, uris) = Clusterer.whatsAppPreview(this@OnboardingActivity, 4)
-                count to uris.mapNotNull { u ->
-                    try {
-                        contentResolver.loadThumbnail(u, android.util.Size(256, 256), null)
-                    } catch (e: Exception) { null }
-                }
+            val (n, uris) = withContext(Dispatchers.IO) {
+                Clusterer.whatsAppPreview(this@OnboardingActivity, 4)
             }
             count.text = if (n > 0) "$n photos from WhatsApp on this phone"
                          else "No WhatsApp photos found on this phone"
-            for (b in bmps) hero.addView(Ui.previewTile(this@OnboardingActivity).apply {
-                setImageBitmap(b)
-            })
-            if (bmps.isNotEmpty()) hero.visibility = View.VISIBLE
+            for (u in uris) hero.addView(
+                Ui.previewTile(this@OnboardingActivity).also { it.load(u) })
+            if (uris.isNotEmpty()) hero.visibility = View.VISIBLE
         }
     }
 
@@ -342,18 +336,10 @@ class OnboardingActivity : ComponentActivity() {
         root.addView(title("Do you know this person?"))
 
         val strip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val tiles = c.thumbs.map { Ui.thumb(this, 96).also { strip.addView(it) } }
-        val scroll = android.widget.HorizontalScrollView(this).apply { addView(strip) }
-        root.addView(scroll)
-        // Six JPEGs off disk, which is not the drawing thread's job.
-        lifecycleScope.launch {
-            for ((i, path) in c.thumbs.withIndex()) {
-                val bmp = withContext(Dispatchers.IO) {
-                    try { BitmapFactory.decodeFile(path) } catch (e: Exception) { null }
-                } ?: continue
-                tiles[i].setImageBitmap(bmp)
-            }
+        for (path in c.thumbs) {
+            strip.addView(Ui.thumb(this, 96).also { it.load("file://$path") })
         }
+        root.addView(android.widget.HorizontalScrollView(this).apply { addView(strip) })
 
         root.addView(Ui.factRow(this, R.drawable.ic_photo_stack, "In ${c.size} of your photos"))
         root.addView(Ui.factRow(this, R.drawable.ic_lock,
@@ -491,7 +477,6 @@ class OnboardingActivity : ComponentActivity() {
                 "suggested for deletion. If any of these is family, go back and add them."
             ))
             val strip = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-            val pending = ArrayList<Pair<android.widget.ImageView, String>>()
             for (s in skipped.take(10)) {
                 val p = s.thumbs.firstOrNull() ?: continue
                 val cell = LinearLayout(this).apply {
@@ -500,20 +485,12 @@ class OnboardingActivity : ComponentActivity() {
                     layoutParams = LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.WRAP_CONTENT)
                         .apply { setMargins(0, 0, dp(8), 0) }
                 }
-                cell.addView(Ui.thumb(this, 80).also { pending += it to p })
+                cell.addView(Ui.thumb(this, 80).also { it.load("file://$p") })
                 cell.addView(Ui.text(this, Ui.Type.CAPTION, "${s.size} photos",
                     R.color.pk_on_surface_variant))
                 strip.addView(cell)
             }
             col.addView(android.widget.HorizontalScrollView(this).apply { addView(strip) })
-            lifecycleScope.launch {
-                for ((view, path) in pending) {
-                    val bmp = withContext(Dispatchers.IO) {
-                        try { BitmapFactory.decodeFile(path) } catch (e: Exception) { null }
-                    } ?: continue
-                    view.setImageBitmap(bmp)
-                }
-            }
             col.addView(button("Go back and add someone", Ui.Btn.PRIMARY) {
                 loadCandidates()
             })

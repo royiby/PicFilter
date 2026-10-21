@@ -43,10 +43,6 @@ import kotlinx.coroutines.withContext
  * judgements, which is what the thresholds are then fitted against.
  */
 private const val TAG = "PICFILTER"
-private const val GRID_COLS = 3
-/** Decode target for a grid tile. Bigger than it looks on screen, so a tile
- *  stays sharp, and far smaller than the source JPEG. */
-private const val THUMB_PX = 320
 /** Decode target for the single large card. */
 private const val CARD_PX = 1400
 
@@ -57,7 +53,13 @@ class ReviewActivity : ComponentActivity() {
     private lateinit var empty: LinearLayout
     private lateinit var bar: android.widget.FrameLayout
     private lateinit var gridView: RecyclerView
-    private val gridAdapter by lazy { GridAdapter() }
+    private val gridAdapter by lazy {
+        PhotoGridAdapter(
+            this, gridTileSide(this, dp(Ui.GRID_GAP)),
+            kept = mode == "verify",   // everything here is already saved
+            dimmed = mode == "junk",   // and everything here is not
+        ) { at -> idx = at; grid = false; buildBar(); render() }
+    }
     private lateinit var strip: LinearLayout
     private lateinit var info: TextView
     private lateinit var counter: TextView
@@ -185,7 +187,7 @@ class ReviewActivity : ComponentActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
             visibility = View.GONE
             layoutManager = GridLayoutManager(this@ReviewActivity, GRID_COLS)
-            addItemDecoration(GapDecoration(dp(Ui.GRID_GAP)))
+            addItemDecoration(GridGaps(dp(Ui.GRID_GAP)))
             setHasFixedSize(true)
             adapter = gridAdapter
         }
@@ -277,7 +279,7 @@ class ReviewActivity : ComponentActivity() {
             // A restored index can be past the end: verdicts recorded before
             // the rotation have taken their items out of the queue.
             idx = if (keepIndex) idx.coerceIn(0, maxOf(loaded.size, 0)) else 0
-            gridAdapter.notifyDataSetChanged()
+            gridAdapter.submitList(gridItems())
             render()
         }
     }
@@ -299,74 +301,19 @@ class ReviewActivity : ComponentActivity() {
         is DupeCard -> card.members.firstOrNull()?.second
     }
 
-    /**
-     * Three columns, square tiles, 2dp gaps.
-     *
-     * A RecyclerView, because the hand-built version created one FrameLayout
-     * and one ImageView per item inside a ScrollView and recycled nothing. At
-     * 109 items that is invisible; at five thousand it is about 11,700 views
-     * in one layout pass and, since every decoded thumbnail stayed attached to
-     * its ImageView, something like 1.25 GB of bitmaps in an app that already
-     * fights ML Kit for native heap. Now the cost is the tiles on screen --
-     * roughly thirty -- whatever the queue is holding.
-     *
-     * Coil loads them: it keeps a bounded memory cache, cancels the request
-     * when a tile is recycled, and decodes in parallel. The loop it replaces
-     * fetched them one at a time and kept every one.
-     */
-    private inner class GridAdapter : RecyclerView.Adapter<GridAdapter.Tile>() {
-
-        inner class Tile(val view: android.widget.FrameLayout) :
-            RecyclerView.ViewHolder(view) {
-            val image: ImageView = view.getChildAt(0) as ImageView
-        }
-
-        private val side: Int
-            get() = (resources.displayMetrics.widthPixels -
-                dp(Ui.GRID_GAP) * (GRID_COLS - 1)) / GRID_COLS
-
-        override fun getItemCount() = queue.size
-
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = Tile(
-            Ui.gridTile(
-                this@ReviewActivity, side,
-                kept = mode == "verify",     // everything here is already saved
-                dimmed = mode == "junk",     // and everything here is not
-            )
+    /** What the grid shows, derived from the queue. */
+    private fun gridItems(): List<PhotoItem> = queue.mapIndexed { i, card ->
+        PhotoItem(
+            id = when (card) {
+                is ItemCard -> card.row.id
+                is RescueCard -> card.row.id
+                is DupeCard -> card.groupId
+            },
+            uri = uriOf(card),
+            label = "${describe(card)} Item ${i + 1} of ${queue.size}. Tap to open.",
         )
-
-        override fun onBindViewHolder(holder: Tile, position: Int) {
-            val card = queue[position]
-            holder.view.contentDescription =
-                "${describe(card)} Item ${position + 1} of ${queue.size}. Tap to open."
-            holder.view.setOnClickListener {
-                idx = holder.bindingAdapterPosition
-                if (idx == RecyclerView.NO_POSITION) return@setOnClickListener
-                grid = false; buildBar(); render()
-            }
-            val uri = uriOf(card)
-            if (uri == null) holder.image.setImageDrawable(null)
-            else holder.image.load(Uri.parse(uri)) {
-                size(THUMB_PX)
-                scale(Scale.FILL)
-            }
-        }
     }
 
-    /** Even gaps between tiles, so the grid needs no margins of its own. */
-    private class GapDecoration(private val gap: Int) : RecyclerView.ItemDecoration() {
-        override fun getItemOffsets(
-            outRect: android.graphics.Rect, view: View,
-            parent: RecyclerView, state: RecyclerView.State,
-        ) {
-            val i = parent.getChildAdapterPosition(view)
-            if (i == RecyclerView.NO_POSITION) return
-            val col = i % GRID_COLS
-            outRect.left = col * gap / GRID_COLS
-            outRect.right = gap - (col + 1) * gap / GRID_COLS
-            if (i >= GRID_COLS) outRect.top = gap
-        }
-    }
 
     private fun render() {
         if (grid && queue.isNotEmpty()) {
@@ -490,7 +437,7 @@ class ReviewActivity : ComponentActivity() {
         for ((i, u) in uris.withIndex()) {
             strip.addView(Ui.thumb(this, 80).also { t ->
                 if (onTap != null) t.setOnClickListener { onTap(i) }
-                t.load(Uri.parse(u)) { size(THUMB_PX); scale(Scale.FILL) }
+                t.load(Uri.parse(u)) { size(GRID_THUMB_PX); scale(Scale.FILL) }
             })
         }
     }
@@ -562,7 +509,7 @@ class ReviewActivity : ComponentActivity() {
                 }
             }
         }
-        gridAdapter.notifyDataSetChanged()   // the queue changed under the grid
+        gridAdapter.submitList(gridItems())   // the queue changed under the grid
         history.addLast(idx to id)
         idx++; render()
     }

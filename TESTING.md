@@ -9,9 +9,9 @@ made.
 ## Running it
 
 ```bash
-./gradlew :app:testDebugUnitTest         # 56 JVM tests, ~5s, no device
+./gradlew :app:testDebugUnitTest         # 62 JVM tests, ~5s, no device
 scripts/db-backup.sh save                # cheap insurance; see the note below
-./gradlew :app:connectedDebugAndroidTest # 44 instrumented tests, needs a phone
+./gradlew :app:connectedDebugAndroidTest # 45 instrumented tests, needs a phone
 scripts/smoke.sh static                  # repo checks, no device
 scripts/smoke.sh                         # full device walk-through
 ```
@@ -253,6 +253,26 @@ Details that cost a measurement each:
   harness does not kill the Android service.
 - Worker retries are now bounded: a pass that is broken rather than unlucky
   otherwise respawns `:scoring` and re-reads the whole library indefinitely.
+
+### What StrictMode still reports, and why it is left alone
+
+A clean launch logs 8 violations and **none of them name our code**. Seven come
+from Samsung's framework — `IdsController.openIdsWindow` calling
+`deleteSharedPreferences` inside `handleResumeActivity` — and one from Coil,
+which touches its disk cache on the main thread when a view attaches and the
+request restarts. All are around a millisecond.
+
+Count what is ours rather than what mentions us:
+
+```bash
+adb logcat -d | grep 'D StrictMode:' | grep -c 'com.picfilter.spike'
+```
+
+That grep is deliberate. A looser one (`grep -A 30 'policy violation'`) sweeps
+in neighbouring log lines that merely contain the package name and reported six
+violations that did not exist. The same mistake with `AndroidRuntime` reported
+six crashes that were the `uiautomator` command starting up. **A count is only
+as good as what it is counting.**
 
 `picfilter.db` is now opened from two processes. SQLite coordinates with file
 locks so that is safe, but a concurrent UI read can still surface as

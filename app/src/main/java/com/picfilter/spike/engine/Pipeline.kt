@@ -167,17 +167,23 @@ object Pipeline {
                     val img = eng.decode(ctx, uri) ?: run { dead++; null } ?: continue
                     val obs = eng.observe(img)
 
-                    // This item may be a rescore after an enrolment change.
-                    db.clearFaces(itemId)
+                    // One transaction for the whole item: a clear plus a row
+                    // per detected face is otherwise a separate commit each,
+                    // and a crowd photo can hold a dozen faces.
                     var matched = 0; var indet = 0
-                    for (o in obs) {
-                        val (state, pid, sim) = eng.match(o, centroids, thresholds)
-                        when (state) {
-                            MatchState.MATCH -> matched++
-                            MatchState.INDETERMINATE -> indet++
-                            MatchState.NO_MATCH -> {}
+                    db.inTransaction {
+                        // This item may be a rescore after an enrolment change.
+                        db.clearFaces(itemId)
+                        for (o in obs) {
+                            val (state, pid, sim) = eng.match(o, centroids, thresholds)
+                            when (state) {
+                                MatchState.MATCH -> matched++
+                                MatchState.INDETERMINATE -> indet++
+                                MatchState.NO_MATCH -> {}
+                            }
+                            db.addFace(itemId, o.origPx, o.sharpness, o.yaw, o.roll,
+                                state.name, pid, sim)
                         }
-                        db.addFace(itemId, o.origPx, o.sharpness, o.yaw, o.roll, state.name, pid, sim)
                     }
 
                     // Only read text when it can change the answer. decide()
@@ -307,10 +313,12 @@ object Pipeline {
         val groups = HashMap<Long, MutableList<Long>>()
         for ((id, _) in all) groups.getOrPut(find(id)) { mutableListOf() } += id
         var multi = 0; var extra = 0
-        for ((root, members) in groups) {
-            if (members.size < 2) continue
-            multi++; extra += members.size - 1
-            for (m in members) db.setDupeGroup(m, root)
+        db.inTransaction {
+            for ((root, members) in groups) {
+                if (members.size < 2) continue
+                multi++; extra += members.size - 1
+                for (m in members) db.setDupeGroup(m, root)
+            }
         }
         Log.i(TAG, "DUPES groups=$multi redundant_items=$extra (hamming<=$DUPE_HAMMING)")
     }

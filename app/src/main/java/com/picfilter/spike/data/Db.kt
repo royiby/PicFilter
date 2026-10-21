@@ -14,7 +14,7 @@ import java.nio.ByteOrder
  * one -- an instrumented test runs as this package and would otherwise scribble
  * on the user's own scored corpus.
  */
-class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name, null, 7) {
+class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name, null, 8) {
 
     override fun onCreate(d: SQLiteDatabase) {
         d.execSQL("""CREATE TABLE person(
@@ -56,6 +56,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         createV7(d)
         d.execSQL("CREATE INDEX idx_face_item ON face(item_id)")
         d.execSQL("CREATE INDEX idx_item_bucket ON item(bucket)")
+        createV8(d)
     }
 
     private fun createV2(d: SQLiteDatabase) {
@@ -129,6 +130,25 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         try { d.execSQL("ALTER TABLE promotion ADD COLUMN synced_at INTEGER") } catch (e: Exception) { }
     }
 
+    /**
+     * The indices the hot queries were missing.
+     *
+     * EXPLAIN QUERY PLAN on the real database showed full table SCANs for the
+     * two columns the app filters on most: face.person_id, which every
+     * per-person screen and every avatar rebuild uses, and label.label, which
+     * both home counters read on every launch. At 1,846 face rows a scan is
+     * free, which is exactly why this went unnoticed; the cost arrives with
+     * the library, not with the code.
+     *
+     * score.decision earns one for the same reason -- queueSizes() filters on
+     * it four times per home screen.
+     */
+    private fun createV8(d: SQLiteDatabase) {
+        d.execSQL("CREATE INDEX IF NOT EXISTS idx_face_person ON face(person_id)")
+        d.execSQL("CREATE INDEX IF NOT EXISTS idx_label_label ON label(label)")
+        d.execSQL("CREATE INDEX IF NOT EXISTS idx_score_decision ON score(decision)")
+    }
+
     override fun onUpgrade(d: SQLiteDatabase, old: Int, new: Int) {
         // Additive only — the scored corpus is expensive to rebuild.
         if (old < 2) createV2(d)
@@ -137,6 +157,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         if (old < 5) createV5(d)
         if (old < 6) createV6(d)
         if (old < 7) createV7(d)
+        if (old < 8) createV8(d)
     }
 
     // ---------- centroid revision ----------
@@ -303,6 +324,26 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
             arrayOf(centroidRev().toString(), limit.toString())
         ).use { c -> while (c.moveToNext()) out += Triple(c.getLong(0), c.getString(1), c.getInt(2)) }
         return out
+    }
+
+    /**
+     * Run [block] as one transaction.
+     *
+     * SQLite commits every statement on its own otherwise, which means an
+     * fsync each. The write-heavy paths do hundreds in a row -- a scoring pass
+     * writes a face row per detected face, clustering persisted 435 of them in
+     * one go -- so batching is the difference between one flush and hundreds.
+     */
+    fun <T> inTransaction(block: () -> T): T {
+        val db = writableDatabase
+        db.beginTransaction()
+        return try {
+            val r = block()
+            db.setTransactionSuccessful()
+            r
+        } finally {
+            db.endTransaction()
+        }
     }
 
     fun setDhash(itemId: Long, h: Long) =

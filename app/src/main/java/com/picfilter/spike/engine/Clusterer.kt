@@ -196,9 +196,12 @@ object Clusterer {
             for (j in 0 until dim) centroid[j] /= idxs.size
             l2(centroid)
             val cid = db.addCluster(idxs.size, centroid)
-            for (i in idxs) {
-                val (itemId, thumb, px) = meta[i]
-                db.addClusterFace(cid, itemId, thumb, px, vecs[i])
+            // 435 face rows on a real library, one commit instead of 435.
+            db.inTransaction {
+                for (i in idxs) {
+                    val (itemId, thumb, px) = meta[i]
+                    db.addClusterFace(cid, itemId, thumb, px, vecs[i])
+                }
             }
             if (idxs.size >= 2) kept++
         }
@@ -659,6 +662,53 @@ object Clusterer {
             }
         }
         return copied
+    }
+
+    /**
+     * The crop that shows the most face, as a path. An aligned crop whose 112x112 window
+     * ran off the edge of its photo is empty there, and JPEG stores that as
+     * black — a wedge across the circle. Candidates arrive biggest first, so
+     * take the first clean one and only keep looking while there is black.
+
+     * Returns a path rather than a bitmap: the caller hands it to Coil, which
+     * caches it. This used to decode up to six crops per person on every draw
+     * of the home screen and keep none of them.
+     */
+    fun cleanestCrop(paths: List<String>): String? {
+        var best: String? = null
+        var bestScore = Float.MAX_VALUE
+        for (path in paths) {
+            val bmp = try {
+                android.graphics.BitmapFactory.decodeFile(path)
+            } catch (e: Exception) { null } ?: continue
+            val score = blackBorder(bmp)
+            bmp.recycle()
+            if (score < bestScore) { best = path; bestScore = score }
+            if (bestScore <= 0.01f) break
+        }
+        return best ?: paths.firstOrNull()
+    }
+
+    /** Fraction of the outer ring of [bmp] that is near-black. */
+    private fun blackBorder(bmp: android.graphics.Bitmap): Float {
+        val w = bmp.width; val h = bmp.height
+        if (w < 8 || h < 8) return 1f
+        val px = IntArray(w * h)
+        bmp.getPixels(px, 0, w, 0, 0, w, h)
+        val ring = maxOf(2, minOf(w, h) / 12)
+        var dark = 0; var seen = 0
+        for (y in 0 until h) {
+            val edgeRow = y < ring || y >= h - ring
+            for (x in 0 until w) {
+                if (!edgeRow && x >= ring && x < w - ring) continue
+                val p = px[y * w + x]
+                seen++
+                val lum = ((p shr 16 and 0xFF) * 299 + (p shr 8 and 0xFF) * 587 +
+                    (p and 0xFF) * 114) / 1000
+                if (lum < 20) dark++
+            }
+        }
+        return if (seen == 0) 1f else dark.toFloat() / seen
     }
 
     private fun saveThumb(ctx: Context, bmp: Bitmap, name: String): String? = try {

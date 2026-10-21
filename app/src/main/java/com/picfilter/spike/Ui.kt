@@ -22,6 +22,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.imageview.ShapeableImageView
 import com.google.android.material.shape.CornerFamily
+import coil.load
 import com.google.android.material.shape.ShapeAppearanceModel
 
 /**
@@ -34,6 +35,10 @@ import com.google.android.material.shape.ShapeAppearanceModel
  * plus selection states.
  */
 object Ui {
+
+    /** Decode target for a face circle. */
+    private const val FACE_PX = 160
+
 
     // ---------- spacing (4dp grid) ----------
 
@@ -630,7 +635,8 @@ object Ui {
 
     /** One entry in the people row. [thumbPaths] are face crops on disk,
      *  biggest first; the cleanest of them becomes the avatar. */
-    data class Face(val name: String, val caption: String, val thumbPaths: List<String>)
+    /** [facePath] is already chosen; see [Clusterer.cleanestCrop]. */
+    data class Face(val name: String, val caption: String, val facePath: String?)
 
     /**
      * The people whose photos PixKin keeps, as face circles. Crops are decoded
@@ -722,14 +728,16 @@ object Ui {
         }
         val img = circle(ctx, size)
         stack.addView(img)
-        // A bare thread on purpose, and the one place it is still right: this is
-        // a stateless factory with no lifecycle to scope to, it holds no
-        // reference to an Activity, and View.post on a detached view drops the
-        // work rather than crashing. Bounded by the number of enrolled people.
-        if (f.thumbPaths.isNotEmpty()) Thread {
-            val bmp = bestCrop(f.thumbPaths)
-            if (bmp != null) img.post { img.setImageBitmap(bmp) }
-        }.start()
+        // Coil, like every other image in the app. This was the last bare
+        // thread: it decoded up to six crops to pick the cleanest, every time
+        // the home screen was drawn, with no cache. The picking moved to the
+        // background pass that already reads this data, and the loading to the
+        // loader that already has a memory cache.
+        // A file:// Uri rather than a File: Coil stats a File on the calling
+        // thread while building the request, and that calling thread is the one
+        // drawing the frame. One millisecond, but StrictMode is right about it
+        // and the Uri costs nothing.
+        f.facePath?.let { img.load("file://$it") { size(FACE_PX) } }
 
         return cellColumn(ctx).apply {
             addView(stack)
@@ -753,48 +761,6 @@ object Ui {
         }
     }
 
-    /**
-     * The crop that shows the most face. An aligned crop whose 112x112 window
-     * ran off the edge of its photo is empty there, and JPEG stores that as
-     * black — a wedge across the circle. Candidates arrive biggest first, so
-     * take the first clean one and only keep looking while there is black.
-     */
-    private fun bestCrop(paths: List<String>): android.graphics.Bitmap? {
-        var best: android.graphics.Bitmap? = null
-        var bestScore = Float.MAX_VALUE
-        for (path in paths) {
-            val bmp = try {
-                android.graphics.BitmapFactory.decodeFile(path)
-            } catch (e: Exception) { null } ?: continue
-            val score = blackBorder(bmp)
-            if (score < bestScore) { best?.recycle(); best = bmp; bestScore = score }
-            else bmp.recycle()
-            if (bestScore <= 0.01f) break
-        }
-        return best
-    }
-
-    /** Fraction of the outer ring of [bmp] that is near-black. */
-    private fun blackBorder(bmp: android.graphics.Bitmap): Float {
-        val w = bmp.width; val h = bmp.height
-        if (w < 8 || h < 8) return 1f
-        val px = IntArray(w * h)
-        bmp.getPixels(px, 0, w, 0, 0, w, h)
-        val ring = maxOf(2, minOf(w, h) / 12)
-        var dark = 0; var seen = 0
-        for (y in 0 until h) {
-            val edgeRow = y < ring || y >= h - ring
-            for (x in 0 until w) {
-                if (!edgeRow && x >= ring && x < w - ring) continue
-                val p = px[y * w + x]
-                seen++
-                val lum = ((p shr 16 and 0xFF) * 299 + (p shr 8 and 0xFF) * 587 +
-                    (p and 0xFF) * 114) / 1000
-                if (lum < 20) dark++
-            }
-        }
-        return if (seen == 0) 1f else dark.toFloat() / seen
-    }
 
     // ---------- facts and states ----------
 

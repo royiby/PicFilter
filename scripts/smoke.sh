@@ -58,10 +58,18 @@ fi
 
 # Kotlin `when` takes the FIRST matching branch, so a duplicated op name binds
 # the earlier handler and the later one is dead. "promote" was bound twice.
-DUPES=$(grep -oE '^\s+"[a-z]+"\s+->' app/src/main/java/com/picfilter/spike/MainActivity.kt \
-  | grep -oE '"[a-z]+"' | sort | uniq -d)
-if [[ -z $DUPES ]]; then
-  pass "op names in MainActivity are unique"
+#
+# The ops moved from MainActivity to DevOps.kt, and this check kept passing
+# against the file they left -- a check that greps the wrong file does not fail,
+# it goes quiet. So it counts what it found and fails on zero.
+OPS_FILE=app/src/main/java/com/picfilter/spike/DevOps.kt
+OPS=$(grep -oE '^\s+"[a-z]+"\s+->' $OPS_FILE | grep -oE '"[a-z]+"' | sort)
+OPS_N=$(echo "$OPS" | grep -c . || true)
+DUPES=$(echo "$OPS" | uniq -d)
+if [[ ${OPS_N:-0} -lt 20 ]]; then
+  fail "only ${OPS_N:-0} ops found in $OPS_FILE — is this still the right file?"
+elif [[ -z $DUPES ]]; then
+  pass "op names are unique ($OPS_N ops in $(basename $OPS_FILE))"
 else
   fail "duplicate op names (the later handler is dead code): $DUPES"
 fi
