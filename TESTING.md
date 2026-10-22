@@ -11,7 +11,7 @@ made.
 ```bash
 ./gradlew :app:testDebugUnitTest         # 62 JVM tests, ~5s, no device
 scripts/db-backup.sh save                # cheap insurance; see the note below
-./gradlew :app:connectedDebugAndroidTest # 45 instrumented tests, needs a phone
+./gradlew :app:connectedDebugAndroidTest # 56 instrumented tests, needs a phone
 scripts/smoke.sh static                  # repo checks, no device
 scripts/smoke.sh                         # full device walk-through
 ```
@@ -77,7 +77,8 @@ Real SQLite, real WorkManager, on a device.
 | `ScoreStalenessTest` *(also)* | Rewriting a threshold it already holds invalidates nothing. The bump restales every score — 641 of them, three passes and two minutes of face detection — so a fitter agreeing with itself must be free, or it becomes the most expensive thing it does. |
 | `PersonFaceTest` | A row is not a file. Crops live in the app's own storage while the database holds their paths, so a wipe leaves rows pointing at nothing — and an empty thumb list is what marks someone as needing repair, so it has to mean "no file", not "no row". Got this wrong twice: 160 candidate cards with no face on them, and the people row stuck on initials while the repair believed there was nothing to fix. |
 | `RemovePersonTest` | Taking someone out of the enrolled set, by blast radius: everyone else untouched, photos already rescued left alone, their cluster returned to the unclaimed pool so a mistake is undone by naming rather than by re-running the scan, and only the items that matched *them* requeued — removing a person can turn a MATCH into a NO_MATCH and nothing else. |
-| `WatcherArmingTest` | Re-arming the content trigger never cancels a trigger already waiting. Arming used `REPLACE`, and since every app open re-arms to heal a broken chain, routine use kept resetting the trigger — and cancelled a run in progress during testing. Also: a cancelled slot is re-armable, so a force-stop is recoverable. |
+| `WatcherArmingTest` | Re-arming the content trigger never cancels a trigger already waiting. Arming used `REPLACE`, and since every app open re-arms to heal a broken chain, routine use kept resetting the trigger — and cancelled a run in progress during testing. Also: a cancelled slot is re-armable, so a force-stop is recoverable. And `healSchedule`, case by case: a recorded intent with nothing scheduled re-arms (the restore), an intent of off is never overridden, no recorded intent changes nothing, and healing an intact schedule does not replace the waiting trigger. |
+| `AutoSaveIntentTest` | Where the auto-save intent is stored, which is the point of it: in `picfilter.db`, so it travels with a backup; null on a fresh database rather than false, so the heal cannot read "never asked" as "turned off"; and surviving a close and reopen, which is the only way it reaches a restored install. |
 
 **Every DB test passes an explicit database name.** Instrumented tests run as
 the app's own package, so a test using the default name would scribble on the
@@ -674,6 +675,65 @@ I PICFILTER: AVATAR done people_fixed=5
 That path was written for crops deleted from under the app, and it covers the
 package rename for free. The thresholds and labels are in the database, so
 nothing was re-decided: `bar=0.70` is the restored value.
+
+### Auto-save did not survive it either, and that one was silent
+
+The crops announce themselves — the people row shows initials until the rebuild
+runs. Auto-save said nothing. It came up **off** on an install that otherwise
+looked complete, and it would have stayed off.
+
+There was no setting behind that toggle. `Watcher.isEnabled` asked WorkManager
+whether `picfilter-watch` had unfinished work, and WorkManager keeps its
+schedule in `no_backup/androidx.work.workdb`, private to the applicationId and
+carried by no backup. `db-backup.sh` moves `picfilter.db` alone, so the restore
+produced an install with every person, label and threshold intact and nothing
+scheduled. The two packages still showed it: the old one reported
+`net=[ENQUEUED] a=[ENQUEUED] b=[SUCCEEDED]`, slot B having actually run a
+trigger cycle, and the new one `b=[]`.
+
+The heal that existed could not see this. It was
+
+```kotlin
+if (watchOn && !armed) Watcher.enable(ctx)
+```
+
+which repairs a half-broken chain but needs auto-save to be **on already** — and
+the thing that was wrong was that it read as off. It healed the schedule from
+the schedule.
+
+So the user's *intent* is now recorded separately, in `meta` in the database,
+because the database is what gets backed up. `Watcher.healSchedule(ctx, wanted)`
+reads the intent and brings the schedule to it. The intent is null until someone
+has said either way, and null must not read as false: the first launch writes
+down whatever WorkManager already held, so an existing install with auto-save
+running keeps it.
+
+Verified on the phone by reproducing the restore exactly — remove WorkManager's
+database and leave `picfilter.db` alone:
+
+```bash
+adb shell am force-stop com.pixkin.app
+adb shell "run-as com.pixkin.app sh -c 'rm -f no_backup/androidx.work.workdb*'"
+adb shell am start -S -n com.pixkin.app/com.picfilter.spike.MainActivity
+```
+
+```
+I PICFILTER: WATCH heal: wanted on, nothing scheduled -- re-arming
+I PICFILTER: WATCH stat net=[ENQUEUED] a=[ENQUEUED] b=[] enabled=true armed=true
+```
+
+**The negative case is the one that matters**, because a fix that re-arms too
+eagerly overrides someone who deliberately turned it off. With the intent set to
+off and WorkManager wiped the same way, the launch logs no heal at all and
+`watchstat` reports `enabled=false armed=false`.
+
+A reinstall or a clear-data is a different matter and is left alone: everything
+private goes, the database with it, and the user re-enrols from scratch. The
+asymmetry only exists where the database comes back and the schedule does not.
+
+`op=watchon` and `op=watchoff` now write the intent as well as the schedule.
+They used to set only the schedule, which the next launch would heal straight
+back — a diagnostic that undid itself.
 
 ## What is not covered yet
 

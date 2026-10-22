@@ -141,8 +141,11 @@ internal fun MainActivity.dispatch(op: String) {
             putExtra("first_run", "1")
             intent?.getStringExtra("step")?.let { putExtra("step", it) }
         })
-        "watchon"   -> Thread { com.picfilter.spike.engine.Watcher.enable(this) }.start()
-        "watchoff"  -> Thread { com.picfilter.spike.engine.Watcher.disable(this) }.start()
+        // Intent as well as schedule: the home screen heals the schedule back
+        // towards the recorded intent, so an op that set only the schedule
+        // would be undone by the next launch.
+        "watchon"   -> Thread { setWatchIntent(true); com.picfilter.spike.engine.Watcher.enable(this) }.start()
+        "watchoff"  -> Thread { setWatchIntent(false); com.picfilter.spike.engine.Watcher.disable(this) }.start()
         "watchnow"  -> Thread { com.picfilter.spike.engine.Watcher.runNow(this) }.start()
         "watchstat" -> Thread { com.picfilter.spike.engine.Watcher.status(this) }.start()
         "pickenrol" -> Thread {
@@ -470,4 +473,11 @@ internal fun MainActivity.verify() {
     }
     Log.i(TAG, "SPIKE2 after_dialog trashed=$trashed live=$live")
     tv.text = "trashed=$trashed live=$live"
+}
+
+private fun MainActivity.setWatchIntent(on: Boolean) {
+    val db = com.picfilter.spike.data.Db(this)
+    try { db.setAutoSaveWanted(on) }
+    catch (e: android.database.SQLException) { Log.w(TAG, "DEV watch intent: ${e.message}") }
+    finally { db.close() }
 }

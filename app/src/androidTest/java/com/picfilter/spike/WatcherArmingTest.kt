@@ -75,6 +75,80 @@ class WatcherArmingTest {
         }
     }
 
+    // ---------- healing the schedule from the recorded intent ----------
+
+    /**
+     * The restore case, and the reason healSchedule exists.
+     *
+     * A restored database carries the people, the labels and the intent;
+     * WorkManager's own database is private to the applicationId and does not
+     * travel, so nothing is scheduled. The old heal was
+     * `if (isEnabled && !isArmed) enable()`, which needed auto-save to be on
+     * already and so could never see this.
+     */
+    @Test fun a_restored_intent_with_no_schedule_re_arms() {
+        assertFalse("nothing scheduled to begin with", Watcher.isEnabled(ctx))
+
+        val on = Watcher.healSchedule(ctx, wanted = true)
+
+        assertTrue("must report itself on", on)
+        assertTrue("the net must be back", Watcher.isEnabled(ctx))
+        assertTrue("and a trigger armed", Watcher.isArmed(ctx))
+    }
+
+    @Test fun intent_off_leaves_an_empty_schedule_alone() {
+        assertFalse(Watcher.healSchedule(ctx, wanted = false))
+        assertFalse(Watcher.isEnabled(ctx))
+        assertFalse(Watcher.isArmed(ctx))
+    }
+
+    /** Intent off but work somehow scheduled: the intent wins. */
+    @Test fun intent_off_cancels_work_scheduled_behind_it() {
+        Watcher.enable(ctx)
+        assertTrue(Watcher.isEnabled(ctx))
+
+        assertFalse(Watcher.healSchedule(ctx, wanted = false))
+
+        assertFalse("the user said off", Watcher.isEnabled(ctx))
+        assertFalse(Watcher.isArmed(ctx))
+    }
+
+    /**
+     * No intent recorded: whatever WorkManager holds is the answer, and
+     * healing must not invent a schedule. HomeViewModel writes the returned
+     * value down, so this is asked once per install.
+     */
+    @Test fun no_recorded_intent_reports_the_schedule_and_changes_nothing() {
+        assertFalse("off stays off", Watcher.healSchedule(ctx, wanted = null))
+        assertFalse(Watcher.isEnabled(ctx))
+
+        Watcher.enable(ctx)
+        assertTrue("on stays on", Watcher.healSchedule(ctx, wanted = null))
+        assertTrue(Watcher.isEnabled(ctx))
+    }
+
+    /** The case the old heal did cover, which must keep working. */
+    @Test fun a_broken_chain_is_healed_from_the_intent_too() {
+        Watcher.enable(ctx)
+        WorkManager.getInstance(ctx).cancelUniqueWork(slotA)
+        assertFalse(Watcher.isArmed(ctx))
+
+        assertTrue(Watcher.healSchedule(ctx, wanted = true))
+        assertTrue("trigger must be back", Watcher.isArmed(ctx))
+    }
+
+    @Test fun healing_an_intact_schedule_does_not_replace_the_trigger() {
+        Watcher.enable(ctx)
+        val before = WorkManager.getInstance(ctx)
+            .getWorkInfosForUniqueWork(slotA).get().single().id
+
+        assertTrue(Watcher.healSchedule(ctx, wanted = true))
+
+        val after = WorkManager.getInstance(ctx).getWorkInfosForUniqueWork(slotA).get()
+        assertEquals("the same waiting trigger", 1, after.size)
+        assertEquals(before, after.single().id)
+    }
+
     @Test fun arming_is_recoverable_after_a_broken_chain() {
         // A force-stop leaves the net alive and the trigger gone. Opening the
         // app calls enable() again, which must put a trigger back.

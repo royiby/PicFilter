@@ -187,6 +187,35 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         return next
     }
 
+    // ---------- auto-save intent ----------
+
+    /**
+     * Whether the user wants auto-save on, as distinct from whether it is
+     * currently scheduled.
+     *
+     * This lives in the database rather than in SharedPreferences on purpose.
+     * WorkManager keeps its schedule in `no_backup/androidx.work.workdb`, which
+     * is private to the applicationId and comes across in no backup, so a
+     * restored database used to arrive with every person and label intact and
+     * nothing scheduled -- auto-save reading "off" on an install that looked
+     * complete. The database is the thing that gets backed up and restored, so
+     * the intent travels with it and [Watcher.healSchedule] can act on it.
+     *
+     * Null means no one has ever said: an install that predates this key, or a
+     * genuinely new one. The caller decides what that means, because only it
+     * can see whether work is already scheduled.
+     */
+    fun autoSaveWanted(): Boolean? =
+        readableDatabase.rawQuery("SELECT v FROM meta WHERE k='autosave_wanted'", null)
+            .use { if (it.moveToFirst()) it.getString(0) == "1" else null }
+
+    fun setAutoSaveWanted(on: Boolean) {
+        writableDatabase.execSQL(
+            "INSERT OR REPLACE INTO meta(k, v) VALUES('autosave_wanted', ?)",
+            arrayOf<Any>(if (on) "1" else "0")
+        )
+    }
+
     /** Items whose score predates the current centroid revision. */
     fun staleScoreCount(): Int =
         readableDatabase.rawQuery(

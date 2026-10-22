@@ -68,11 +68,24 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun toggleWatcher(on: Boolean) {
+    /**
+     * Turn auto-save on or off, where [currentlyOn] is the state the user just
+     * tapped. The intent is written before the scheduling, so a crash in
+     * between leaves something [Watcher.healSchedule] can finish.
+     *
+     * The Activity used to inline this, which left this function dead and the
+     * intent recorded nowhere.
+     */
+    fun toggleWatcher(currentlyOn: Boolean) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 val ctx = getApplication<Application>()
-                if (on) Watcher.disable(ctx) else Watcher.enable(ctx)
+                val want = !currentlyOn
+                val db = Db(ctx)
+                try { db.setAutoSaveWanted(want) }
+                catch (e: SQLException) { Log.w(TAG, "WATCH intent not saved: ${e.message}") }
+                finally { db.close() }
+                if (want) Watcher.enable(ctx) else Watcher.disable(ctx)
             }
             refresh()
         }
@@ -161,6 +174,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
                 saved = db.promotedForReview(limit = 5).map { it.uri },
                 rescue = db.rescueQueue(limit = 5).map { it.uri },
                 noface = db.rescueQueue(listOf("NO_FACE_PLAIN"), limit = 5).map { it.uri },
+                wanted = db.autoSaveWanted(),
             )
         } catch (e: SQLException) {
             Log.w(TAG, "HOME read failed, showing an empty screen: ${e.message}")
@@ -190,11 +204,22 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
 
-        val watchOn = Watcher.isEnabled(ctx)
-        // A force-stop or a failed run can break the content-trigger chain
-        // while the periodic net keeps going. Re-arm whenever the app opens.
+        // The old heal here was `if (watchOn && !armed) enable()`, which could
+        // repair a half-broken chain but never a missing one, because it needed
+        // auto-save to be on already. A restored database arrives with the
+        // intent and no schedule at all, which is exactly the case it could not
+        // see. healSchedule reads the intent instead of the schedule.
+        val watchOn = Watcher.healSchedule(ctx, r.wanted)
         val armed = Watcher.isArmed(ctx)
-        if (watchOn && !armed) Watcher.enable(ctx)
+        // First launch after this shipped, or a genuinely new install: write
+        // down what WorkManager already held so the question is answered from
+        // then on. Once per install, hence the short-lived handle.
+        if (r.wanted == null) {
+            val db = Db(ctx)
+            try { db.setAutoSaveWanted(watchOn) }
+            catch (e: SQLException) { Log.w(TAG, "WATCH intent not recorded: ${e.message}") }
+            finally { db.close() }
+        }
 
         return HomeData(
             promoted = r.promoted, notSaved = r.notSaved, undecided = r.undecided,
@@ -216,5 +241,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val saved: List<String> = emptyList(),
         val rescue: List<String> = emptyList(),
         val noface: List<String> = emptyList(),
+        /** Null until someone has said either way; see [Db.autoSaveWanted]. */
+        val wanted: Boolean? = null,
     )
 }

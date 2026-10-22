@@ -25,9 +25,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import coil.load
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.picfilter.spike.engine.Pipeline
 import com.picfilter.spike.engine.Sweep
 import java.io.FileNotFoundException
@@ -209,15 +207,10 @@ class MainActivity : ComponentActivity() {
         // read 435 next to queues the user had emptied.
         col.addView(Ui.cellRow(this, listOf(
             Ui.statCell(this, d.promoted, getString(R.string.stat_saved)),
-            Ui.toggleCell(this, d.watchOn) {
-                lifecycleScope.launch {
-                    withContext(Dispatchers.IO) {
-                        if (d.watchOn) com.picfilter.spike.engine.Watcher.disable(this@MainActivity)
-                        else com.picfilter.spike.engine.Watcher.enable(this@MainActivity)
-                    }
-                    observeHome()
-                }
-            },
+            // The ViewModel owns this: it records the intent in the database
+            // as well as scheduling the work, and it survives the rotation
+            // that doing it here in a lifecycleScope did not.
+            Ui.toggleCell(this, d.watchOn) { vm.toggleWatcher(d.watchOn) },
             Ui.statCell(this, d.notSaved, getString(R.string.stat_not_saved)),
         )))
 

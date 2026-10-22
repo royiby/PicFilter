@@ -97,6 +97,59 @@ object Watcher {
         Log.i(TAG, "WATCH disabled")
     }
 
+    /**
+     * Bring the schedule back in line with what the user asked for, and report
+     * the state the screen should show.
+     *
+     * Three things can leave the two disagreeing:
+     *
+     *  - A restored database. WorkManager keeps its schedule in
+     *    `no_backup/androidx.work.workdb`, private to the applicationId, and
+     *    `db-backup.sh` moves `picfilter.db` alone. So a restore -- including
+     *    the move from com.picfilter.spike to com.pixkin.app -- used to arrive
+     *    with every person, label and threshold intact and nothing scheduled.
+     *    Auto-save read "off" on an install that looked complete, and stayed
+     *    off until someone noticed the toggle, because the only heal we had
+     *    needed it to be on already.
+     *  - A force-stop or a failed run, which breaks the content-trigger chain
+     *    while the periodic net keeps going.
+     *  - Nothing at all: a new install, where `wanted` is null and whatever
+     *    WorkManager holds is the truth.
+     *
+     * This decides scheduling only. Recording the intent is the caller's job,
+     * because the intent lives in the database and this object has no business
+     * opening one.
+     */
+    fun healSchedule(ctx: Context, wanted: Boolean?): Boolean {
+        val scheduled = isEnabled(ctx)
+        return when {
+            // Nobody has ever said. Whatever is scheduled is the answer, and
+            // the caller writes it down so this stops being ambiguous.
+            wanted == null -> scheduled
+            !wanted -> {
+                // Intent says off. Normally disable() already cancelled the
+                // work, so this only fires if something scheduled it behind
+                // the user's back.
+                if (scheduled) {
+                    Log.i(TAG, "WATCH heal: intent is off but work was scheduled; cancelling")
+                    disable(ctx)
+                }
+                false
+            }
+            !scheduled -> {
+                Log.i(TAG, "WATCH heal: wanted on, nothing scheduled -- re-arming")
+                enable(ctx)
+                true
+            }
+            !isArmed(ctx) -> {
+                Log.i(TAG, "WATCH heal: net is up but no trigger armed -- re-arming")
+                enable(ctx)
+                true
+            }
+            else -> true
+        }
+    }
+
     fun runNow(ctx: Context) {
         WorkManager.getInstance(ctx).enqueue(OneTimeWorkRequestBuilder<WatchWorker>().build())
         Log.i(TAG, "WATCH one-off run enqueued")
