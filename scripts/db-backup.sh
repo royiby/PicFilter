@@ -49,6 +49,9 @@ case ${1:-save} in
     SRC=${2:?usage: scripts/db-backup.sh restore <file>}
     [[ $(head -c 15 "$SRC" 2>/dev/null) == "SQLite format 3" ]] || {
       echo "not a SQLite database: $SRC"; exit 1; }
+    # Anything still holding the old database will flush its own pages over the
+    # file after the copy, so the app stops before the file moves under it.
+    $ADB shell am force-stop $PKG
     $ADB push "$SRC" /data/local/tmp/restore.db >/dev/null
     # A freshly reinstalled app has no databases/ directory -- it is created
     # when the app first opens the database. Restoring after an instrumented
@@ -61,9 +64,11 @@ case ${1:-save} in
     # EACCES on /data/data; and run-as's sh does not inherit the app data dir as
     # cwd, so the path has to be absolute too.
     $ADB shell "run-as $PKG sh -c 'cat /data/local/tmp/restore.db > /data/data/$PKG/databases/picfilter.db'"
-    # A stale rollback journal beside a replaced database can be applied over it
-    # on the next open, undoing part of what was just restored.
-    $ADB shell "run-as $PKG sh -c 'rm -f /data/data/$PKG/databases/picfilter.db-journal'"
+    # Stale sidecars beside a replaced database get applied over it on the next
+    # open, undoing part of what was just restored. The -journal is the rollback
+    # journal; -wal and -shm are the write-ahead log, which SQLite will happily
+    # replay on top of a file it was never written for.
+    $ADB shell "run-as $PKG sh -c 'rm -f /data/data/$PKG/databases/picfilter.db-journal /data/data/$PKG/databases/picfilter.db-wal /data/data/$PKG/databases/picfilter.db-shm'"
     $ADB shell rm -f /data/local/tmp/restore.db
     echo "restored $SRC"
     ;;

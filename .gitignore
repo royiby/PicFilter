@@ -30,3 +30,6 @@ app/src/main/assets/*.tflite
 keystore.properties
 *.jks
 *.keystore
+
+# press kit: screenshots of a real family library. Never commit.
+/press/

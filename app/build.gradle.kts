@@ -30,6 +30,33 @@ android {
         versionName = "0.4.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    /**
+     * Release signing, if a keystore has been provided.
+     *
+     * keystore.properties is gitignored and never committed -- the key is the
+     * developer's identity, and a key in a public repository is a key anyone
+     * can sign as you with. Without the file the release build is simply
+     * unsigned, which fails loudly at install rather than silently shipping a
+     * debug-signed APK.
+     *
+     * This block has to come BEFORE buildTypes: findByName is evaluated when
+     * buildTypes is configured, so declaring it after silently hands the
+     * release build a null signing config and produces an unsigned APK.
+     */
+    signingConfigs {
+        val props = rootProject.file("keystore.properties")
+        if (props.exists()) {
+            create("release") {
+                val k = Properties()
+                props.inputStream().use { k.load(it) }
+                storeFile = rootProject.file(k.getProperty("storeFile"))
+                storePassword = k.getProperty("storePassword")
+                keyAlias = k.getProperty("keyAlias")
+                keyPassword = k.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
             // R8 is off: it needs keep rules for TFLite's and ML Kit's
@@ -48,28 +75,6 @@ android {
         }
     }
 
-    /**
-     * Release signing, if a keystore has been provided.
-     *
-     * keystore.properties is gitignored and never committed -- the key is the
-     * developer's identity, and a key in a public repository is a key anyone
-     * can sign as you with. Without the file the release build is simply
-     * unsigned, which fails loudly at install rather than silently shipping a
-     * debug-signed APK.
-     */
-    signingConfigs {
-        val props = rootProject.file("keystore.properties")
-        if (props.exists()) {
-            create("release") {
-                val k = Properties()
-                props.inputStream().use { k.load(it) }
-                storeFile = rootProject.file(k.getProperty("storeFile"))
-                storePassword = k.getProperty("storePassword")
-                keyAlias = k.getProperty("keyAlias")
-                keyPassword = k.getProperty("keyPassword")
-            }
-        }
-    }
     androidResources { noCompress += "tflite" }
 
     compileOptions {

@@ -256,11 +256,22 @@ Details that cost a measurement each:
 
 ### What StrictMode still reports, and why it is left alone
 
-A clean launch logs 8 violations and **none of them name our code**. Seven come
-from Samsung's framework — `IdsController.openIdsWindow` calling
-`deleteSharedPreferences` inside `handleResumeActivity` — and one from Coil,
-which touches its disk cache on the main thread when a view attaches and the
-request restarts. All are around a millisecond.
+A clean launch logs 8 violations and seven come from Samsung's framework —
+`IdsController.openIdsWindow` calling `deleteSharedPreferences` inside
+`handleResumeActivity`. The eighth is Coil touching its disk cache on the main
+thread when a view attaches and the request restarts. All are around a
+millisecond.
+
+**One of the eight does name our code**, and the frame is misleading. On the
+first launch after a restore the Coil violation carries
+`HomeViewModel.refresh` at `_home.value = data` (3 ms, `DiskReadViolation`).
+The database read there is already inside `withContext(Dispatchers.IO)`; what
+runs on the main thread is the collector that the assignment resumes
+synchronously, which binds the avatar requests, and Coil's `enqueue` looks in
+its own disk cache before handing off. The I/O is Coil's, not ours, and moving
+our read would not remove it — but the frame is ours, so it is counted here
+rather than filed under the framework. Left alone at 3 ms, once, on first
+render.
 
 Count what is ours rather than what mentions us:
 
@@ -587,6 +598,82 @@ because its parent column was, and then wrapped but was cut off because the
 cell matched a row height set by its shorter neighbours. It now autosizes
 within two lines and the tallest cell sets the row height. Spanish, French and
 German hit the same wall and clear it the same way.
+
+## The debug gate, on a real release build
+
+`DevOps.kt` refuses every op unless `BuildConfig.DEBUG`. That claim could not
+be made from a device until there was a signed release to install, so it shipped
+argued rather than demonstrated. It is demonstrated now.
+
+A release build needs a key, and the developer's real release key must not be
+used for a test — so the verification used a one-day throwaway keystore
+generated outside the repository, with `keystore.properties` deleted and the
+key destroyed afterwards. `apksigner verify --print-certs` confirmed which
+certificate signed the APK before any device result was trusted, and
+`aapt2 dump badging` confirmed `com.pixkin.app`, no `application-debuggable`,
+`arm64-v8a` alone.
+
+The permission grant is the part that makes or breaks the test.
+`MainActivity.onNewIntent` stashes the op and returns when the app has no full
+image access, so firing ops at a fresh install exercises the permission check
+and never reaches `dispatch` at all — a pass that proves nothing. Grant first:
+
+```bash
+adb shell pm grant com.pixkin.app android.permission.READ_MEDIA_IMAGES
+for op in reset clearlabels promote; do
+  adb shell am start -S -n com.pixkin.app/com.picfilter.spike.MainActivity --es op $op
+done
+adb logcat -d | grep -E 'PixKin start|DEV op'
+```
+
+All three reached `dispatch` and were refused:
+
+```
+I PICFILTER: === PixKin start op=reset sdk=37 ===
+W PICFILTER: DEV op 'reset' ignored: diagnostics are debug-build only
+```
+
+`findByName` is evaluated when `buildTypes` is configured, so `signingConfigs`
+has to be declared **before** `buildTypes` in `app/build.gradle.kts`. Declared
+after, as it originally was, the release build silently takes a null signing
+config and emits `app-release-unsigned.apk`. Nothing warns; the build succeeds.
+The check is the filename.
+
+### Restoring across the applicationId change
+
+The enrolment is hand-made work that cannot be regenerated, so the old
+package's database was saved before anything was installed, and the restore was
+verified by reading it back:
+
+```bash
+PKG=com.picfilter.spike scripts/db-backup.sh save   # old id
+scripts/db-backup.sh restore backups/<that file>    # new id
+scripts/db-backup.sh save                           # read it back
+shasum -a 256 backups/*.db                          # must match
+```
+
+646 items, 5 people, 535 labels, 113 promotions, 12 centroids, and the round
+trip was byte-identical.
+
+Two faults in `db-backup.sh` surfaced only by doing this. It removed a stale
+`-journal` beside the replaced file but not `-wal`/`-shm`, and SQLite will
+replay a write-ahead log over a database it was never written for; and it did
+not stop the app, which can flush its own pages over the file after the copy.
+Both are fixed.
+
+The face crops do **not** come across — they lived in the old package's
+private files directory, which the new package has no access to. The app
+detects that it has no face to show and rebuilds from the library:
+
+```
+I PICFILTER: AVATAR 5 of 5 have no face to show; rebuilding
+I PICFILTER: AVATAR גבע saved=4 rejected=0 bar=0.70
+I PICFILTER: AVATAR done people_fixed=5
+```
+
+That path was written for crops deleted from under the app, and it covers the
+package rename for free. The thresholds and labels are in the database, so
+nothing was re-decided: `bar=0.70` is the restored value.
 
 ## What is not covered yet
 
