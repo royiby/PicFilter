@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Nothing leaves the device, including by backup.
+
+  picfilter.db holds which photos contain which family member, and the face
+  crops beside it are pictures of children. The app's whole proposition is
+  that this stays on the phone; allowing it into cloud backup or a
+  device-to-device transfer would quietly undo that. allowBackup is false as
+  well, so this file is belt and braces for the transfer path.
+
+  The cost is honest and small: a new phone re-runs setup. The rescued photos
+  themselves are in shared storage and are backed up by Google Photos, which
+  is the entire point of the app.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+    </device-transfer>
+</data-extraction-rules>

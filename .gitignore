@@ -25,3 +25,8 @@ app/src/main/assets/*.tflite
 
 # device database snapshots: real person names and photo filenames
 /backups/
+
+# Release signing. The key is an identity; it does not belong in a repo.
+keystore.properties
+*.jks
+*.keystore

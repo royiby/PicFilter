@@ -12,8 +12,8 @@ review records opinions, and the only destructive operations
 source env.sh
 ./gradlew :app:assembleDebug
 adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk
-adb -s <serial> shell pm grant com.picfilter.spike android.permission.READ_MEDIA_IMAGES
-adb -s <serial> shell pm grant com.picfilter.spike android.permission.ACCESS_MEDIA_LOCATION
+adb -s <serial> shell pm grant com.pixkin.app android.permission.READ_MEDIA_IMAGES
+adb -s <serial> shell pm grant com.pixkin.app android.permission.ACCESS_MEDIA_LOCATION
 ```
 
 **Always check which APK is actually installed.** A failed build plus
@@ -68,10 +68,10 @@ no-op unless each gets a distinct action.
 
 ```bash
 R() {
-  adb -s <serial> shell am force-stop com.picfilter.spike
+  adb -s <serial> shell am force-stop com.pixkin.app
   sleep 3
   adb -s <serial> logcat -c
-  adb -s <serial> shell am start -n com.picfilter.spike/.MainActivity \
+  adb -s <serial> shell am start -n com.pixkin.app/com.picfilter.spike.MainActivity \
     -a "picfilter.OP.$(date +%s)$RANDOM" --es op "$1" "${@:2}"
 }
 ```
@@ -190,8 +190,8 @@ Photos by hand.
 Read the labels back with:
 
 ```bash
-adb -s <serial> shell "run-as com.picfilter.spike sqlite3 \
-  /data/data/com.picfilter.spike/databases/picfilter.db \
+adb -s <serial> shell "run-as com.pixkin.app sqlite3 \
+  /data/data/com.pixkin.app/databases/picfilter.db \
   'SELECT label, COUNT(*) FROM label GROUP BY label;'"
 ```
 

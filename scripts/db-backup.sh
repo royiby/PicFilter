@@ -10,7 +10,11 @@
 #   scripts/db-backup.sh restore <file>
 set -euo pipefail
 
-PKG=com.picfilter.spike
+# The install id. It changed from com.picfilter.spike to com.pixkin.app before
+# first release, so a database saved from the old build restores into the new
+# one with: PKG=com.picfilter.spike scripts/db-backup.sh save
+#            scripts/db-backup.sh restore <that file>
+PKG=${PKG:-com.pixkin.app}
 ADB=${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}
 DIR=backups
 

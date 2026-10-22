@@ -574,8 +574,8 @@ well, so "La photo conservée est vérifiée" would have been shown for none.
 Test a locale without changing the phone's own language:
 
 ```bash
-adb shell cmd locale set-app-locales com.picfilter.spike --locales he
-adb shell cmd locale set-app-locales com.picfilter.spike --locales ""   # back to default
+adb shell cmd locale set-app-locales com.pixkin.app --locales he
+adb shell cmd locale set-app-locales com.pixkin.app --locales ""   # back to default
 ```
 
 **Verified by screenshot in all four**, because this is the class of bug that

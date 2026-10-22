@@ -45,6 +45,16 @@ private const val WA_FILTER = "%com.whatsapp%"
  * nothing. The two that come back to the UI are scoped; see below.
  */
 internal fun MainActivity.dispatch(op: String) {
+    // MainActivity is exported -- it has to be, it is the launcher -- and this
+    // runs off an intent extra. Without this gate any app on the device could
+    // start it with op=reset or op=clearlabels and destroy work the user spent
+    // hours on, with no permission of any kind. Every op in this file has been
+    // driven from the shell all along, which is the same path a hostile app
+    // would take.
+    if (!BuildConfig.DEBUG) {
+        Log.w(TAG, "DEV op '$op' ignored: diagnostics are debug-build only")
+        return
+    }
     // Nested lambdas shadow `this` (a CoroutineScope inside launch, a
     // ContentValues inside apply), so the Activity is held by name.
     val act = this

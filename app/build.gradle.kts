@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
 }
@@ -7,7 +9,12 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.picfilter.spike"
+        // The id users install under. Permanent once anyone has it, which is
+        // why it is not com.picfilter.spike: shipping "spike" forever, under a
+        // name that is not the product's, is a decision you only get to make
+        // once. The Kotlin package stays as it is -- renaming that moves every
+        // file for no user-visible gain.
+        applicationId = "com.pixkin.app"
         // 33, not 30. Every path in the app gates on READ_MEDIA_IMAGES, and
         // that permission does not exist before Android 13 -- on 11 and 12 the
         // constant is just a string naming nothing, the request can never be
@@ -24,7 +31,44 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            // R8 is off: it needs keep rules for TFLite's and ML Kit's
+            // reflection, and getting those wrong fails at runtime in a build
+            // that compiled cleanly. Turning it on means re-running the
+            // embedding equality check in TESTING.md.
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
+            ndk {
+                // 90 MB of this app's 122 MB is four copies of the same native
+                // libraries. x86 and x86_64 are emulators; armeabi-v7a is 32-bit
+                // hardware that does not ship Android 13, which is our minSdk.
+                // One ABI, for the phones that can actually run it.
+                abiFilters += "arm64-v8a"
+            }
+        }
+    }
+
+    /**
+     * Release signing, if a keystore has been provided.
+     *
+     * keystore.properties is gitignored and never committed -- the key is the
+     * developer's identity, and a key in a public repository is a key anyone
+     * can sign as you with. Without the file the release build is simply
+     * unsigned, which fails loudly at install rather than silently shipping a
+     * debug-signed APK.
+     */
+    signingConfigs {
+        val props = rootProject.file("keystore.properties")
+        if (props.exists()) {
+            create("release") {
+                val k = Properties()
+                props.inputStream().use { k.load(it) }
+                storeFile = rootProject.file(k.getProperty("storeFile"))
+                storePassword = k.getProperty("storePassword")
+                keyAlias = k.getProperty("keyAlias")
+                keyPassword = k.getProperty("keyPassword")
+            }
+        }
     }
     androidResources { noCompress += "tflite" }
 

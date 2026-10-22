@@ -6,10 +6,11 @@ backed-up one — on-device, with no account and no network.
 On the phone it was built against, **609 of 714 images (85%) came from
 WhatsApp.**
 
-> **Naming.** The product is PixKin. The repository, the package
-> (`com.picfilter.spike`) and the destination folder (`Pictures/PicFilter`) are
-> still PicFilter — renaming them costs a reinstall and an orphaned rescue
-> folder, so it has not been done.
+> **Naming.** The product is PixKin and it installs as `com.pixkin.app`. The
+> repository, the Kotlin package (`com.picfilter.spike`) and the destination
+> folder (`Pictures/PicFilter`) are still PicFilter: the install id is the only
+> one a user ever sees and the only one that is permanent once released, so
+> that is the one that was changed.
 
 ## Why it is not a website
 
@@ -283,6 +284,41 @@ rescue queues, and the `verify` queue that supplies matches has 109 items and
 none reviewed; most of the rescued photos were promoted under the old 0.55 bar
 and would not be rescued today; 315 WhatsApp videos are entirely unhandled; no
 instrumented test clicks a review button.
+
+## Releasing
+
+The app is distributed as an APK from the project page, not through an app
+store. See [models/PROVENANCE.md](models/PROVENANCE.md) first: the model
+weights are a third-party artifact whose training data is MS-Celeb-1M, which
+Microsoft withdrew, and that is a real constraint on distribution rather than
+a footnote. **The weights are not in this repository** — `.gitignore` excludes
+them and `scripts/fetch_model.sh` fetches them from the original MIT-licensed
+project with a SHA-256 check, so cloning this repo distributes no model.
+
+```bash
+# one-time: make a signing key and tell Gradle where it is
+keytool -genkey -v -keystore pixkin-release.jks -keyalg RSA         -keysize 2048 -validity 10000 -alias pixkin
+cat > keystore.properties <<'EOF'
+storeFile=pixkin-release.jks
+storePassword=...
+keyAlias=pixkin
+keyPassword=...
+EOF
+
+./gradlew :app:assembleRelease     # app/build/outputs/apk/release/
+```
+
+`keystore.properties` and `*.jks` are gitignored. Without them the release
+build is simply unsigned and fails at install, rather than quietly shipping
+something debug-signed.
+
+The release APK is **51 MB** against the debug build's 122 MB: it carries one
+ABI, `arm64-v8a`. x86 and x86_64 are emulators, and armeabi-v7a is 32-bit
+hardware that does not run Android 13, which is the minimum here.
+
+The adb diagnostics in `DevOps.kt` are **debug-only**. `MainActivity` is
+exported, so without that gate any app on the device could start it with
+`op=reset` and destroy the user's work, needing no permission at all.
 
 ## Build
 

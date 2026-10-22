@@ -12,7 +12,7 @@
 # phone.
 set -uo pipefail
 
-PKG=com.picfilter.spike
+PKG=${PKG:-com.pixkin.app}
 APK=app/build/outputs/apk/debug/app-debug.apk
 ADB=${ADB:-$HOME/Library/Android/sdk/platform-tools/adb}
 STAGE=${1:-all}
