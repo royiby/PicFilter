@@ -928,6 +928,108 @@ before uninstalling is the whole reason to diff rather than just delete.
 then there are two schedulers, two scoring processes and two sets of rescued
 files competing over one library.
 
+## Onboarding, and the crash every new user would have hit
+
+Opening setup crashed the app before it drew anything:
+
+```
+FATAL EXCEPTION: main
+Caused by: java.lang.RuntimeException: An exception happened in constructor of
+    class com.picfilter.spike.OnboardingViewModel
+Caused by: java.lang.ClassCastException: java.lang.String cannot be cast to
+    java.lang.Boolean
+    at com.picfilter.spike.OnboardingViewModel.<init>(OnboardingViewModel.kt:44)
+```
+
+**A SavedStateHandle is seeded from the launching intent's extras, keyed by the
+extra's own name.** `S_FIRST` is `"first_run"`, and the launcher sent
+`putExtra("first_run", "1")` — a String. The constructor read it as a Boolean.
+
+The path that sends that extra is `MainActivity`'s first-run branch, which fires
+when `shouldOnboard()` is true, which is true when nobody is enrolled. So the
+crash was reachable by exactly one population: **people who had just installed
+the app.** Anyone with a person enrolled never took the branch, which is why it
+survived every run of this project on a phone that has five.
+
+Reproduced with the intent in its genuine shape, no `step` extra, nothing else:
+
+```bash
+adb shell am start -S -n com.pixkin.app/com.picfilter.spike.MainActivity --es op onboard
+```
+
+Both halves are fixed. The launchers pass a Boolean, and [firstRunFlag] no
+longer assumes they did — the reader is total, because adb can only ever send a
+string and the next launcher is not written yet. `FirstRunFlagTest` pins the
+cases and, more importantly, pins that **nothing throws**: the bug was not a
+wrong answer, it was an exception in a constructor.
+
+### A key that is a ViewModel's and an intent's at once
+
+The lesson is larger than the cast. Any `SavedStateHandle` key that matches an
+intent-extra name is two things at once, and the intent gets there first. The
+other keys here — `step`, `idx`, `named`, `grid` — are safe only because
+`"step"` happens to be a String on both sides. Prefer keys that cannot collide,
+or read them the way `firstRunFlag` does.
+
+### The step jump only ever worked for one screen
+
+`op=onboard --es step <name>` is documented in the code as jumping "straight to
+one screen, for looking at it alone". It honoured `"backup"` and silently fell
+through to the intro for every other value, so the screens it exists to inspect
+could not be inspected — and the only other way to reach them is by tapping the
+buttons that enrol people into the user's real database. Now any name in
+`OnboardingViewModel.STEPS` is honoured.
+
+### Blank rectangles where faces should be
+
+With the jump working, the summary drew "Worth a second look" over four empty
+tiles captioned "13 photos", "12 photos", "11 photos", "9 photos".
+
+The stored crop paths are absolute and contain the package name:
+
+```
+/data/user/0/com.picfilter.spike/files/face_thumbs/41409_17.jpg
+```
+
+The app is `com.pixkin.app` now, so every one of them is dead. The enrolled
+people recovered because `maybeRebuildAvatars` regenerates their crops from the
+library; the unclaimed clusters had nothing to rebuild them.
+
+`skippedClusters` was the third place needing the filter that `candidates` and
+`personThumbs` already carry — and `personThumbs`'s own comment says
+"[candidates] carries this same filter, for the same reason", naming two of the
+three. **A comment that lists where an invariant is enforced is a list that goes
+stale.** A cluster with no face left on disk is now dropped rather than shown
+faceless, following `candidates`.
+
+**The root cause is worth more than the fix: absolute paths into app-private
+storage were persisted in a database that outlives the package name.** A path
+relative to `filesDir` would have survived the rename untouched. The rows are
+still stale on this phone; only a re-scan regenerates them.
+
+### Found and not fixed: a warning that reads the wrong counter
+
+The summary says "0 people enrolled" and, beneath it, "You haven't enrolled
+anyone. Until you do, every group photo — including photos of your own family —
+will be treated as a deletion candidate."
+
+Both are gated on `named`, which counts people enrolled **in this run of
+onboarding**, not people enrolled at all. On a genuine first run they agree. For
+someone who already has five people and reaches this screen having named nobody
+new, the sentence is a false and alarming claim about their database. `Db` has
+`enrolledCount()` already, which is what the warning is actually about.
+
+Left alone deliberately: whether that state is reachable through the "Add" flow
+was not established, and a wrong change to a warning about deleting family
+photos is worse than a warning that is sometimes over-cautious.
+
+### Inspecting setup without enrolling anyone
+
+Same discipline as the review screen. `STEP_SCAN` only *shows* progress — the
+scan is started by a button — so every step is safe to view and only a tap
+writes. person, centroid, cluster, cluster_face, face, label and promotion were
+hashed before and after the whole pass and all seven are unchanged.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

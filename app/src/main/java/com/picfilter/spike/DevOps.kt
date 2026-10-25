@@ -138,7 +138,7 @@ internal fun MainActivity.dispatch(op: String) {
         // in to look at it without clearing anyone's enrolment.
         "onboard"   -> startActivity(android.content.Intent().apply {
             component = ComponentName(act, OnboardingActivity::class.java)
-            putExtra("first_run", "1")
+            putExtra("first_run", true)
             intent?.getStringExtra("step")?.let { putExtra("step", it) }
         })
         // Intent as well as schedule: the home screen heals the schedule back

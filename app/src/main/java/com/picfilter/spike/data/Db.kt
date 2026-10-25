@@ -795,7 +795,21 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
                     "SELECT thumb_path FROM cluster_face WHERE cluster_id=? AND thumb_path IS NOT NULL ORDER BY orig_px DESC LIMIT 1",
                     arrayOf(id.toString())
                 ).use { t -> while (t.moveToNext()) thumbs += t.getString(0) }
-                out += Candidate(id, c.getInt(1), thumbs)
+                // The same filter [candidates] and [personThumbs] carry, and
+                // the third place it was needed. A row is not a file: these
+                // paths are absolute and contain the app's own package name, so
+                // clearing data, reinstalling, or changing the applicationId
+                // leaves every one of them pointing at nothing. Without this
+                // the summary drew "Worth a second look" over a row of blank
+                // rectangles with photo counts under them.
+                //
+                // A cluster with no face left to show is dropped rather than
+                // shown faceless: the screen's whole question is "do you
+                // recognise this person", which is unanswerable without a face.
+                // The cost is that a warning about unclaimed faces disappears
+                // when their crops do, which is the better of two bad screens.
+                val onDisk = thumbs.filter { java.io.File(it).exists() }
+                if (onDisk.isNotEmpty()) out += Candidate(id, c.getInt(1), onDisk)
             }
         }
         return out

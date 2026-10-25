@@ -41,7 +41,13 @@ class OnboardingViewModel(app: Application, private val state: SavedStateHandle)
     var candidates: List<Db.Candidate> = emptyList(); private set
     var idx: Int = state[S_IDX] ?: 0; private set
     var named: Int = state[S_NAMED] ?: 0; private set
-    val firstRun: Boolean = state[S_FIRST] ?: false
+    // state[S_FIRST] is NOT only what markFirstRun wrote. A SavedStateHandle is
+    // seeded from the Activity's intent extras, and the key is the extra's name,
+    // so whatever the launcher put under "first_run" arrives here first. It was
+    // the string "1", and reading it as a Boolean threw ClassCastException in
+    // this constructor -- before onCreate had drawn anything -- on the one path
+    // a new user always takes. See [firstRunFlag].
+    val firstRun: Boolean = firstRunFlag(state.get<Any>(S_FIRST))
 
     /** Read once per visit to the summary. */
     var skipped: List<Db.Candidate>? = null; private set
@@ -144,9 +150,32 @@ class OnboardingViewModel(app: Application, private val state: SavedStateHandle)
         const val STEP_SUMMARY = "summary"
         const val STEP_BACKUP = "backup"
 
+        /** Every step name, for the `step` extra that jumps straight to one. */
+        val STEPS = setOf(
+            STEP_INTRO, STEP_SCAN, STEP_NOFACES, STEP_CANDIDATE, STEP_SUMMARY, STEP_BACKUP,
+        )
+
         private const val S_STEP = "step"
         private const val S_IDX = "idx"
         private const val S_NAMED = "named"
         private const val S_FIRST = "first_run"
     }
+}
+
+/**
+ * Read a first-run flag that may have come from either side.
+ *
+ * A ViewModel's SavedStateHandle is seeded from the launching intent's extras,
+ * so this value can be the Boolean [OnboardingViewModel.markFirstRun] stored or
+ * the raw extra the Activity was started with -- and adb can only send strings,
+ * so a dev op cannot pass a Boolean at all. Casting blind crashed the app on a
+ * genuine first run. Total by construction: anything unrecognised is false,
+ * because the cost of a wrong false is the intro copy reading slightly off and
+ * the cost of a throw here is an app that cannot be opened.
+ */
+internal fun firstRunFlag(value: Any?): Boolean = when (value) {
+    is Boolean -> value
+    is String -> value == "1" || value.equals("true", ignoreCase = true)
+    is Number -> value.toInt() == 1
+    else -> false
 }

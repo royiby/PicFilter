@@ -119,7 +119,9 @@ class MainActivity : ComponentActivity() {
             Log.i(TAG, "FIRSTRUN nobody enrolled - starting onboarding")
             startActivity(android.content.Intent().apply {
                 component = ComponentName(this@MainActivity, OnboardingActivity::class.java)
-                putExtra("first_run", "1")
+                // A Boolean, not "1": this extra seeds OnboardingViewModel's
+                // SavedStateHandle under the same key it reads.
+                putExtra("first_run", true)
             })
         }
     }

@@ -78,11 +78,15 @@ class OnboardingActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             vm.markFirstRun(intent?.getStringExtra("first_run") == "1")
             // "step" jumps straight to one screen, for looking at it alone.
+            // It used to honour "backup" and silently ignore every other value,
+            // so the screens this exists to inspect all showed the intro
+            // instead -- and the only other way to reach them is by tapping the
+            // buttons that enrol people.
             val jump = intent?.getStringExtra("step")
             // "resume" skips the scan and works from clusters already
             // extracted -- for adding people later, and for regrouping.
             when {
-                jump == "backup" -> vm.goTo(OnboardingViewModel.STEP_BACKUP)
+                jump in OnboardingViewModel.STEPS -> vm.goTo(jump!!)
                 // "Add" from the home screen resumes into the cards rather
                 // than the intro: the user has been through setup already.
                 intent?.getStringExtra("resume") == "1" -> vm.loadCandidates {
