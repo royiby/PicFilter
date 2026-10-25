@@ -235,4 +235,26 @@
     <string name="backup_folder_later">PixKin creará esa carpeta con la primera foto que guarde</string>
     <string name="backup_already_safe">Las fotos que ya tienen copia de seguridad se quedan donde están.</string>
     <string name="backup_open_photos">Abrir Google Photos</string>
+
+    <string name="tally_so_far">Hasta ahora: %1$s</string>
+    <plurals name="tally_kept">
+        <item quantity="one">%d guardada</item>
+        <item quantity="other">%d guardadas</item>
+    </plurals>
+    <plurals name="tally_not_saved">
+        <item quantity="one">%d sin guardar</item>
+        <item quantity="other">%d sin guardar</item>
+    </plurals>
+    <plurals name="tally_skipped">
+        <item quantity="one">%d omitida</item>
+        <item quantity="other">%d omitidas</item>
+    </plurals>
+    <plurals name="tally_same">
+        <item quantity="one">%d marcada como copia</item>
+        <item quantity="other">%d marcadas como copias</item>
+    </plurals>
+    <plurals name="tally_different">
+        <item quantity="one">%d marcada como diferente</item>
+        <item quantity="other">%d marcadas como diferentes</item>
+    </plurals>
 </resources>

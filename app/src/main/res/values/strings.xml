@@ -247,4 +247,30 @@
     <string name="backup_folder_later">PixKin makes that folder with the first photo it saves</string>
     <string name="backup_already_safe">Photos already backed up stay where they are.</string>
     <string name="backup_open_photos">Open Google Photos</string>
+
+    <!-- The tally on a finished queue. This used to print the database's own
+         words, "DISCARD=490 SKIP=33 KEEP=13", at the one moment the user is
+         being told they are done. Order is fixed rather than by count, so it
+         reads the same every time and does not open on the biggest number. -->
+    <string name="tally_so_far">So far: %1$s</string>
+    <plurals name="tally_kept">
+        <item quantity="one">%d kept</item>
+        <item quantity="other">%d kept</item>
+    </plurals>
+    <plurals name="tally_not_saved">
+        <item quantity="one">%d not saved</item>
+        <item quantity="other">%d not saved</item>
+    </plurals>
+    <plurals name="tally_skipped">
+        <item quantity="one">%d skipped</item>
+        <item quantity="other">%d skipped</item>
+    </plurals>
+    <plurals name="tally_same">
+        <item quantity="one">%d marked as a copy</item>
+        <item quantity="other">%d marked as copies</item>
+    </plurals>
+    <plurals name="tally_different">
+        <item quantity="one">%d marked as different</item>
+        <item quantity="other">%d marked as different</item>
+    </plurals>
 </resources>

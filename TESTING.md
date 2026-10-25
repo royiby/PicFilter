@@ -147,9 +147,42 @@ guard rather than a regression test. The same shape — `lifecycleScope.launch`
 writing into a view without re-checking what it is writing into — is worth
 grepping for whenever a screen gains an async read.
 
-The tally itself is raw for something a user sees: `DIFFERENT=3 SAME=5` is the
-database's vocabulary, not a person's. Left as it is, noted as a thing to
-phrase properly before anyone else installs this.
+### The tally now says it in words
+
+`DIFFERENT=3 SAME=5` was the database's vocabulary appearing at the one moment
+the screen is telling someone they are finished. It reads as a sentence now:
+
+> So far: 5 marked as copies, 3 marked as different
+> עד כה: 5 סומנו ככפילויות, 3 סומנו כשונות
+
+Three things that are deliberate rather than incidental:
+
+**The order is fixed, not the query's.** `labelCounts()` returns counts
+descending, so the tally would have opened on whichever number happened to be
+largest — in practice always the discards, which is a dispiriting way to tell
+someone they are done. KEEP, DISCARD, SKIP is now a fixed order and reads the
+same every time.
+
+**A key that is not in the list is dropped, not printed.** The old code
+`joinToString { "${it.first}=${it.second}" }` would render whatever the
+database held, which is exactly how an internal name reached the screen. A
+label added later now goes missing from the tally rather than leaking its
+enum name — a visible omission is a better failure than a visible identifier.
+
+**Zero counts are omitted**, so a queue nobody has touched says nothing rather
+than "0 kept, 0 not saved, 0 skipped".
+
+Plurals in all five languages, including Hebrew's `two`. Verified on the phone
+in English and in Hebrew, where the line is right-aligned and the title bar's
+chevron mirrors.
+
+**The label-mode tally was not seen on a device**, only the duplicates one. It
+appears when a label-backed queue is empty, and none of them is: verify holds
+113, rescue 14, no-face 4, junk 2. Making one empty means labelling real photos
+of the user's family, which the rules at the bottom of this file forbid. It is
+the same function, the same formatting and the same plurals mechanism as the
+branch that was checked — but it is reasoned, not seen, and that difference is
+worth keeping visible.
 
 ### Inspecting review without judging anything
 

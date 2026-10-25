@@ -243,4 +243,31 @@
     <string name="backup_folder_later">‏PixKin תיצור את התיקייה עם התמונה הראשונה שתישמר</string>
     <string name="backup_already_safe">תמונות שכבר גובו יישארו במקומן.</string>
     <string name="backup_open_photos">פתיחת Google Photos</string>
+
+    <string name="tally_so_far">עד כה: %1$s</string>
+    <plurals name="tally_kept">
+        <item quantity="one">%d נשמרה</item>
+        <item quantity="two">%d נשמרו</item>
+        <item quantity="other">%d נשמרו</item>
+    </plurals>
+    <plurals name="tally_not_saved">
+        <item quantity="one">%d לא נשמרה</item>
+        <item quantity="two">%d לא נשמרו</item>
+        <item quantity="other">%d לא נשמרו</item>
+    </plurals>
+    <plurals name="tally_skipped">
+        <item quantity="one">%d דולגה</item>
+        <item quantity="two">%d דולגו</item>
+        <item quantity="other">%d דולגו</item>
+    </plurals>
+    <plurals name="tally_same">
+        <item quantity="one">%d סומנה ככפילות</item>
+        <item quantity="two">%d סומנו ככפילויות</item>
+        <item quantity="other">%d סומנו ככפילויות</item>
+    </plurals>
+    <plurals name="tally_different">
+        <item quantity="one">%d סומנה כשונה</item>
+        <item quantity="two">%d סומנו כשונות</item>
+        <item quantity="other">%d סומנו כשונות</item>
+    </plurals>
 </resources>

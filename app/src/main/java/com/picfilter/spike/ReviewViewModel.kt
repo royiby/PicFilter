@@ -161,11 +161,40 @@ class ReviewViewModel(app: Application, private val state: SavedStateHandle) :
         return true
     }
 
+    /**
+     * What has been decided so far, as a sentence.
+     *
+     * This used to be the database talking to itself -- "DISCARD=490 SKIP=33
+     * KEEP=13" -- shown at the one moment the screen is telling someone they
+     * are finished.
+     *
+     * The order is fixed here rather than taken from the query, which returns
+     * counts descending: a tally that opens on whichever number happens to be
+     * biggest reads differently every time, and in practice that is always the
+     * discards. A row whose key is not in this list is dropped rather than
+     * printed raw, so a new label added later goes missing from the tally
+     * instead of leaking its internal name into the UI.
+     */
     suspend fun summary(): String = withContext(dbq.context) {
+        val ctx = getApplication<Application>()
+        fun qty(plural: Int, n: Int) = ctx.resources.getQuantityString(plural, n, n)
         try {
-            if (mode == "dupes")
-                db.dupeVerdictCounts().joinToString("  ") { "${it.first}=${it.second}" }
-            else db.labelCounts().joinToString("  ") { "${it.first}=${it.second}" }
+            val order = if (mode == "dupes") listOf(
+                "SAME" to R.plurals.tally_same,
+                "DIFFERENT" to R.plurals.tally_different,
+            ) else listOf(
+                "KEEP" to R.plurals.tally_kept,
+                "DISCARD" to R.plurals.tally_not_saved,
+                "SKIP" to R.plurals.tally_skipped,
+            )
+            val counts =
+                (if (mode == "dupes") db.dupeVerdictCounts() else db.labelCounts()).toMap()
+            val parts = order.mapNotNull { (key, plural) ->
+                val n = counts[key] ?: 0
+                if (n <= 0) null else qty(plural, n)
+            }
+            if (parts.isEmpty()) ""
+            else ctx.getString(R.string.tally_so_far, parts.joinToString(", "))
         } catch (e: SQLException) { "" }
     }
 
