@@ -1,0 +1,69 @@
+# Until this existed, the only thing standing between a bug and main was
+# someone remembering to run ./gradlew. A week of looking at screens turned up
+# a crash on the first-run path, a ClassCastException, a race and an RTL fault,
+# and every test was green throughout -- so the suite is not the whole answer.
+# It is, however, the half that can be made to run every time.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A second push to the same branch makes the first run pointless.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Unit tests, lint, static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # compileOptions pins source and target to 17; matching it here keeps a
+      # toolchain difference from being the thing that fails.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The checks that need neither a device nor a toolchain: that no Kotlin
+      # source is excluded by .gitignore (a data/ rule once hid a whole
+      # package), and that no two adb ops share a name.
+      - name: Static checks
+        run: bash scripts/smoke.sh static
+
+      # NOTE: app/src/main/assets/*.tflite is gitignored -- the weights are
+      # fetched by scripts/fetch_model.sh and never committed. Verified that
+      # these three tasks succeed without it; anything needing the model has to
+      # be an instrumented test, which does not run here.
+      - name: Unit tests
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
+
+      # lint.xml sets abortOnError, so this fails the build on a new error
+      # rather than filing a report nobody opens.
+      - name: Lint
+        run: ./gradlew --no-daemon :app:lintDebug
+
+      - name: Assemble
+        run: ./gradlew --no-daemon :app:assembleDebug
+
+      # The reports are the point when something fails, and GitHub throws away
+      # the workspace otherwise.
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            app/build/reports/
+            app/build/test-results/
+          retention-days: 14
+          if-no-files-found: ignore

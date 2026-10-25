@@ -24,14 +24,21 @@ test *What is not covered yet* listed as the highest-value missing one, for a bu
 has actually happened: every rescue button became a no-op when a `when` stopped being
 exhaustive, and nothing failed.
 
-## 1. Continuous integration — half a day
+## 1. Continuous integration — done
 
-Nothing runs the tests but a person remembering to. `./gradlew testDebugUnitTest
-lintDebug` on every push is most of the value, and GitHub Actions runs it free.
-Instrumented tests need an emulator; `reactivecircus/android-emulator-runner` works
-but is slow, so run JVM + lint on push and the instrumented suite nightly.
+`.github/workflows/ci.yml` runs the static checks, unit tests, lint and a debug
+assemble on every push and pull request. `instrumented.yml` runs the device suite
+nightly on an emulator, and on demand.
 
-Do this before writing more tests. Tests nobody runs are documentation.
+Two things worth knowing about it:
+
+- **The model is not in the repository.** `app/src/main/assets/*.tflite` is gitignored
+  and fetched by `scripts/fetch_model.sh`. Verified locally that unit tests, lint and
+  `assembleDebug` all succeed without it; anything that needs the weights has to be an
+  instrumented test, which does not run in the push workflow.
+- **The instrumented suite does not gate merges yet.** It is the slowest and the most
+  likely to be flaky on an emulator. Promote it to the push workflow once it has been
+  quiet for a couple of weeks.
 
 ## 2. Crash reporting — an hour
 

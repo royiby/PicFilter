@@ -1,5 +1,7 @@
 # PixKin
 
+[![CI](https://github.com/royiby/PicFilter/actions/workflows/ci.yml/badge.svg)](https://github.com/royiby/PicFilter/actions/workflows/ci.yml)
+
 An Android app that rescues family photos out of a WhatsApp folder and into a
 backed-up one — on-device, with no account and no network.
 
