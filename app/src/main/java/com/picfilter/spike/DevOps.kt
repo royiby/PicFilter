@@ -129,6 +129,38 @@ internal fun MainActivity.dispatch(op: String) {
                 trashUris(extras.map { it.first })
             }
         }
+        // The folder rename. Dry-run by default like every destructive op:
+        // it moves the user's actual photos.
+        "movedest"  -> lifecycleScope.launch {
+            val live = intent?.getStringExtra("live") == "1"
+            val items = withContext(Dispatchers.IO) {
+                com.picfilter.spike.engine.Promoter.legacyDestItems(act)
+            }
+            when {
+                items.isEmpty() -> Log.i(TAG, "MOVEDEST nothing to move")
+                !live -> {
+                    Log.i(TAG, "MOVEDEST would move ${items.size} (dry run; --es live 1)")
+                    items.take(5).forEach { Log.i(TAG, "MOVEDEST   ${it.second}") }
+                }
+                else -> {
+                    // These were written by the old applicationId, so they are
+                    // not ours to change until the user says so.
+                    Log.i(TAG, "MOVEDEST asking for write access to ${items.size}")
+                    onWriteGranted = {
+                        lifecycleScope.launch {
+                            withContext(Dispatchers.IO) {
+                                com.picfilter.spike.engine.Promoter.moveToDest(
+                                    act, items)
+                            }
+                        }
+                    }
+                    val pi = MediaStore.createWriteRequest(
+                        contentResolver, items.map { it.first })
+                    writeLauncher.launch(
+                        IntentSenderRequest.Builder(pi.intentSender).build())
+                }
+            }
+        }
         "unpromote" -> Thread {
             intent?.getStringExtra("id")?.toLongOrNull()?.let {
                 com.picfilter.spike.engine.Promoter.unpromote(this, it)
@@ -422,7 +454,7 @@ internal fun MainActivity.promote() {
     val values = android.content.ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, "picfilter-keep-${System.currentTimeMillis()}.jpg")
         put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-        put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/PicFilter")
+        put(MediaStore.MediaColumns.RELATIVE_PATH, com.picfilter.spike.engine.Promoter.DEST_LABEL)
     }
     try {
         val dest = contentResolver.insert(

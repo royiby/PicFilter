@@ -1103,6 +1103,62 @@ library, which rewrites the cluster tables; `step=scan` deliberately shows
 progress only if a scan is already running. The two phase strings are checked
 by compiling and by their resource ids resolving, not by being seen.
 
+## The folder rename, and what it uncovered
+
+The destination folder was `Pictures/PicFilter` — named after the spike, not
+the product — so an app called PixKin handed people a folder called PicFilter.
+It is `Pictures/PixKin` now, from one constant, `Promoter.DEST_NAME`.
+
+**The app did not own its own photos.** The first live attempt moved 0 of 7:
+
+```
+W MOVEDEST failed IMG-20260630-WA0021.jpg: RecoverableSecurityException:
+    com.pixkin.app has no access to content://media/external/images/media/41746
+```
+
+MediaStore ownership is per package. Those files were written by
+`com.picfilter.spike`, which is uninstalled, so the app running now is a
+different owner and every write throws. **This is not about the rename.**
+`reclaim` — which frees space by deleting local copies once they have reached
+the cloud — would fail the same way on all 117, as would `tidydest` and
+`unpromote`. The applicationId change quietly cost the app the ability to
+manage the library it had rescued, and nothing surfaced it until something
+tried to write.
+
+The remedy is the system's own consent dialog, `MediaStore.createWriteRequest`,
+which is the pattern already used for trashing. `MainActivity` has a
+`writeLauncher` beside `trashLauncher`, and `op=movedest --es live 1` asks
+before it moves. One dialog, "Allow PixKin to modify 7 photos?", and then:
+
+```
+I RESULT write_dialog resultCode=-1 accepted=true
+I MOVEDEST moved=7 failed=0 Pictures/PicFilter -> Pictures/PixKin
+```
+
+### Why the database needed no migration at all
+
+`promotion.dest_uri` holds a MediaStore URI, and **updating `RELATIVE_PATH`
+moves the file while keeping its `_id`**. So the rows stayed valid through the
+move and there was never a moment when one pointed at a file that was not
+there. Copy-then-delete would have had exactly that window. Verified by id:
+`42057`, `42058`, `42071` and `42088` are the same ids the rows held before,
+now at `Pictures/PixKin/`, and the `promotion`, `label`, `person` and
+`centroid` tables all hash identically before and after.
+
+`op=promocheck` afterwards: `rows=117 distinct_names=117 lost=0`.
+
+### Only 7 of 117 files existed
+
+The other 110 had already been reclaimed locally after reaching the cloud,
+which is what `synced_at` records — the row stays, the file does not, and it
+must not be copied again just because it is gone. So "migrate 117 photos" was
+really seven. Worth checking before promising a user a long migration.
+
+The now-empty `Pictures/PicFilter` is left in place; Google Photos may still
+list it until it notices. **Anyone who had the old folder backed up has to
+switch that to the new one** — which is what the backup screen exists to say,
+and it now names `Pictures/PixKin`.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

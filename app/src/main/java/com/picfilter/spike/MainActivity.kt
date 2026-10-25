@@ -39,6 +39,10 @@ const val KEY_ONBOARDED = "onboarding_done"
 class MainActivity : ComponentActivity() {
 
     internal lateinit var trashLauncher: ActivityResultLauncher<IntentSenderRequest>
+
+    /** Write access the system granted for specific media, and what to do with it. */
+    internal lateinit var writeLauncher: ActivityResultLauncher<IntentSenderRequest>
+    internal var onWriteGranted: (() -> Unit)? = null
     private lateinit var permLauncher: ActivityResultLauncher<Array<String>>
     /**
      * The op an adb run asked for, or null when a person just opened the app.
@@ -65,6 +69,18 @@ class MainActivity : ComponentActivity() {
             val ok = res.resultCode == Activity.RESULT_OK
             Log.i(TAG, "RESULT trash_dialog resultCode=${res.resultCode} accepted=$ok")
             verify()
+        }
+
+        // Media written by a DIFFERENT applicationId is not ours to change, so
+        // moving it needs the user's say-so through the system's own dialog.
+        writeLauncher = registerForActivityResult(
+            ActivityResultContracts.StartIntentSenderForResult()
+        ) { res ->
+            val ok = res.resultCode == Activity.RESULT_OK
+            Log.i(TAG, "RESULT write_dialog resultCode=${res.resultCode} accepted=$ok")
+            val go = onWriteGranted
+            onWriteGranted = null
+            if (ok) go?.invoke()
         }
 
         permLauncher = registerForActivityResult(

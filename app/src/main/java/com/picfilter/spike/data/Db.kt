@@ -129,7 +129,7 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
 
     private fun createV7(d: SQLiteDatabase) {
         // When a rescued copy reached the cloud. Once set, the local file in
-        // Pictures/PicFilter has done its job and can be removed -- and must NOT
+        // the rescued copy has done its job and can be removed -- and must NOT
         // be copied again just because it is no longer there.
         try { d.execSQL("ALTER TABLE promotion ADD COLUMN synced_at INTEGER") }
         catch (e: SQLException) { }

@@ -37,7 +37,19 @@ object Promoter {
      * deliberately not a translated string -- Google Photos will not translate
      * it either.
      */
-    const val DEST_NAME = "PicFilter"
+    const val DEST_NAME = "PixKin"
+
+    /**
+     * Where rescued photos used to land.
+     *
+     * The folder was named after the spike, not the product, so an app called
+     * PixKin handed people a folder called PicFilter. Renaming it is cheap for
+     * a new install and not for an existing one, whose photos are already in
+     * the old folder and whose promotion rows point at them -- hence
+     * [moveDest]. Kept as a constant rather than inlined because the migration
+     * has to keep finding the old folder long after nothing writes to it.
+     */
+    const val LEGACY_DEST = "Pictures/PicFilter"
 
     private const val DEST = "Pictures/$DEST_NAME"
 
@@ -80,6 +92,71 @@ object Promoter {
 
     /** Where rescued photos land, for the backup instructions. */
     const val DEST_LABEL = DEST
+
+    /**
+     * Move everything out of [LEGACY_DEST] and into [DEST].
+     *
+     * Updating `RELATIVE_PATH` moves the file on disk and keeps its MediaStore
+     * `_id`, which is what `promotion.dest_uri` holds -- so the database needs
+     * no migration of its own and the rows stay valid throughout. That is the
+     * whole reason to move them this way rather than copy-and-delete: there is
+     * no window where a row points at a file that is not there.
+     *
+     * The app owns these files because it created them, so it can move them
+     * without any storage permission a user would have to grant.
+     *
+     * Returns moved to failed. Dry-run reports what it would do and touches
+     * nothing, like every other destructive op here.
+     */
+    /** Everything still sitting in [LEGACY_DEST], as uri to display name. */
+    fun legacyDestItems(ctx: Context): List<Pair<Uri, String>> {
+        val out = mutableListOf<Pair<Uri, String>>()
+        ctx.contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME),
+            "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
+            arrayOf("$LEGACY_DEST%"), null
+        )?.use { c ->
+            while (c.moveToNext()) out += ContentUris.withAppendedId(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI, c.getLong(0)
+            ) to (c.getString(1) ?: "?")
+        }
+        return out
+    }
+
+    /**
+     * Move [items] from [LEGACY_DEST] into [DEST].
+     *
+     * Updating `RELATIVE_PATH` moves the file on disk and keeps its MediaStore
+     * `_id`, which is what `promotion.dest_uri` holds -- so the database needs
+     * no migration of its own and no row ever points at a file that is not
+     * there. That is the reason to move rather than copy-and-delete.
+     *
+     * **The caller must already hold write access.** These files were created
+     * by the old applicationId, and MediaStore ownership is per package, so
+     * the app that rescued them is not the app running now: every update
+     * throws RecoverableSecurityException until the user grants write access
+     * through `MediaStore.createWriteRequest`. An app normally owns what it
+     * wrote, which is why nothing here expected to need permission.
+     */
+    fun moveToDest(ctx: Context, items: List<Pair<Uri, String>>): Pair<Int, Int> {
+        var moved = 0
+        var failed = 0
+        for ((uri, name) in items) {
+            try {
+                val n = ctx.contentResolver.update(uri, ContentValues().apply {
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "$DEST/")
+                }, null, null)
+                if (n == 1) moved++ else { failed++; Log.w(TAG, "MOVEDEST no-op $name") }
+            } catch (e: Exception) {
+                failed++
+                Log.w(TAG, "MOVEDEST failed $name: ${e.javaClass.simpleName}: ${e.message}")
+            }
+        }
+        Log.i(TAG, "MOVEDEST moved=$moved failed=$failed $LEGACY_DEST -> $DEST")
+        return moved to failed
+    }
+
     private val WA_DATE = Regex("""IMG-(\d{8})-WA""")
 
     /**
@@ -89,7 +166,7 @@ object Promoter {
      * deprecated and may be null, so it is only ever used where a path is
      * genuinely required -- MediaScannerConnection takes one -- and never to
      * decide whether a file exists. That used to be done by building
-     * "/sdcard/Pictures/PicFilter/$name" by hand, which assumes the primary
+     * "/sdcard/$DEST/$name" by hand, which assumes the primary
      * volume is mounted there and that the folder is where we last left it.
      * Neither is guaranteed, and MediaStore is the thing that actually knows.
      */
