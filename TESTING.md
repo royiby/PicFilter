@@ -1159,6 +1159,72 @@ list it until it notices. **Anyone who had the old folder backed up has to
 switch that to the new one** — which is what the backup screen exists to say,
 and it now names `Pictures/PixKin`.
 
+## A seam, and the first test of a screen
+
+Every ViewModel built its own database:
+
+```kotlin
+private val db = Db(app)
+```
+
+Harmless-looking, and the reason this app had no UI tests at all. A screen that
+opens the real database can only be driven against the user's real photo
+library, and the rule at the bottom of this file says tap automation never
+touches those photos — it once recorded 43 spurious judgements about someone's
+family. So the screens went untested, and **every bug found in them was found
+by looking at them.**
+
+`Deps` is the seam. `PixKinApp.deps` is a container a test replaces before the
+Activity starts, so the screen gets a database with its own name and invented
+rows, and the rule is kept by construction rather than by being careful.
+
+Hand-written rather than Hilt, deliberately: one module, one thing worth
+injecting, and the project already avoids annotation processing (raw SQLite
+rather than Room). It is the shape Google's own manual-DI guidance describes.
+
+### The landmine in the obvious version
+
+The first attempt gave the dependency a default value:
+
+```kotlin
+class ReviewViewModel(app: Application, state: SavedStateHandle,
+                      private val deps: Deps = app.deps())
+```
+
+That compiles, and **crashes at runtime**. The default ViewModel factory finds
+the constructor by reflection, looking for `(Application, SavedStateHandle)`.
+Kotlin does not leave one behind for a default argument — it emits a synthetic
+constructor taking a bitmask — so the lookup fails on a build with no errors in
+it. Checked with `javap` before it ever ran, which is the only reason it is a
+paragraph here rather than another entry in the list of crashes.
+
+Each ViewModel now carries an explicit `Factory` built with `viewModelFactory`,
+so construction is stated rather than discovered.
+
+### `ReviewActionsTest`
+
+The test *What is not covered yet* called the highest-value missing one, for a
+bug that has happened: every rescue button became a no-op when a `when` over
+card types quietly stopped being exhaustive, and nothing failed. It drives the
+real `ReviewActivity` against a three-row fixture queue and asserts each button
+writes the row it claims to, that consecutive taps decide consecutive photos,
+and that opening the screen decides nothing.
+
+`mode` is `"rescue"` and never `"verify"`: the verify queue's DISCARD path calls
+`Promoter.unpromote`, which reaches MediaStore and the file system. Nothing in
+a UI test may touch either.
+
+Not Espresso. These screens are built in code with no ids, the clicks are plain,
+and `onActivity` already runs on the main thread, so a tree walk is
+deterministic and needs no animation settings on the device. The cost is a
+twenty-line helper; the benefit is a test that cannot fail for reasons
+unrelated to what it asserts.
+
+**These tests have not run yet.** The phone was unplugged before the
+instrumented suite could be started. They compile, and that is all that is
+known about them — stated here rather than left to be assumed, because the
+whole point of this section is that compiling is not evidence.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

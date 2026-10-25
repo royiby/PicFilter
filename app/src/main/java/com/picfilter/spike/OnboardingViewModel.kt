@@ -1,5 +1,10 @@
 package com.picfilter.spike
 
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.ViewModelProvider
 import android.app.Application
 import android.database.SQLException
 import android.net.Uri
@@ -29,10 +34,14 @@ private const val TAG = "PICFILTER"
  * minutes of face detection to produce and was being re-read from the database
  * on every configuration change.
  */
-class OnboardingViewModel(app: Application, private val state: SavedStateHandle) :
+class OnboardingViewModel(
+    app: Application,
+    private val state: SavedStateHandle,
+    private val deps: Deps,
+) :
     AndroidViewModel(app) {
 
-    private val db = Db(app)
+    private val db = deps.openDb()
     private val dbq = DbQueue(db)
 
     private val _step = MutableStateFlow(state[S_STEP] ?: STEP_INTRO)
@@ -159,6 +168,22 @@ class OnboardingViewModel(app: Application, private val state: SavedStateHandle)
     }
 
     companion object {
+        /**
+         * Explicit construction instead of the default factory's reflection.
+         *
+         * The default factory looks for an (Application[, SavedStateHandle])
+         * constructor by reflection. Adding a parameter with a default value
+         * does NOT leave one behind -- Kotlin emits a synthetic constructor
+         * taking a bitmask -- so the reflective lookup fails at runtime in a
+         * build that compiled cleanly. This says what to build.
+         */
+        val Factory: ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val app = this[APPLICATION_KEY] as Application
+                OnboardingViewModel(app, createSavedStateHandle(), app.deps())
+            }
+        }
+
         const val STEP_INTRO = "intro"
         const val STEP_SCAN = "scan"
         const val STEP_NOFACES = "nofaces"

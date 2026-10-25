@@ -40,6 +40,16 @@ object Background {
  */
 class PixKinApp : Application() {
 
+    /**
+     * The dependency container for this process. See [Deps].
+     *
+     * Replaced by instrumented tests before the Activity under test starts, so
+     * a screen can be driven against a fixture database instead of the user's.
+     */
+    @Volatile
+    var deps: Deps = AppDeps(this)
+
+
     override fun onCreate() {
         super.onCreate()
         if (!BuildConfig.DEBUG) return

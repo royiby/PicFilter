@@ -50,7 +50,7 @@ private const val PICK_MAX = 10
 
 class OnboardingActivity : ComponentActivity() {
 
-    private val vm: OnboardingViewModel by viewModels()
+    private val vm: OnboardingViewModel by viewModels { OnboardingViewModel.Factory }
     private lateinit var root: LinearLayout
 
     private var candidates: List<Db.Candidate>

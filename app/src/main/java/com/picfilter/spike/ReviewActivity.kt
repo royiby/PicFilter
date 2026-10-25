@@ -72,7 +72,7 @@ class ReviewActivity : ComponentActivity() {
     private lateinit var actionBar: LinearLayout
     private lateinit var undoBtn: View
 
-    private val vm: ReviewViewModel by viewModels()
+    private val vm: ReviewViewModel by viewModels { ReviewViewModel.Factory }
     private val mode get() = vm.mode
     private val queue get() = vm.queue.value ?: emptyList()
     private val idx get() = vm.idx.value

@@ -23,7 +23,7 @@ import kotlinx.coroutines.launch
  */
 class PersonActivity : ComponentActivity() {
 
-    private val vm: PersonViewModel by viewModels()
+    private val vm: PersonViewModel by viewModels { PersonViewModel.Factory }
 
     private lateinit var root: LinearLayout
     private lateinit var grid: RecyclerView

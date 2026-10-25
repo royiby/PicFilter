@@ -53,7 +53,7 @@ class MainActivity : ComponentActivity() {
      * for a result nobody reads outside a spike. A user opening the app wants
      * the home screen and nothing else.
      */
-    private val vm: HomeViewModel by viewModels()
+    private val vm: HomeViewModel by viewModels { HomeViewModel.Factory }
 
     private var pendingOp: String? = null
     /** Phase 0 diagnostics write here; see DevOps.kt. */

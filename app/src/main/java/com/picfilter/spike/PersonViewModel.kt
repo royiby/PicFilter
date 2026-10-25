@@ -1,5 +1,10 @@
 package com.picfilter.spike
 
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.ViewModelProvider
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -29,14 +34,18 @@ private const val TAG = "PICFILTER"
  * [SavedStateHandle] carries the intent extras in, and survives process death
  * with them -- no factory, because the Activity's default one populates it.
  */
-class PersonViewModel(app: Application, state: SavedStateHandle) : AndroidViewModel(app) {
+class PersonViewModel(
+    app: Application,
+    state: SavedStateHandle,
+    private val deps: Deps,
+) : AndroidViewModel(app) {
 
     val personId: Long = state["person_id"] ?: -1L
     /** Blank rather than null would put an empty title bar on the screen. */
     val personName: String = state["person_name"]
         ?: app.getString(R.string.person_fallback)
 
-    private val db = Db(app)
+    private val db = deps.openDb()
     private val dbq = DbQueue(db)
 
     /** null while loading; the screen tells the two apart. */
@@ -83,4 +92,23 @@ class PersonViewModel(app: Application, state: SavedStateHandle) : AndroidViewMo
     override fun onCleared() {
         dbq.closeAfterPending()
     }
+
+    companion object {
+        /**
+         * Explicit construction instead of the default factory's reflection.
+         *
+         * The default factory looks for an (Application[, SavedStateHandle])
+         * constructor by reflection. Adding a third parameter with a default
+         * value does NOT leave one behind -- Kotlin emits a synthetic
+         * constructor taking a bitmask -- so the reflective lookup fails at
+         * runtime in a build that compiled cleanly. This says what to build.
+         */
+        val Factory: ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val app = this[APPLICATION_KEY] as Application
+                PersonViewModel(app, createSavedStateHandle(), app.deps())
+            }
+        }
+    }
+
 }

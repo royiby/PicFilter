@@ -1,5 +1,10 @@
 package com.picfilter.spike
 
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.ViewModelProvider
 import android.app.Application
 import android.database.SQLException
 import android.util.Log
@@ -50,7 +55,10 @@ data class HomeData(
  * it runs face detection over a handful of photos per person, and tying that
  * to a screen that can rotate away mid-pass is how it used to be abandoned.
  */
-class HomeViewModel(app: Application) : AndroidViewModel(app) {
+class HomeViewModel(
+    app: Application,
+    private val deps: Deps,
+) : AndroidViewModel(app) {
 
     private val _home = MutableStateFlow<HomeData?>(null)
     val home: StateFlow<HomeData?> = _home.asStateFlow()
@@ -81,7 +89,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) {
                 val ctx = getApplication<Application>()
                 val want = !currentlyOn
-                val db = Db(ctx)
+                val db = deps.openDb()
                 try { db.setAutoSaveWanted(want) }
                 catch (e: SQLException) { Log.w(TAG, "WATCH intent not saved: ${e.message}") }
                 finally { db.close() }
@@ -123,7 +131,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val rebuilt = withContext(Dispatchers.IO) {
                 val ctx = getApplication<Application>()
-                val db = Db(ctx)
+                val db = deps.openDb()
                 val missing = try {
                     persons.count { it.faces.isEmpty() && db.matchedItemsFor(it.id, 1).isNotEmpty() }
                 } catch (e: SQLException) {
@@ -150,7 +158,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         val prefs = ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
         if (prefs.getBoolean(KEY_ONBOARDED, false)) return@withContext false
-        val db = Db(ctx)
+        val db = deps.openDb()
         val people = try { db.enrolledCount() } catch (e: SQLException) { 0 } finally { db.close() }
         people == 0
     }
@@ -158,7 +166,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
     /** Disk and WorkManager only. Must not touch a View. */
     private fun read(): HomeData {
         val ctx = getApplication<Application>()
-        val db = Db(ctx)
+        val db = deps.openDb()
         // One try for the whole read: these queries fail together or not at
         // all -- the database is either openable or it is not -- and wrapping
         // each one separately only hid which had failed.
@@ -215,7 +223,7 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         // down what WorkManager already held so the question is answered from
         // then on. Once per install, hence the short-lived handle.
         if (r.wanted == null) {
-            val db = Db(ctx)
+            val db = deps.openDb()
             try { db.setAutoSaveWanted(watchOn) }
             catch (e: SQLException) { Log.w(TAG, "WATCH intent not recorded: ${e.message}") }
             finally { db.close() }
@@ -244,4 +252,23 @@ class HomeViewModel(app: Application) : AndroidViewModel(app) {
         /** Null until someone has said either way; see [Db.autoSaveWanted]. */
         val wanted: Boolean? = null,
     )
+
+    companion object {
+        /**
+         * Explicit construction instead of the default factory's reflection.
+         *
+         * The default factory looks for an (Application[, SavedStateHandle])
+         * constructor by reflection. Adding a third parameter with a default
+         * value does NOT leave one behind -- Kotlin emits a synthetic
+         * constructor taking a bitmask -- so the reflective lookup fails at
+         * runtime in a build that compiled cleanly. This says what to build.
+         */
+        val Factory: ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val app = this[APPLICATION_KEY] as Application
+                HomeViewModel(app, app.deps())
+            }
+        }
+    }
+
 }

@@ -1,5 +1,10 @@
 package com.picfilter.spike
 
+import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.ViewModelProvider
 import android.app.Application
 import android.database.SQLException
 import android.util.Log
@@ -30,7 +35,11 @@ private const val TAG = "PICFILTER"
  * is more correct anyway, since a verdict recorded before the rotation has
  * taken that item out of it.
  */
-class ReviewViewModel(app: Application, private val state: SavedStateHandle) :
+class ReviewViewModel(
+    app: Application,
+    private val state: SavedStateHandle,
+    private val deps: Deps,
+) :
     AndroidViewModel(app) {
 
     sealed interface Card
@@ -40,7 +49,7 @@ class ReviewViewModel(app: Application, private val state: SavedStateHandle) :
 
     val mode: String = state["mode"] ?: "golden"
 
-    private val db = Db(app)
+    private val db = deps.openDb()
     private val dbq = DbQueue(db)
 
     private val _queue = MutableStateFlow<List<Card>?>(null)
@@ -202,7 +211,23 @@ class ReviewViewModel(app: Application, private val state: SavedStateHandle) :
         dbq.closeAfterPending()
     }
 
-    private companion object {
+    companion object {
+        /**
+         * Explicit construction instead of the default factory's reflection.
+         *
+         * The default factory looks for an (Application[, SavedStateHandle])
+         * constructor by reflection. Adding a parameter with a default value
+         * does NOT leave one behind -- Kotlin emits a synthetic constructor
+         * taking a bitmask -- so the reflective lookup fails at runtime in a
+         * build that compiled cleanly. This says what to build.
+         */
+        val Factory: ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                val app = this[APPLICATION_KEY] as Application
+                ReviewViewModel(app, createSavedStateHandle(), app.deps())
+            }
+        }
+
         const val S_IDX = "idx"
         const val S_GRID = "grid"
         const val S_HIST_AT = "hist_at"
