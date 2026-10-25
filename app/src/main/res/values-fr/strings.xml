@@ -257,4 +257,17 @@
         <item quantity="one">%d marquée comme différente</item>
         <item quantity="other">%d marquées comme différentes</item>
     </plurals>
+
+    <string name="scan_phase_looking">Parcours de vos photos</string>
+    <string name="scan_phase_grouping">Regroupement des personnes</string>
+    <string name="onboard_next_backup">Suite : où vont les photos</string>
+    <string name="onboard_finish_setup">Terminer la configuration</string>
+    <string name="backup_headline">Deux réglages, et c\'est fait</string>
+    <string name="backup_intro">Dans Google Photos, sauvegardez le dossier où PixKin enregistre et arrêtez de sauvegarder ceux de WhatsApp.</string>
+    <string name="backup_state_back_up">Sauvegarder</string>
+    <string name="backup_state_dont">Non</string>
+    <plurals name="onboard_cluster_photos">
+        <item quantity="one">%d photo</item>
+        <item quantity="other">%d photos</item>
+    </plurals>
 </resources>

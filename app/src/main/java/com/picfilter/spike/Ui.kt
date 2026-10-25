@@ -893,6 +893,13 @@ object Ui {
                 if (good) R.color.pk_on_secondary_container else R.color.pk_on_surface).apply {
                 layoutParams = LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                // These names are folder names, so they stay Latin in every
+                // language -- "PicFilter", "WhatsApp Images". The default text
+                // alignment resolves from the first strong character, which is
+                // Latin, so in Hebrew the name sat hard against the state label
+                // on the left while the row's own start was on the right. Align
+                // to the VIEW's start instead of the text's.
+                textAlignment = View.TEXT_ALIGNMENT_VIEW_START
             })
             addView(text(ctx, Type.LABEL, state,
                 if (good) R.color.pk_on_secondary_container

@@ -273,4 +273,22 @@
         <item quantity="one">%d marked as different</item>
         <item quantity="other">%d marked as different</item>
     </plurals>
+
+    <!-- Setup's last screens. These were Kotlin string literals, so every
+         non-English user got a half-translated setup; lint cannot see them,
+         because HardcodedText only inspects XML layouts. The folder names are
+         deliberately NOT here: the user is about to look for those exact rows
+         in Google Photos, which lists them untranslated. -->
+    <string name="scan_phase_looking">Looking through your photos</string>
+    <string name="scan_phase_grouping">Grouping people</string>
+    <string name="onboard_next_backup">Next: where the photos go</string>
+    <string name="onboard_finish_setup">Finish setup</string>
+    <string name="backup_headline">Two switches, and you\'re set</string>
+    <string name="backup_intro">In Google Photos, back up the folder PixKin saves to and stop backing up the WhatsApp ones.</string>
+    <string name="backup_state_back_up">Back up</string>
+    <string name="backup_state_dont">Don\'t</string>
+    <plurals name="onboard_cluster_photos">
+        <item quantity="one">%d photo</item>
+        <item quantity="other">%d photos</item>
+    </plurals>
 </resources>

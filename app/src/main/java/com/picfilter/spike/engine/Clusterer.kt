@@ -1,5 +1,6 @@
 package com.picfilter.spike.engine
 
+import com.picfilter.spike.R
 import android.content.ContentUris
 import android.content.Context
 import android.graphics.Bitmap
@@ -33,7 +34,15 @@ object Clusterer {
     private const val THUMB_DIR = "face_thumbs"
     private const val PERSON_DIR = "person_faces"
 
-    fun interface Progress { fun onProgress(done: Int, total: Int, phase: String) }
+    /**
+     * [phase] is a string RESOURCE id, not text.
+     *
+     * The engine used to pass the sentence itself -- "Looking through your
+     * photos" -- which put English in a layer that has no business knowing what
+     * language the user reads, and left it untranslated in an app that speaks
+     * five. The caller resolves it.
+     */
+    fun interface Progress { fun onProgress(done: Int, total: Int, phase: Int) }
 
     fun bootstrap(ctx: Context, sample: Int = SAMPLE_SIZE, progress: Progress? = null) {
         val db = Db(ctx)
@@ -55,7 +64,7 @@ object Clusterer {
             maxPose = FaceEngine.ENROL_MAX_POSE,
         ).use { eng ->
             for ((i, u) in uris.withIndex()) {
-                progress?.onProgress(i, uris.size, "Looking through your photos")
+                progress?.onProgress(i, uris.size, R.string.scan_phase_looking)
                 try {
                     val img = eng.decode(ctx, u) ?: continue
                     val obs = eng.observe(img, keepCrop = true)
@@ -87,7 +96,7 @@ object Clusterer {
             db.close(); return
         }
 
-        progress?.onProgress(0, 1, "Grouping people")
+        progress?.onProgress(0, 1, R.string.scan_phase_grouping)
         val assign = clusterAverage(vecs, FaceEngine.CLUSTER_THRESHOLD)
         persist(db, assign, vecs, meta)
         db.close()

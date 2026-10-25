@@ -270,4 +270,18 @@
         <item quantity="two">%d סומנו כשונות</item>
         <item quantity="other">%d סומנו כשונות</item>
     </plurals>
+
+    <string name="scan_phase_looking">מחפש בתמונות שלך</string>
+    <string name="scan_phase_grouping">מקבץ אנשים</string>
+    <string name="onboard_next_backup">הבא: לאן התמונות הולכות</string>
+    <string name="onboard_finish_setup">סיום ההגדרה</string>
+    <string name="backup_headline">שני מתגים, וזהו</string>
+    <string name="backup_intro">ב‑Google Photos, הפעילו גיבוי לתיקייה ש‑PixKin שומרת אליה והפסיקו לגבות את תיקיות WhatsApp.</string>
+    <string name="backup_state_back_up">לגבות</string>
+    <string name="backup_state_dont">לא</string>
+    <plurals name="onboard_cluster_photos">
+        <item quantity="one">תמונה %d</item>
+        <item quantity="two">%d תמונות</item>
+        <item quantity="other">%d תמונות</item>
+    </plurals>
 </resources>

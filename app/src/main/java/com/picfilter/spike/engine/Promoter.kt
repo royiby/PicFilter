@@ -31,7 +31,15 @@ private const val TAG = "PICFILTER"
  */
 object Promoter {
 
-    private const val DEST = "Pictures/PicFilter"
+    /**
+     * The folder's own name, as Google Photos lists it in "Back up device
+     * folders". The backup screen shows this row for the user to find, so it is
+     * deliberately not a translated string -- Google Photos will not translate
+     * it either.
+     */
+    const val DEST_NAME = "PicFilter"
+
+    private const val DEST = "Pictures/$DEST_NAME"
 
     /**
      * Google Photos only lists a device folder once it exists, and the folder
@@ -71,7 +79,7 @@ object Promoter {
     }
 
     /** Where rescued photos land, for the backup instructions. */
-    const val DEST_LABEL = "Pictures/PicFilter"
+    const val DEST_LABEL = DEST
     private val WA_DATE = Regex("""IMG-(\d{8})-WA""")
 
     /**

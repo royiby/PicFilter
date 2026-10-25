@@ -30,7 +30,8 @@ object Scan {
     @Volatile var running = false; private set
     @Volatile var done = 0; private set
     @Volatile var total = 0; private set
-    @Volatile var phase = ""; private set
+    /** A string resource id, or 0 before the first report. */
+    @Volatile var phase = 0; private set
 
     /** True once a scan has run in this process, so a watcher knows to move on. */
     @Volatile var finished = false; private set
@@ -55,7 +56,7 @@ object Scan {
         if (running) { Log.i(TAG, "SCAN already running, re-attaching"); return }
         running = true
         finished = false
-        done = 0; total = 0
+        done = 0; total = 0; phase = 0
         notifyWatcher()
         Background.io.execute {
             try {

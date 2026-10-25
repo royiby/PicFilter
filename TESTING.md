@@ -1057,6 +1057,52 @@ scan is started by a button — so every step is safe to view and only a tap
 writes. person, centroid, cluster, cluster_face, face, label and promotion were
 hashed before and after the whole pass and all seven are unchanged.
 
+## The half of setup that only spoke English
+
+Setup's last screens were Kotlin string literals, not resources: the summary's
+buttons, the whole backup screen, and both scan-progress phases. A Hebrew or
+German user reached a translated app and then hit a wall of English in the
+screens that tell them what to do with Google Photos.
+
+**Lint cannot see this.** `HardcodedText` reads XML layouts, and every screen in
+this app is built in Kotlin. The check that works is a grep for prose:
+
+```bash
+grep -rnE '"[A-Z][a-z]+ [a-z]' app/src/main/java --include=*.kt \
+  | grep -vE 'getString|R\.string|R\.plurals|Log\.'
+```
+
+Two of them were in `Clusterer`, which was passing the progress text itself —
+`"Looking through your photos"` — up to the UI. An engine has no business
+knowing what language anyone reads, so `Progress.onProgress` now carries a
+string **resource id** and the Activity resolves it. That shape also catches
+the mistake at compile time rather than in a screenshot: an id is an `Int`, so
+anything that tries to print it directly is visibly wrong.
+
+What is deliberately NOT translated: `PicFilter` and `WhatsApp Images`. The
+user is about to look for those exact rows in Google Photos' own folder list,
+which does not translate them either. The first now comes from
+`Promoter.DEST_NAME`, so the screen and the folder cannot drift apart.
+
+### A Latin name in a right-to-left row
+
+Translating those rows exposed a layout bug that had been invisible while they
+were English. The name sits in a weighted box so the state label is pushed to
+the far end, which is correct and direction-agnostic — but the names are Latin
+in every language, and the default text alignment resolves from the **first
+strong character**. In Hebrew that put "PicFilter" hard against "לגבות" in the
+middle of the row while the row's own start sat empty on the right.
+
+`textAlignment = TEXT_ALIGNMENT_VIEW_START` aligns to the view's start rather
+than the text's. Worth knowing wherever Latin content — a filename, a model
+name, an email address — sits in a container that mirrors.
+
+Verified on the phone in both languages. **Not verified: the scan progress
+screen.** Reaching it means starting a real bootstrap scan over the user's
+library, which rewrites the cluster tables; `step=scan` deliberately shows
+progress only if a scan is already running. The two phase strings are checked
+by compiling and by their resource ids resolving, not by being seen.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

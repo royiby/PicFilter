@@ -257,4 +257,17 @@
         <item quantity="one">%d marcada como diferente</item>
         <item quantity="other">%d marcadas como diferentes</item>
     </plurals>
+
+    <string name="scan_phase_looking">Revisando tus fotos</string>
+    <string name="scan_phase_grouping">Agrupando personas</string>
+    <string name="onboard_next_backup">Siguiente: dónde van las fotos</string>
+    <string name="onboard_finish_setup">Finalizar configuración</string>
+    <string name="backup_headline">Dos interruptores y listo</string>
+    <string name="backup_intro">En Google Fotos, haz copia de seguridad de la carpeta donde guarda PixKin y deja de copiar las de WhatsApp.</string>
+    <string name="backup_state_back_up">Copiar</string>
+    <string name="backup_state_dont">No</string>
+    <plurals name="onboard_cluster_photos">
+        <item quantity="one">%d foto</item>
+        <item quantity="other">%d fotos</item>
+    </plurals>
 </resources>

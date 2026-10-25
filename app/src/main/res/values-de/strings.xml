@@ -241,4 +241,17 @@
         <item quantity="one">%d als unterschiedlich markiert</item>
         <item quantity="other">%d als unterschiedlich markiert</item>
     </plurals>
+
+    <string name="scan_phase_looking">Deine Fotos werden durchgesehen</string>
+    <string name="scan_phase_grouping">Personen werden gruppiert</string>
+    <string name="onboard_next_backup">Weiter: wohin die Fotos kommen</string>
+    <string name="onboard_finish_setup">Einrichtung abschließen</string>
+    <string name="backup_headline">Zwei Schalter, und fertig</string>
+    <string name="backup_intro">Sichere in Google Fotos den Ordner, in den PixKin speichert, und beende die Sicherung der WhatsApp-Ordner.</string>
+    <string name="backup_state_back_up">Sichern</string>
+    <string name="backup_state_dont">Nicht</string>
+    <plurals name="onboard_cluster_photos">
+        <item quantity="one">%d Foto</item>
+        <item quantity="other">%d Fotos</item>
+    </plurals>
 </resources>

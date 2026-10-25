@@ -219,11 +219,15 @@ class OnboardingActivity : ComponentActivity() {
      * Reachable twice: when the scan is started, and when a recreated Activity
      * finds one already running.
      */
+    /** [Scan.phase] is a resource id; 0 until the first progress report. */
+    private fun scanPhaseText(): String =
+        if (Scan.phase == 0) "" else getString(Scan.phase) + "\u2026"
+
     private fun showScanProgress() {
         vm.goTo(OnboardingViewModel.STEP_SCAN)
         root.removeAllViews()
         root.addView(title(getString(R.string.onboard_looking)))
-        val status = body("${Scan.phase}\u2026")
+        val status = body(scanPhaseText())
         val bar = com.google.android.material.progressindicator.LinearProgressIndicator(this).apply {
             isIndeterminate = false
             max = 100
@@ -243,8 +247,11 @@ class OnboardingActivity : ComponentActivity() {
         Scan.observe {
             if (Scan.running) {
                 bar.progress = Scan.percent
-                status.text = getString(
-                    R.string.onboard_progress, Scan.phase, Scan.done, Scan.total)
+                // Scan.phase is a resource id, so it has to be resolved
+                // before it reaches a %s -- formatting it raw printed the id.
+                status.text = if (Scan.phase == 0) "" else getString(
+                    R.string.onboard_progress,
+                    getString(Scan.phase), Scan.done, Scan.total)
             } else {
                 Scan.observe(null)
                 Scan.consumeFinished()
@@ -436,7 +443,9 @@ class OnboardingActivity : ComponentActivity() {
                         .apply { setMarginsRelative(0, 0, dp(8), 0) }
                 }
                 cell.addView(Ui.thumb(this, 80).also { it.load("file://$p") })
-                cell.addView(Ui.text(this, Ui.Type.CAPTION, "${s.size} photos",
+                cell.addView(Ui.text(this, Ui.Type.CAPTION,
+                    resources.getQuantityString(
+                        R.plurals.onboard_cluster_photos, s.size, s.size),
                     R.color.pk_on_surface_variant))
                 strip.addView(cell)
             }
@@ -453,9 +462,10 @@ class OnboardingActivity : ComponentActivity() {
         }
 
         col.addView(button(
-            if (named > 0) "Next: where the photos go" else "Finish setup", Ui.Btn.PRIMARY
+            getString(if (named > 0) R.string.onboard_next_backup
+            else R.string.onboard_finish_setup), Ui.Btn.PRIMARY
         ) { showBackup() })
-        if (!firstRun) col.addView(button("Done", Ui.Btn.TEXT) { done() })
+        if (!firstRun) col.addView(button(getString(R.string.onboard_done), Ui.Btn.TEXT) { done() })
         root.addView(scroll)
     }
 
@@ -473,16 +483,15 @@ class OnboardingActivity : ComponentActivity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(col)
 
-        col.addView(headline("Two switches, and you're set"))
-        col.addView(body("In Google Photos, back up the folder PixKin saves to and stop " +
-            "backing up the WhatsApp ones."))
+        col.addView(headline(getString(R.string.backup_headline)))
+        col.addView(body(getString(R.string.backup_intro)))
 
         // Name the folders the way Google Photos lists them, not the way PixKin
         // thinks of them: the user is about to look for these exact rows.
-        col.addView(Ui.stateRow(this, R.drawable.ic_logo_mark, "PicFilter",
-            "Back up", good = true, tintIcon = false))
+        col.addView(Ui.stateRow(this, R.drawable.ic_logo_mark, Promoter.DEST_NAME,
+            getString(R.string.backup_state_back_up), good = true, tintIcon = false))
         col.addView(Ui.stateRow(this, R.drawable.ic_folder, "WhatsApp Images",
-            "Don't", good = false))
+            getString(R.string.backup_state_dont), good = false))
 
         col.addView(Ui.factRow(this, R.drawable.ic_photo_stack,
             getString(R.string.backup_photos_settings)))
