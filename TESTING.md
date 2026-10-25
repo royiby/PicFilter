@@ -651,7 +651,13 @@ PKG=com.picfilter.spike scripts/db-backup.sh save   # old id
 scripts/db-backup.sh restore backups/<that file>    # new id
 scripts/db-backup.sh save                           # read it back
 shasum -a 256 backups/*.db                          # must match
+adb uninstall com.picfilter.spike                   # LAST, and not optional
 ```
+
+The uninstall is part of the migration, not tidying after it — see *Two
+installs of the same app rescue the same photo twice* below. Leave it to the
+end: until the new install is verified, the old one is the only copy of the
+enrolment that is not a file on a laptop.
 
 646 items, 5 people, 535 labels, 113 promotions, 12 centroids, and the round
 trip was byte-identical.
@@ -734,6 +740,42 @@ asymmetry only exists where the database comes back and the schedule does not.
 `op=watchon` and `op=watchoff` now write the intent as well as the schedule.
 They used to set only the schedule, which the next launch would heal straight
 back — a diagnostic that undid itself.
+
+### Two installs of the same app rescue the same photo twice
+
+Changing the applicationId does not replace the old install, it adds a second
+one. Both were left on the phone for three days with auto-save on, both watching
+the same library, and on 24 October both rescued the same four new photos. The
+destination collision is the only reason this did not end in a lost file: the
+first copy landed as `IMG-20261024-WA0002.jpg` and the second as
+`IMG-20261024-WA0002_42048.jpg`, byte-identical, both in `Pictures/PicFilter/`.
+
+Nothing in the app can see another copy of itself. The dedupe that saved it is
+per-name, inside one install's own promote path, and it fired here only because
+the two installs happened to write to the same folder.
+
+Row counts are not enough to notice this. Both databases held 117 promotions
+over an identical set of item ids; the four duplicated rows differed only in
+`dest_uri`, `dest_name` and `at`. Compare the tables, not the counts:
+
+```bash
+sqlite3 old.db ".mode insert" "select * from promotion order by item_id" | shasum -a 256
+sqlite3 new.db ".mode insert" "select * from promotion order by item_id" | shasum -a 256
+```
+
+An earlier attempt at the same check used `quote(t.*)`, which is not valid and
+returned empty for every table — so every table compared equal, including the
+one already known to differ. **Any comparison that can only report "same" is
+worth testing against a difference you have already found**, which is the same
+lesson as the grep that invented six StrictMode violations.
+
+The old install also held one `DISCARD` the new one did not: a judgement made in
+it two hours after the restore, when both were on the phone. Merging it across
+before uninstalling is the whole reason to diff rather than just delete.
+
+**So the migration is not done until the old package is uninstalled.** Until
+then there are two schedulers, two scoring processes and two sets of rescued
+files competing over one library.
 
 ## What is not covered yet
 
