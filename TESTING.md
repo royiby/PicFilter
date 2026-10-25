@@ -104,6 +104,68 @@ same number the `GridLayoutManager` was given, or the columns drift out of line
 with their gutters — which is why both are derived from one `spans` value per
 Activity rather than computed twice.
 
+### A caption from a state that had already gone
+
+The review screen's grid came up captioned **`DISCARD=490 SKIP=33 KEEP=13`**
+under 113 photos. That string is `vm.summary()`, the tally meant for the empty
+state when a queue is finished.
+
+The empty-state branch ends:
+
+```kotlin
+info.text = ""
+lifecycleScope.launch { info.text = vm.summary() }
+```
+
+A fire-and-forget write into a view, with a database read between the launch
+and the assignment. On a cold open the queue is empty for a moment, so that
+branch runs and starts the read; the queue then loads, `render()` takes the
+grid path and sets `info.text` to "Tap one to check it."; and the read finally
+returns and puts the tally on top of it. The screen had moved on and the
+coroutine did not know.
+
+Rotating made it disappear, which is the tell: after a rotation the ViewModel
+still holds the queue, so the first `render()` already takes the grid path, the
+empty branch never runs and nothing is launched to arrive late. **A bug that
+only shows on a cold open is invisible to anyone testing by rotating.**
+
+The write is now guarded by the condition that asked for it:
+
+```kotlin
+val tally = vm.summary()
+if (idx >= queue.size && !vm.grid.value) info.text = tally
+```
+
+Verified both ways on the phone: a cold open of the saved queue reads "Tap one
+to check it.", and the duplicates queue — genuinely empty — still shows
+`DIFFERENT=3 SAME=5` under "Nothing here to look at.".
+
+**This is not covered by a test.** It needs the review screen driven with a
+fixture queue, which is the one thing the rules at the bottom of this file
+forbid doing against the real library, so it is a screenshot and a reasoned
+guard rather than a regression test. The same shape — `lifecycleScope.launch`
+writing into a view without re-checking what it is writing into — is worth
+grepping for whenever a screen gains an async read.
+
+The tally itself is raw for something a user sees: `DIFFERENT=3 SAME=5` is the
+database's vocabulary, not a person's. Left as it is, noted as a thing to
+phrase properly before anyone else installs this.
+
+### Inspecting review without judging anything
+
+The rule is never to automate the review screen, and it stands. This pass
+worked within it:
+
+- **`verify` mode opens in grid by default** (`_grid = state[S_GRID] ?: (mode ==
+  "verify")`), and the grid branch of `render()` sets `actionBar` and `undoBtn`
+  to `GONE`. So the saved queue can be opened and photographed with no
+  judgement control on screen at all.
+- **The counts were the guard.** Labels, promotions, `action_log` and
+  `dupe_verdict` were hashed before and after. All four came back identical:
+  `label` at `6bc29d2567172130`, `dupe_verdict` at `e91d6b4c8607303b`. The
+  check is cheap and it is what makes a visual pass over this screen defensible
+  rather than merely careful.
+
 ### What else the screenshot pass confirmed
 
 Every figure on the home screen was checked against the database rather than

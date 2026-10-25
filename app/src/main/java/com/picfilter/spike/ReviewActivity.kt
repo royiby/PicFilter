@@ -280,7 +280,17 @@ class ReviewActivity : ComponentActivity() {
             image.visibility = View.GONE
             counter.text = ""
             info.text = ""
-            lifecycleScope.launch { info.text = vm.summary() }
+            lifecycleScope.launch {
+                val tally = vm.summary()
+                // summary() reads the database, and the queue can finish
+                // loading while it does. On a cold open the queue is empty for
+                // a moment, so this branch runs, fires the read, and the grid
+                // renders before it returns -- then the tally lands on top of
+                // the caption that replaced it. That is how a grid of 113
+                // photos came to be captioned "DISCARD=490 SKIP=33 KEEP=13".
+                // Re-check the state that asked for it before writing.
+                if (idx >= queue.size && !vm.grid.value) info.text = tally
+            }
             return
         }
         empty.visibility = View.GONE
