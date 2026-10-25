@@ -52,6 +52,18 @@ class OnboardingViewModel(app: Application, private val state: SavedStateHandle)
     /** Read once per visit to the summary. */
     var skipped: List<Db.Candidate>? = null; private set
 
+    /**
+     * How many people are enrolled **in total**, which is not [named].
+     *
+     * [named] counts people named during this run of setup. The summary used
+     * it for both its headline and its warning, so someone who already had
+     * five people, tapped Add and claimed nobody new was told "0 people
+     * enrolled" and that every group photo of their own family would be
+     * treated as a deletion candidate. The warning is a claim about the
+     * database; it has to be read from the database.
+     */
+    var enrolled: Int? = null; private set
+
     fun goTo(step: String) { _step.value = step; state[S_STEP] = step }
 
     private fun persist() {
@@ -79,11 +91,15 @@ class OnboardingViewModel(app: Application, private val state: SavedStateHandle)
         }
     }
 
+    /** Both of the summary's facts, on one trip to the database. */
     fun loadSkipped(then: () -> Unit) {
         viewModelScope.launch {
-            skipped = withContext(dbq.context) {
-                try { db.skippedClusters(minSize = 5) } catch (e: SQLException) { emptyList() }
+            val read = withContext(dbq.context) {
+                try { db.skippedClusters(minSize = 5) to db.enrolledCount() }
+                catch (e: SQLException) { emptyList<Db.Candidate>() to 0 }
             }
+            skipped = read.first
+            enrolled = read.second
             then()
         }
     }

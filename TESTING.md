@@ -1007,21 +1007,38 @@ storage were persisted in a database that outlives the package name.** A path
 relative to `filesDir` would have survived the rename untouched. The rows are
 still stale on this phone; only a re-scan regenerates them.
 
-### Found and not fixed: a warning that reads the wrong counter
+### A warning that read the wrong counter
 
-The summary says "0 people enrolled" and, beneath it, "You haven't enrolled
+The summary said "0 people enrolled" and, beneath it, "You haven't enrolled
 anyone. Until you do, every group photo — including photos of your own family —
 will be treated as a deletion candidate."
 
-Both are gated on `named`, which counts people enrolled **in this run of
-onboarding**, not people enrolled at all. On a genuine first run they agree. For
-someone who already has five people and reaches this screen having named nobody
-new, the sentence is a false and alarming claim about their database. `Db` has
-`enrolledCount()` already, which is what the warning is actually about.
+Both were gated on `named`, which counts people enrolled **in this run of
+onboarding**, not people enrolled at all. On a genuine first run the two agree,
+which is why it looked right.
 
-Left alone deliberately: whether that state is reachable through the "Add" flow
-was not established, and a wrong change to a warning about deleting family
-photos is worse than a warning that is sometimes over-cautious.
+**It is reachable, and by an ordinary route.** `showCandidate` ends with
+
+```kotlin
+if (idx >= candidates.size) { showSummary(); return }
+```
+
+so tapping Add on the home screen, going through the cards and claiming nobody
+lands on this screen with `named == 0`. Someone with their whole family already
+enrolled is then told, in those words, that photos of their own family will be
+treated as deletion candidates.
+
+The headline and the warning are claims about the database, so they are read
+from it: `loadSkipped` now returns `enrolledCount()` alongside the skipped
+clusters — one trip, since the screen already waits for that read — and both
+use it. `named` still drives what is genuinely about this run: whether the next
+button says "Next: where the photos go" or "Finish setup", and whether the
+"nothing unclaimed" line appears.
+
+Not covered by a test. The condition lives in an Activity's view-building code,
+and reaching it means driving onboarding against a real enrolment. The guard is
+that the two counters now have visibly different names and a comment saying
+which question each answers.
 
 ### Inspecting setup without enrolling anyone
 

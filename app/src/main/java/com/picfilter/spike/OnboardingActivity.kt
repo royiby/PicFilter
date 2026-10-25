@@ -401,8 +401,6 @@ class OnboardingActivity : ComponentActivity() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         scroll.addView(col)
 
-        col.addView(title(resources.getQuantityString(R.plurals.onboard_enrolled, named, named)))
-
         // The part that matters: who did they NOT claim? Read on this thread
         // only because the whole screen is already built synchronously; the
         // decode below is what actually cost frames and that is now scoped.
@@ -412,6 +410,15 @@ class OnboardingActivity : ComponentActivity() {
             root.addView(scroll)
             return
         }
+
+        // The headline and the warning below are about how many people PixKin
+        // knows, not about how many were named just now. Reaching this screen
+        // having claimed nobody is ordinary -- showCandidate() falls into it
+        // once the last card is decided -- and for someone who already has a
+        // family enrolled, `named` would say 0 and mean something false.
+        val enrolled = vm.enrolled ?: 0
+        col.addView(title(
+            resources.getQuantityString(R.plurals.onboard_enrolled, enrolled, enrolled)))
         if (skipped.isNotEmpty()) {
             col.addView(Ui.text(this, Ui.Type.TITLE_SMALL,
                 getString(R.string.onboard_second_look),
@@ -441,7 +448,7 @@ class OnboardingActivity : ComponentActivity() {
             col.addView(body(getString(R.string.onboard_none_unclaimed)))
         }
 
-        if (named == 0) {
+        if (enrolled == 0) {
             col.addView(body(getString(R.string.onboard_nobody_warning)))
         }
 
