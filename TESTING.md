@@ -1035,10 +1035,20 @@ use it. `named` still drives what is genuinely about this run: whether the next
 button says "Next: where the photos go" or "Finish setup", and whether the
 "nothing unclaimed" line appears.
 
+Confirmed on the phone: the summary now reads **"5 people enrolled"** on an
+install with five people, and the deletion warning is gone.
+
 Not covered by a test. The condition lives in an Activity's view-building code,
 and reaching it means driving onboarding against a real enrolment. The guard is
 that the two counters now have visibly different names and a comment saying
 which question each answers.
+
+One side effect worth knowing before reading too much into that screenshot: on
+this phone the summary is now nearly bare — a headline and a button — because
+every unclaimed cluster was dropped by the existence filter above, their crops
+having been orphaned by the applicationId change. A new install would show the
+"Worth a second look" strip there. The emptiness is this device's history, not
+the screen's design.
 
 ### Inspecting setup without enrolling anyone
 
