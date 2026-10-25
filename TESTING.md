@@ -1220,10 +1220,29 @@ deterministic and needs no animation settings on the device. The cost is a
 twenty-line helper; the benefit is a test that cannot fail for reasons
 unrelated to what it asserts.
 
-**These tests have not run yet.** The phone was unplugged before the
-instrumented suite could be started. They compile, and that is all that is
-known about them — stated here rather than left to be assumed, because the
-whole point of this section is that compiling is not evidence.
+### Proved by breaking it
+
+Six tests passed on the first run, which is not evidence of anything. A test
+that has never failed may be asserting nothing at all — the same shape as the
+database comparison earlier in this file that reported every table identical
+because the SQL was invalid.
+
+So the defect was reintroduced on purpose. `label()` was made to advance the
+queue and write no row, which is exactly the historical bug:
+
+```kotlin
+if (System.currentTimeMillis() > 0) { _idx.value += 1; persist(); return }
+```
+
+**Five of the six failed.** The sixth, `opening_the_screen_writes_nothing`,
+correctly still passed: a screen that writes nothing on a tap also writes
+nothing when nothing is tapped. That is the test doing its job, not a gap.
+
+`ReviewViewModel` was restored and verified identical to HEAD, and the suite is
+green again: 62 instrumented, 73 JVM, 0 failures.
+
+**Do this to any test written for a bug that has already happened.** It costs
+one run and it is the difference between a test and a comment.
 
 ## What is not covered yet
 
