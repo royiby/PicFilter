@@ -58,9 +58,10 @@ class ReviewActivity : ComponentActivity() {
     private lateinit var empty: LinearLayout
     private lateinit var bar: android.widget.FrameLayout
     private lateinit var gridView: RecyclerView
+    private val spans by lazy { gridSpans(this) }
     private val gridAdapter by lazy {
         PhotoGridAdapter(
-            this, gridTileSide(this, dp(Ui.GRID_GAP)),
+            this, gridTileSide(this, dp(Ui.GRID_GAP), spans),
             kept = mode == "verify",   // everything here is already saved
             dimmed = mode == "junk",   // and everything here is not
         ) { at -> vm.goTo(at) }
@@ -141,8 +142,8 @@ class ReviewActivity : ComponentActivity() {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
             visibility = View.GONE
-            layoutManager = GridLayoutManager(this@ReviewActivity, GRID_COLS)
-            addItemDecoration(GridGaps(dp(Ui.GRID_GAP)))
+            layoutManager = GridLayoutManager(this@ReviewActivity, spans)
+            addItemDecoration(GridGaps(dp(Ui.GRID_GAP), spans))
             setHasFixedSize(true)
             adapter = gridAdapter
         }

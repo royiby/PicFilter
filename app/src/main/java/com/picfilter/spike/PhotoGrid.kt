@@ -15,7 +15,31 @@ import coil.size.Scale
 import androidx.core.net.toUri
 
 /** Columns in every photo grid in the app. */
-const val GRID_COLS = 3
+/**
+ * How wide a tile should be, give or take, before another column is better
+ * value than a bigger picture.
+ *
+ * Chosen so that every phone in portrait still gets the three columns this
+ * grid has always had: the narrowest common width is 360dp, and 360/120 is
+ * exactly 3. Landscape is where the old fixed 3 fell apart -- an 892dp window
+ * made 770px tiles, so one cropped row filled the screen and the rest of the
+ * width went to nothing.
+ */
+private const val GRID_TILE_TARGET_DP = 120
+
+/**
+ * Columns for the width we actually have, not for the width a phone has in
+ * portrait.
+ *
+ * Floored at 3 so no layout loses a column it used to have, and capped at 8
+ * so a large tablet does not render a mosaic of thumbnails too small to read.
+ */
+fun gridSpans(ctx: Context): Int =
+    spansFor(ctx.resources.displayMetrics.run { widthPixels / density })
+
+/** The arithmetic on its own, so it can be pinned without a device. */
+internal fun spansFor(widthDp: Float): Int =
+    (widthDp / GRID_TILE_TARGET_DP).toInt().coerceIn(3, 8)
 
 /** Decode target for a grid tile: sharper than it looks, far smaller than the source. */
 const val GRID_THUMB_PX = 320
@@ -79,26 +103,34 @@ class PhotoGridAdapter(
     }
 }
 
-/** Even gaps between tiles, so the grid needs no margins of its own. */
-class GridGaps(private val gap: Int) : RecyclerView.ItemDecoration() {
+/**
+ * Even gaps between tiles, so the grid needs no margins of its own.
+ *
+ * [spans] must be the same count the GridLayoutManager was given, or the
+ * columns drift out of line with their gutters.
+ */
+class GridGaps(
+    private val gap: Int,
+    private val spans: Int,
+) : RecyclerView.ItemDecoration() {
     override fun getItemOffsets(
         outRect: Rect, view: View, parent: RecyclerView, state: RecyclerView.State,
     ) {
         val i = parent.getChildAdapterPosition(view)
         if (i == RecyclerView.NO_POSITION) return
-        val col = i % GRID_COLS
+        val col = i % spans
         // outRect is in physical sides, while the column index counts from the
         // start of the line -- which is the right-hand side in Hebrew. Mirror
         // it, or the outer column loses its gutter and the grid sits off centre.
-        val before = col * gap / GRID_COLS
-        val after = gap - (col + 1) * gap / GRID_COLS
+        val before = col * gap / spans
+        val after = gap - (col + 1) * gap / spans
         val rtl = parent.layoutDirection == View.LAYOUT_DIRECTION_RTL
         outRect.left = if (rtl) after else before
         outRect.right = if (rtl) before else after
-        if (i >= GRID_COLS) outRect.top = gap
+        if (i >= spans) outRect.top = gap
     }
 }
 
-/** The side of a square tile, for a three-column grid filling the screen. */
-fun gridTileSide(ctx: Context, gapPx: Int): Int =
-    (ctx.resources.displayMetrics.widthPixels - gapPx * (GRID_COLS - 1)) / GRID_COLS
+/** The side of a square tile, for a [spans]-column grid filling the screen. */
+fun gridTileSide(ctx: Context, gapPx: Int, spans: Int): Int =
+    (ctx.resources.displayMetrics.widthPixels - gapPx * (spans - 1)) / spans

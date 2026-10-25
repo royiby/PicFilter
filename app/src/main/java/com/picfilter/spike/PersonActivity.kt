@@ -29,8 +29,11 @@ class PersonActivity : ComponentActivity() {
     private lateinit var grid: RecyclerView
     private lateinit var countLine: android.widget.TextView
     private lateinit var removeButton: View
+    // Recomputed per instance, and the Activity is recreated on rotation, so
+    // landscape gets the columns its width is worth rather than portrait's 3.
+    private val spans by lazy { gridSpans(this) }
     private val adapter by lazy {
-        PhotoGridAdapter(this, gridTileSide(this, dp(Ui.GRID_GAP)), kept = false)
+        PhotoGridAdapter(this, gridTileSide(this, dp(Ui.GRID_GAP), spans), kept = false)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,8 +59,8 @@ class PersonActivity : ComponentActivity() {
         grid = RecyclerView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f)
-            layoutManager = GridLayoutManager(this@PersonActivity, GRID_COLS)
-            addItemDecoration(GridGaps(dp(Ui.GRID_GAP)))
+            layoutManager = GridLayoutManager(this@PersonActivity, spans)
+            addItemDecoration(GridGaps(dp(Ui.GRID_GAP), spans))
             setHasFixedSize(true)
             adapter = this@PersonActivity.adapter
         }

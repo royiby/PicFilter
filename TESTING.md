@@ -9,7 +9,7 @@ made.
 ## Running it
 
 ```bash
-./gradlew :app:testDebugUnitTest         # 62 JVM tests, ~5s, no device
+./gradlew :app:testDebugUnitTest         # 67 JVM tests, ~5s, no device
 scripts/db-backup.sh save                # cheap insurance; see the note below
 ./gradlew :app:connectedDebugAndroidTest # 56 instrumented tests, needs a phone
 scripts/smoke.sh static                  # repo checks, no device
@@ -58,10 +58,66 @@ Pure logic, no device. These run in seconds and should stay that way.
 | `EmptyCentroidsTest` *(in `MatchFaceTest.kt`)* | The 290-mislabelled-photo bug, in two halves: an empty centroid set really does read as a clean miss rather than as uncertainty, and a clean miss on a crowd really does become a discard candidate. Neither is wrong alone; together they are why `Pipeline.score` refuses to run when people are enrolled and no centroids load. |
 | `DestNameTest` | Promotion is safe to re-run. The promotion table is what PixKin *believes* it copied and the folder is what is *there*; clearing app data drifts them apart, and MediaStore writes "name (1).jpg" rather than overwriting. Pins that the folder is the authority, and that same-name-different-size is a real collision rather than a skip. |
 | `FitThresholdTest` | Where a person's threshold may land. The defect: fitting from matched faces alone sees only points above the bar, so it could rise and never fall — three fitted thresholds (0.55, 0.63, 0.65) became unreachable that way. Pins that a bar comes down only on enough confirmed evidence below it, never under the 0.55 floor, that strangers below the bar keep it where it is, and that sub-threshold evidence alone holds the bar instead of triggering the 0.85 fail-safe. |
+| `GridSpansTest` | How many columns the photo grid gets for a window width. The floor of 3 is the point: the count was the constant 3 because that is right in portrait, and landscape inherited it. A later tweak to the target tile width must not cost a phone in portrait a column, so the floor is pinned across the common widths rather than at one of them. |
+| `ShortCountTest` | Abbreviating a counter: round rather than truncate (148,912 is 149K, not 148K), and never render something wider than the cell — 999,999 became "1000K", five characters where four fit, so the boundary moved to 999,500. |
 | `WhatsAppFolderTest` | Which folders onboarding samples. WhatsApp has used several folder shapes over the years and the bucket names differ again; getting this wrong is quiet — the scan still runs, it just learns the wrong faces. |
 
 `matchFace` was lifted out of `FaceEngine` to make this possible: it is pure
 arithmetic that was trapped in a class needing a TFLite interpreter.
+
+## The grid in landscape, and what a screenshot found that a test could not
+
+`GRID_COLS` was the constant 3. It had always been right, because it had only
+ever been looked at on a phone held upright. Turned sideways, the same three
+columns divided a 780dp window into 770px tiles: **one row, cropped by the
+bottom of the grid, with the rest of the width showing nothing.** It affected
+the person screen and the review grids alike, since both took their column
+count from that constant.
+
+Nothing failed. No test covered it, lint has no opinion about it, and the
+screen is perfectly usable in the orientation anyone would normally hold it in.
+It took looking at the thing on a phone.
+
+The count now comes from the width:
+
+```kotlin
+internal fun spansFor(widthDp: Float): Int =
+    (widthDp / GRID_TILE_TARGET_DP).toInt().coerceIn(3, 8)
+```
+
+120dp is chosen so that **every phone in portrait keeps the three columns it
+already had** — the narrowest width in common use is 360dp, and 360/120 is
+exactly 3. That floor is the part a later tweak to the target is most likely to
+break, so `GridSpansTest` pins it across the common portrait widths rather than
+testing one.
+
+Measured on the phone this was found on, a 1080x2340 at density 480 — 360dp
+portrait, 780dp landscape:
+
+| | before | after |
+|---|---|---|
+| portrait | 3 columns | 3 columns, unchanged |
+| landscape | 3 columns, 1 cropped row | 6 columns, 2 rows |
+
+`GridGaps` takes the span count as a constructor argument now. It has to be the
+same number the `GridLayoutManager` was given, or the columns drift out of line
+with their gutters — which is why both are derived from one `spans` value per
+Activity rather than computed twice.
+
+### What else the screenshot pass confirmed
+
+Every figure on the home screen was checked against the database rather than
+read and believed: 117 saved, 492 not saved, 113 of 117 still to check, 14
+unsure, 4 no-face, and all five people's counts and their order. The review
+queues hold no item in common. `PersonActivity` is genuinely unexported — an
+attempt to launch it with `am start` is refused with a SecurityException, which
+is the gate rather than an obstacle.
+
+**Rotation was exercised on a device for the first time here.** Rotating the
+person screen logged no database read at all: the Activity was recreated, the
+ViewModel was not, and the grid came back with its list intact. That is the
+first item under *What is not covered yet* finally getting a hand-verification
+to go with its argument.
 
 ## Tier 2 — instrumented tests (`app/src/androidTest`)
 
@@ -784,11 +840,14 @@ Ordered by the risk each one leaves open.
 1. **Configuration changes and process death.** `ReviewActivity` and
    `OnboardingActivity` now save their step, index and undo history, and the
    onboarding scan survives in `Scan` rather than dying with the Activity.
-   **None of it is tested, and none of it has been exercised on a device yet** —
-   it wants `ActivityScenario.recreate()` against fixtures, which collides with
-   the rule below about never automating the review screen. Until then this is
-   hand-verification: rotate mid-review, rotate mid-scan, and check the queue
-   position and progress survive.
+   **None of it is tested automatically**, and it wants
+   `ActivityScenario.recreate()` against fixtures, which collides with the rule
+   below about never automating the review screen. The person screen has now
+   been rotated on a device and came back with its list intact and no database
+   read — see *The grid in landscape* above — so the ViewModel retention is
+   demonstrated for that screen. Still hand-verification only, and still
+   unverified where it matters most: rotate mid-review and mid-scan, and check
+   the queue position and progress survive.
 2. **A UI handler that silently does nothing.** Every rescue button once became a
    no-op because a `when` over card types quietly stopped being exhaustive, and
    nothing failed — the buttons just did nothing. Needs an instrumented test that
