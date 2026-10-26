@@ -69,6 +69,12 @@ android {
                 storePassword = k.getProperty("storePassword")
                 keyAlias = k.getProperty("keyAlias")
                 keyPassword = k.getProperty("keyPassword")
+                // v3 carries the proof needed to rotate this key later. The
+                // key is otherwise permanent: every future update to
+                // com.pixkin.app must be signed with it, so the one chance to
+                // make rotation possible is before the first release ships.
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
