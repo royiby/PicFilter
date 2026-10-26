@@ -52,6 +52,8 @@ class PixKinApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Before anything else can crash.
+        CrashReports.install(this)
         if (!BuildConfig.DEBUG) return
         StrictMode.setThreadPolicy(
             StrictMode.ThreadPolicy.Builder()

@@ -161,6 +161,16 @@ internal fun MainActivity.dispatch(op: String) {
                 }
             }
         }
+        // Debug-only, like everything here: proves the crash handler writes a
+        // scrubbed report rather than that it compiles.
+        "crash"     -> throw IllegalStateException(
+            "deliberate test crash: גבע IMG-20261024-WA0017.jpg " +
+                "content://media/external/images/media/42057")
+        "crashlist" -> Thread {
+            val files = CrashReports.pending(this)
+            Log.i(TAG, "CRASH " + files.size + " report(s) waiting")
+            files.firstOrNull()?.let { Log.i(TAG, "CRASH latest:\n" + it.readText()) }
+        }.start()
         "unpromote" -> Thread {
             intent?.getStringExtra("id")?.toLongOrNull()?.let {
                 com.picfilter.spike.engine.Promoter.unpromote(this, it)

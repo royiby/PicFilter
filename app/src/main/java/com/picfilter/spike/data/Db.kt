@@ -216,6 +216,26 @@ class Db(ctx: Context, name: String = DEFAULT_NAME) : SQLiteOpenHelper(ctx, name
         )
     }
 
+    // ---------- crash reports ----------
+
+    /**
+     * Whether the user has agreed to send crash reports.
+     *
+     * Null until asked, and null is NOT yes. The home screen's intro says
+     * "Nothing leaves this phone"; a reporter that defaults to on would make
+     * that sentence false in the app's own words.
+     */
+    fun crashReportsWanted(): Boolean? =
+        readableDatabase.rawQuery("SELECT v FROM meta WHERE k='crash_reports'", null)
+            .use { if (it.moveToFirst()) it.getString(0) == "1" else null }
+
+    fun setCrashReportsWanted(on: Boolean) {
+        writableDatabase.execSQL(
+            "INSERT OR REPLACE INTO meta(k, v) VALUES('crash_reports', ?)",
+            arrayOf<Any>(if (on) "1" else "0")
+        )
+    }
+
     /** Items whose score predates the current centroid revision. */
     fun staleScoreCount(): Int =
         readableDatabase.rawQuery(

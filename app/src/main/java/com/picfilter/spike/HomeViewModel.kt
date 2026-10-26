@@ -99,6 +99,52 @@ class HomeViewModel(
         }
     }
 
+    private var crashChecked = false
+
+    /**
+     * Deal with any crash report waiting from last time.
+     *
+     * Asked once, and only when there is actually something to ask about: a
+     * user whose app never crashes is never interrupted, and the question is
+     * answerable because it is about a thing that just happened to them.
+     *
+     * [ask] is called on the main thread when consent has never been given or
+     * refused. Everything else happens without bothering anyone.
+     */
+    fun crashReports(ask: () -> Unit) {
+        if (crashChecked) return
+        crashChecked = true
+        viewModelScope.launch {
+            val ctx = getApplication<Application>()
+            if (CrashReports.pending(ctx).isEmpty()) return@launch
+            val wanted = withContext(Dispatchers.IO) {
+                val db = deps.openDb()
+                try { db.crashReportsWanted() }
+                catch (e: SQLException) { Log.w(TAG, "CRASH consent: ${e.message}"); false }
+                finally { db.close() }
+            }
+            when (wanted) {
+                null -> ask()
+                true -> withContext(Dispatchers.IO) { CrashReports.send(ctx) }
+                false -> withContext(Dispatchers.IO) { CrashReports.clear(ctx) }
+            }
+        }
+    }
+
+    /** Record the answer, and act on it for the report already waiting. */
+    fun setCrashConsent(on: Boolean) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                val ctx = getApplication<Application>()
+                val db = deps.openDb()
+                try { db.setCrashReportsWanted(on) }
+                catch (e: SQLException) { Log.w(TAG, "CRASH consent save: ${e.message}") }
+                finally { db.close() }
+                if (on) CrashReports.send(ctx) else CrashReports.clear(ctx)
+            }
+        }
+    }
+
     /** Once per process: give anyone whose crops a re-scan orphaned theirs back. */
     fun relinkFaces() {
         if (relinkChecked) return
@@ -199,6 +245,10 @@ class HomeViewModel(
         // them. That invariant is what maybeRebuildAvatars tests to decide
         // whether anyone needs repairing, and when it was broken every person
         // looked as though they already had a face.
+        // The crash handler must not read the database while the process is
+        // dying, so it is told the names on a pass that reads them regardless.
+        CrashReports.rememberNames(ctx, r.persons.map { it.name })
+
         val people = r.persons.map { p ->
             val crops = Clusterer.personFaces(ctx, p.id).ifEmpty { p.thumbs }
             HomePerson(

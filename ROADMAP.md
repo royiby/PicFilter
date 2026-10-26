@@ -40,13 +40,24 @@ Two things worth knowing about it:
   likely to be flaky on an emulator. Promote it to the push workflow once it has been
   quiet for a couple of weeks.
 
-## 2. Crash reporting — an hour
+## 2. Crash reporting — done, except the Firebase project
 
-There is none. On a public APK a crash is simply invisible: the one fixed this week
-would have met every new user and never been reported. Firebase Crashlytics is the
-default; `ACRA` avoids a Google dependency if that matters for an app whose pitch is
-that nothing leaves the phone. **Whichever is chosen must be opt-in and say so**, or
-it contradicts the product.
+The app catches its own crashes, scrubs them and keeps them. What is **not** done is
+the transport: Crashlytics needs an `app/google-services.json` from a Firebase
+project, which needs a Google account. Drop that file in and the Gradle plugins and
+the dependency apply themselves; leave it out and the build carries no Google code at
+all, which is how CI builds it.
+
+Three decisions worth keeping:
+
+- **The app owns the uncaught-exception handler.** Crashlytics captures the raw
+  throwable with no hook in between, so scrubbing is only a promise you can keep if
+  nothing else sees the original. A reporter is a transport for the sanitised copy.
+- **Opt-in, asked once, and only when a report is actually waiting.** Someone whose
+  app never crashes is never asked, and the question is about something that just
+  happened to them. A dismissed dialog is not consent — it asks again next time.
+- **Scrubbed before it is stored**, not before it is sent. A report sitting in app
+  storage with a child's name in it is already the problem.
 
 ## 3. Finish the UI tests — two days
 

@@ -1244,6 +1244,50 @@ green again: 62 instrumented, 73 JVM, 0 failures.
 **Do this to any test written for a bug that has already happened.** It costs
 one run and it is the difference between a test and a comment.
 
+## Crash reports, and the name that got through
+
+The app's first screen promises that nothing leaves the phone, so the one feature
+that contradicts it has to be worth defending line by line. `Scrub` redacts
+enrolled names, WhatsApp filenames, MediaStore ids and crop filenames; twelve
+unit tests pin it, including the case that bites — a shorter name inside a
+longer one, where replacing "Dan" before "Daniel" leaves "<name>iel" behind.
+
+**Then the device found what the unit tests could not.** A deliberate crash
+(`op=crash`, debug only, carrying a name, a filename and a media id) produced:
+
+```
+deliberate test crash: גבע <photo> content://media/external/images/media/<id>
+```
+
+The filename and the id were redacted. **The name was not.** The scrubber was
+right; the list it was given was empty. Names were cached when the home screen
+read people, and this crash happened before that read finished.
+
+The crashes that beat that read are the early ones — which are also the ones
+most worth reporting. Last week's first-run crash was in a ViewModel
+constructor, before anything had been read at all. So the names are persisted
+to a preferences file whenever a screen reads them, and the handler reads that:
+no SQLite in a handler whose process may be dying because of SQLite, and correct
+from the second launch onward. Before any enrolment there are no names to leak.
+
+Re-tested in a fresh process killed before any home read:
+
+```
+deliberate test crash: <name> <photo> content://media/external/images/media/<id>
+```
+
+Zero secrets remaining.
+
+**The lesson is about where the test ran, not what it asserted.** A pure
+function with twelve passing tests was feeding on an empty list in the one
+situation it existed for. Testing the function is not testing the feature.
+
+### What a report contains
+
+Version, Android level, manufacturer and model, then the scrubbed stack. The
+device model earns its place: several bugs in this project were specific to one
+manufacturer's framework, and it says nothing about who owns the phone.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

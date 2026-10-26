@@ -254,4 +254,9 @@
         <item quantity="one">%d Foto</item>
         <item quantity="other">%d Fotos</item>
     </plurals>
+
+    <string name="crash_title">PixKin ist letztes Mal abgestürzt</string>
+    <string name="crash_body">Der Bericht hilft bei der Fehlersuche. Namen und Dateinamen werden vorher entfernt: Er enthält den Fehler, die Stelle im Code, deine Android-Version und dein Telefonmodell. Nichts über deine Fotos oder die Personen darauf.</string>
+    <string name="crash_send">Senden</string>
+    <string name="crash_never">Nicht senden</string>
 </resources>

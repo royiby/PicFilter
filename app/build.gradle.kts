@@ -4,6 +4,21 @@ plugins {
     id("com.android.application")
 }
 
+/**
+ * Crash reporting is opt-in twice over: the build only has a reporter if a
+ * google-services.json is present, and the app only sends anything if the user
+ * said yes to a specific report. Neither is a default.
+ *
+ * Keeping it conditional means CI -- which has no config and no secrets --
+ * builds the same source without the Firebase plugins, and a build made from a
+ * clean clone has no Google SDK in it.
+ */
+val hasFirebaseConfig = file("google-services.json").exists()
+if (hasFirebaseConfig) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
+}
+
 android {
     namespace = "com.picfilter.spike"
     compileSdk = 37
@@ -99,6 +114,13 @@ android {
 }
 
 dependencies {
+    // Reached by reflection in CrashReports.send, so its absence is a
+    // runtime no-op rather than a compile error.
+    if (hasFirebaseConfig) {
+        implementation(platform("com.google.firebase:firebase-bom:34.1.0"))
+        implementation("com.google.firebase:firebase-crashlytics")
+    }
+
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.activity:activity-ktx:1.13.0")
     // lifecycleScope: work started by a screen is cancelled when that screen

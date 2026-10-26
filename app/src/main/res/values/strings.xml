@@ -291,4 +291,13 @@
         <item quantity="one">%d photo</item>
         <item quantity="other">%d photos</item>
     </plurals>
+
+    <!-- Asked only when a report is actually waiting, so someone whose app
+         never crashes is never asked. The wording has to be specific about
+         what is in it: the app's own first screen promises nothing leaves the
+         phone, and this is the one thing that would. -->
+    <string name="crash_title">PixKin crashed last time</string>
+    <string name="crash_body">Sending the report helps fix it. Names and photo filenames are removed before it leaves: it contains the error, where in the code it happened, your Android version and your phone model. Nothing about your photos or the people in them.</string>
+    <string name="crash_send">Send</string>
+    <string name="crash_never">Don\'t send</string>
 </resources>

@@ -284,4 +284,9 @@
         <item quantity="two">%d תמונות</item>
         <item quantity="other">%d תמונות</item>
     </plurals>
+
+    <string name="crash_title">PixKin קרסה בפעם הקודמת</string>
+    <string name="crash_body">שליחת הדוח עוזרת לתקן. שמות ושמות קבצים מוסרים לפני שהוא יוצא: הוא מכיל את השגיאה, היכן בקוד היא קרתה, גרסת האנדרואיד ודגם המכשיר. שום דבר על התמונות או על האנשים שבהן.</string>
+    <string name="crash_send">שליחה</string>
+    <string name="crash_never">לא לשלוח</string>
 </resources>

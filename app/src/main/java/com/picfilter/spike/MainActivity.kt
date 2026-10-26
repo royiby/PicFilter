@@ -63,6 +63,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         observeHome()
 
+        // Only speaks up if something actually crashed last time.
+        vm.crashReports { askAboutCrashReport() }
+
         trashLauncher = registerForActivityResult(
             ActivityResultContracts.StartIntentSenderForResult()
         ) { res ->
@@ -330,5 +333,21 @@ class MainActivity : ComponentActivity() {
             else -> "NONE"
         }
         Log.i(TAG, "ACCESS_MODE=$mode")
+    }
+
+    /**
+     * The one question this app asks about sending anything off the phone.
+     *
+     * Cancelling is not an answer: the dialog comes back next time there is a
+     * report, because a dismissed dialog is not consent. Only the two buttons
+     * record a decision.
+     */
+    private fun askAboutCrashReport() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle(R.string.crash_title)
+            .setMessage(R.string.crash_body)
+            .setPositiveButton(R.string.crash_send) { _, _ -> vm.setCrashConsent(true) }
+            .setNegativeButton(R.string.crash_never) { _, _ -> vm.setCrashConsent(false) }
+            .show()
     }
 }
