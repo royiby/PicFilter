@@ -94,7 +94,18 @@ converters to `DbBytes.kt`; neither ever belonged to a SQLiteOpenHelper.
 is why it was safe to do mechanically — a fake still has to implement all of `Db`.
 That is the next step and a real design change, not a move.
 
-`Ui.kt` is still 950 lines and splits the same way: tokens, text, buttons, rows.
+`Ui.kt` is done too: 950 lines down to 158, holding the tokens — spacing, radius,
+sizes, colour roles, the type scale and the three nested types. The components moved
+into seven files named for what they build. Same package as every caller, so unlike
+the Db split not one import changed anywhere.
+
+| | lines |
+|---|---|
+| `Ui.kt` (tokens and nested types) | 158 |
+| `UiCards.kt` | 288 |
+| `UiPeople.kt` | 191 |
+| `UiScaffold.kt` / `UiStates.kt` | 156–157 |
+| `UiButtons.kt` / `UiPhotos.kt` / `UiText.kt` | 48–106 |
 
 The cost worth knowing: extensions in another package need importing, so callers
 carry `import com.picfilter.spike.data.*`. A wildcard for a package that is entirely

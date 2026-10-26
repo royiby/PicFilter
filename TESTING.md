@@ -1400,6 +1400,32 @@ Then the ordinary checks: 85 JVM, 69 instrumented, lint clean, the app launched
 on the phone with no crash, and the user's six tables hashing the same before
 and after.
 
+### The same again for Ui.kt
+
+950 lines to 158. The tokens stay — spacing, radius, sizes, colour roles, the
+type scale and the three nested types — and the components moved into seven
+files named for what they build. `Ui` is an object in the same package as every
+caller, so `Ui.text(...)` still resolves with no import: unlike the Db split,
+not one call site or import changed.
+
+Proved the same way, adapted to a layer with no SQL in it: **54 functions before
+and 54 after**, and **57 resource references identical**. The function count
+first read 55, and the extra was `scaled`, a local function inside `shortCount`
+that the dedent moved from eight spaces to four and into reach of the regex. It
+is still nested where it was. *A count that disagrees is a question, not a
+verdict* — the answer here was that the counter was wrong, not the code.
+
+Then the screen itself: home rendered identically, no crash, 69 instrumented
+and 85 JVM green.
+
+Two scope problems particular to an object rather than a class:
+
+- **Nested classifiers are not in scope through an extension receiver.** Inside
+  `fun Ui.pill(...)`, `Btn` does not resolve though `this` is `Ui`; members do,
+  types do not. 42 references across six files now say `Ui.Btn`, `Ui.Type`.
+- `FACE_PX` was private and used from what is now another file, so it is
+  `internal`. The only widening in either split.
+
 ### What went wrong on the way
 
 Three things, each caught by the compiler rather than by review:
