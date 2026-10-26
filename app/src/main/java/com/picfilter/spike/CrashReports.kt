@@ -174,33 +174,72 @@ object CrashReports {
     }
 
     /**
-     * Hand the waiting reports to whatever reporter this build has, if any.
+     * Turn the reporter on or off.
      *
-     * Reflection because the Crashlytics dependency is only present when a
-     * google-services.json is -- a build without one carries no Google code at
-     * all, which is the only way "nothing leaves this phone" is true by
-     * construction rather than by configuration. Returns what it managed to
-     * send. (If R8 is ever turned on this needs a keep rule.)
+     * Collection is off in the manifest, so nothing is captured until this is
+     * called with true -- and it is only called with true after the user has
+     * said yes to the dialog.
+     *
+     * Reflection because the Crashlytics dependency is only present when an
+     * app/google-services.json is: a build without one carries no Google code
+     * at all. Returns whether a reporter was there to configure. (If R8 is
+     * ever turned on this needs a keep rule.)
+     */
+    fun setCollection(enabled: Boolean): Boolean = try {
+        val k = Class.forName("com.google.firebase.crashlytics.FirebaseCrashlytics")
+        val instance = k.getMethod("getInstance").invoke(null)
+        k.getMethod("setCrashlyticsCollectionEnabled", java.lang.Boolean.TYPE)
+            .invoke(instance, enabled)
+        android.util.Log.i(TAG, "CRASH collection enabled=$enabled")
+        true
+    } catch (e: Throwable) {
+        android.util.Log.i(TAG, "CRASH no reporter in this build")
+        false
+    }
+
+    /**
+     * Apply the stored answer at startup.
+     *
+     * A consent given once has to survive a restart, and the manifest default
+     * is off -- so without this the reporter would quietly stop working after
+     * the first process death.
+     */
+    fun applyConsent(wanted: Boolean?) {
+        if (wanted == true) setCollection(true)
+    }
+
+    /**
+     * Send the reports that were written before consent existed.
+     *
+     * These are the ones this app scrubbed itself, so they go out as non-fatals
+     * carrying the sanitised text. `log()` alone would not do it -- that only
+     * attaches breadcrumbs to the next report -- which is a mistake worth
+     * writing down, because a successful reflective call looked exactly like a
+     * delivery.
+     *
+     * The stack is in the text rather than in the throwable: what is stored is
+     * a rendered report, not a live exception. Readable in the console, and
+     * not grouped the way a real stack would be.
      */
     fun send(ctx: android.content.Context): Int {
         val reports = pending(ctx)
         if (reports.isEmpty()) return 0
-        val crashlytics = try {
-            val c = Class.forName("com.google.firebase.crashlytics.FirebaseCrashlytics")
-            c.getMethod("getInstance").invoke(null) to c
+        val klass = try {
+            Class.forName("com.google.firebase.crashlytics.FirebaseCrashlytics")
         } catch (e: Throwable) {
-            android.util.Log.i(TAG, "CRASH no reporter in this build; ${reports.size} kept locally")
+            android.util.Log.i(TAG, "CRASH no reporter; ${reports.size} kept locally")
             return 0
         }
-        val (instance, klass) = crashlytics
         var sent = 0
-        for (f in reports) {
-            try {
-                klass.getMethod("log", String::class.java).invoke(instance, f.readText())
+        try {
+            val instance = klass.getMethod("getInstance").invoke(null)
+            val record = klass.getMethod("recordException", Throwable::class.java)
+            for (f in reports) {
+                record.invoke(instance, RuntimeException("PixKin report\n" + f.readText()))
                 sent++
-            } catch (e: Throwable) {
-                android.util.Log.w(TAG, "CRASH send failed: ${e.javaClass.simpleName}")
             }
+        } catch (e: Throwable) {
+            android.util.Log.w(TAG, "CRASH send failed: ${e.javaClass.simpleName}")
         }
         if (sent > 0) clear(ctx)
         android.util.Log.i(TAG, "CRASH sent=$sent")

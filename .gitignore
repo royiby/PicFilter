@@ -33,3 +33,4 @@ keystore.properties
 
 # press kit: screenshots of a real family library. Never commit.
 /press/
+app/google-services.json

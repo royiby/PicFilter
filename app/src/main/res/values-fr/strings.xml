@@ -272,7 +272,7 @@
     </plurals>
 
     <string name="crash_title">PixKin a planté la dernière fois</string>
-    <string name="crash_body">Envoyer le rapport aide à corriger le problème. Les noms et les noms de fichiers sont supprimés avant l\'envoi : il contient l\'erreur, l\'endroit du code où elle s\'est produite, votre version d\'Android et le modèle de votre téléphone. Rien sur vos photos ni sur les personnes qui y figurent.</string>
+    <string name="crash_body">L\'envoi aide à corriger le problème. Un rapport contient l\'erreur, l\'endroit du code où elle s\'est produite, votre version d\'Android et le modèle de votre téléphone.\n\nDésormais les rapports proviennent directement du plantage : l\'un d\'eux peut donc contenir des noms que vous avez ajoutés et des noms de fichiers photo — un rapport cite ce que le code manipulait. Si vous refusez, rien n\'est envoyé.</string>
     <string name="crash_send">Envoyer</string>
     <string name="crash_never">Ne pas envoyer</string>
 </resources>

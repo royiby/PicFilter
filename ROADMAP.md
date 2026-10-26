@@ -50,9 +50,11 @@ all, which is how CI builds it.
 
 Three decisions worth keeping:
 
-- **The app owns the uncaught-exception handler.** Crashlytics captures the raw
-  throwable with no hook in between, so scrubbing is only a promise you can keep if
-  nothing else sees the original. A reporter is a transport for the sanitised copy.
+- **Scrubbing covers the reports this app writes, not what Crashlytics captures.**
+  Crashlytics has a single collection switch governing both its own handler and
+  `recordException`, so there is no configuration where it sends our sanitised copy
+  and not the original. The dialog says so in those words rather than promising a
+  redaction the library cannot deliver.
 - **Opt-in, asked once, and only when a report is actually waiting.** Someone whose
   app never crashes is never asked, and the question is about something that just
   happened to them. A dismissed dialog is not consent — it asks again next time.

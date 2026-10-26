@@ -1288,6 +1288,50 @@ Version, Android level, manufacturer and model, then the scrubbed stack. The
 device model earns its place: several bugs in this project were specific to one
 manufacturer's framework, and it says nothing about who owns the phone.
 
+## Crashlytics cannot promise a scrubbed crash, and the dialog had to say so
+
+The design above was built on a false premise, and the device found it within
+minutes of the Firebase config going in.
+
+**Crashlytics has one switch.** `setCrashlyticsCollectionEnabled` governs both
+its own uncaught-exception handler and `recordException`. There is no setting
+where this app sends its sanitised copy and Crashlytics does not also capture
+the original. Our handler writes a scrubbed file and then calls
+`prev?.uncaughtException(thread, t)` — which is Crashlytics, receiving the raw
+throwable, exactly as it must for the process to die correctly.
+
+So scrubbing protected the local file and nothing else. A test crash carrying a
+real name went to Google's servers while the copy beside the button promised
+names were removed.
+
+Two defects, one premise:
+
+- **Collection defaulted to enabled**, because the manifest said nothing. It
+  now carries `firebase_crashlytics_collection_enabled=false`, so the library
+  captures nothing until a consent is applied, and `applyConsent` re-applies a
+  stored yes after every restart.
+- **`send()` called `log()`**, which only attaches breadcrumbs to the *next*
+  report and sends nothing by itself. `CRASH sent=1` was a successful
+  reflective call that delivered nothing — a shape worth remembering, because
+  it looks identical to success. It uses `recordException` now.
+
+**The honest fix was the copy, not the code.** The dialog used to say names and
+filenames are removed. For reports after consent that is false, so it says:
+
+> From now on reports come straight from the crash, so one can include names
+> you have added and photo filenames — a crash report quotes whatever the code
+> was holding. Say no and nothing is ever sent.
+
+Worse-sounding and true. The alternative — keeping the comfortable wording —
+would have made the app lie in the one dialog whose entire purpose is to be
+believed.
+
+A consent collected against the old wording is not consent, so the stored flag
+was deleted and the question asked again.
+
+**What is still true:** reports written before consent are this app's own, and
+those are scrubbed. What Crashlytics captures afterwards is not.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

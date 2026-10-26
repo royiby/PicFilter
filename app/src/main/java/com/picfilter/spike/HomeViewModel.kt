@@ -125,7 +125,12 @@ class HomeViewModel(
             }
             when (wanted) {
                 null -> ask()
-                true -> withContext(Dispatchers.IO) { CrashReports.send(ctx) }
+                true -> withContext(Dispatchers.IO) {
+                    // The manifest keeps collection off, so a consent given
+                    // before the last restart has to be re-applied.
+                    CrashReports.setCollection(true)
+                    CrashReports.send(ctx)
+                }
                 false -> withContext(Dispatchers.IO) { CrashReports.clear(ctx) }
             }
         }
@@ -140,6 +145,7 @@ class HomeViewModel(
                 try { db.setCrashReportsWanted(on) }
                 catch (e: SQLException) { Log.w(TAG, "CRASH consent save: ${e.message}") }
                 finally { db.close() }
+                CrashReports.setCollection(on)
                 if (on) CrashReports.send(ctx) else CrashReports.clear(ctx)
             }
         }

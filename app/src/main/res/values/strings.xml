@@ -297,7 +297,7 @@
          what is in it: the app's own first screen promises nothing leaves the
          phone, and this is the one thing that would. -->
     <string name="crash_title">PixKin crashed last time</string>
-    <string name="crash_body">Sending the report helps fix it. Names and photo filenames are removed before it leaves: it contains the error, where in the code it happened, your Android version and your phone model. Nothing about your photos or the people in them.</string>
+    <string name="crash_body">Sending helps fix it. A report has the error, where in the code it happened, your Android version and your phone model.\n\nFrom now on reports come straight from the crash, so one can include names you have added and photo filenames — a crash report quotes whatever the code was holding. Say no and nothing is ever sent.</string>
     <string name="crash_send">Send</string>
     <string name="crash_never">Don\'t send</string>
 </resources>

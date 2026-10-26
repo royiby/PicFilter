@@ -256,7 +256,7 @@
     </plurals>
 
     <string name="crash_title">PixKin ist letztes Mal abgestürzt</string>
-    <string name="crash_body">Der Bericht hilft bei der Fehlersuche. Namen und Dateinamen werden vorher entfernt: Er enthält den Fehler, die Stelle im Code, deine Android-Version und dein Telefonmodell. Nichts über deine Fotos oder die Personen darauf.</string>
+    <string name="crash_body">Das Senden hilft bei der Fehlersuche. Ein Bericht enthält den Fehler, die Stelle im Code, deine Android-Version und dein Telefonmodell.\n\nAb jetzt kommen Berichte direkt aus dem Absturz, daher kann einer Namen enthalten, die du hinzugefügt hast, sowie Fotodateinamen — ein Absturzbericht zitiert, was der Code gerade in der Hand hatte. Wenn du ablehnst, wird nichts gesendet.</string>
     <string name="crash_send">Senden</string>
     <string name="crash_never">Nicht senden</string>
 </resources>
