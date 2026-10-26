@@ -111,11 +111,26 @@ The cost worth knowing: extensions in another package need importing, so callers
 carry `import com.picfilter.spike.data.*`. A wildcard for a package that is entirely
 this app's own is a fair trade for not touching 24 files' worth of call sites.
 
-## 5. Decide about Compose — a day to prototype
+## 5. Compose — prototyped, and the numbers argue against a port
 
-Programmatic Views in 2026 is a defensible choice that has to be defended. Porting one
-screen — `PersonActivity` is the smallest — answers the question honestly and gives a
-real basis for either keeping Views or committing to a port.
+`PersonActivity` is Compose now, the only screen that is, kept as a measured
+comparison. See *Compose, measured on one screen* in TESTING.md. The short version:
+
+| | Views | Compose |
+|---|---|---|
+| lines for this screen | 125 | 286 (45 + 185 + 56 theme) |
+| release APK | 51 MB | 67 MB |
+| test API | view-tree walk | semantics tree, and a forced Espresso bump |
+
+**Compose came out longer, not shorter**, because the View screen reuses a design
+system that already exists — `Ui.titleBar`, `PhotoGridAdapter`, `GridGaps` — and the
+Compose one could reuse none of it. That is the honest shape of a first port: the
+saving arrives on screen number five, after the second design system is built.
+
+So the recommendation is to **keep the Views and keep this screen**, which is worth
+more as an answer than as an architecture. 16 MB and a parallel design system is a
+real price for an app whose pitch is a free download, and "I ported one screen and
+measured it" is a stronger interview answer than either dogma.
 
 ## 6. R8 — half a day
 

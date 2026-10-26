@@ -1443,6 +1443,65 @@ Three things, each caught by the compiler rather than by review:
 None of it reached a test. All of it would have reached one if the move had been
 done by hand in an editor without a compile between each step.
 
+## Compose, measured on one screen
+
+The question a reviewer asks about an app built on the View system in 2026 is
+"why not Compose?", and the only honest answer needs one screen done the other
+way. `PersonActivity` is that screen: the smallest, already covered by
+`RotationTest`, and the only one ported.
+
+| | Views | Compose |
+|---|---|---|
+| lines for this screen | 125 | **286** (45 Activity + 185 screen + 56 theme) |
+| release APK | 51 MB | **67 MB** |
+| debug APK | 122 MB | 155 MB (`ui-tooling` is debug-only) |
+| test API | view-tree walk | semantics tree |
+
+**Compose came out longer.** That is the opposite of the usual claim and the
+reason is worth stating: the View screen is 125 lines because it reuses a design
+system that already exists — `Ui.titleBar`, `PhotoGridAdapter`, `GridGaps`,
+`Ui.text` — and the Compose screen could reuse none of it. It rebuilt a title
+bar, a grid and a colour scheme from scratch. The saving Compose is sold on
+arrives on screen five, once the second design system exists; screen one pays
+for building it.
+
+### Three costs that only show up by doing it
+
+**The palette does not come across.** Material 3 components read
+`MaterialTheme.colorScheme` and know nothing about `res/values/colors.xml`. The
+first render had the app's text beside a Material-default grey button. 56 lines
+of `PixKinTheme.kt` fix it by reading the same resources, so there is still one
+source of truth and `values-night` still works — but it is a second declaration
+of the same design.
+
+**The tests do not come across either.** Compose draws into one
+`AndroidComposeView` and emits no `TextView`s, so
+`the_person_screen_keeps_its_list_across_a_rotation` broke the moment the screen
+was ported — a tree walk finds nothing and fails with no clue why. It asks the
+semantics tree now, which is why every node it touches carries a `testTag` in
+the screen itself. **Porting a screen means porting its tests, and the two APIs
+do not meet in the middle.**
+
+**Compose's test rule brought a broken Espresso.** Adding a `ComposeTestRule`
+made all seven tests in the class fail, before any of them reached an assertion:
+
+```
+NoSuchMethodException: android.hardware.input.InputManager.getInstance
+    at androidx.test.espresso.Espresso.onIdle
+    at androidx.compose.ui.test.EspressoLink.runUntilIdle
+```
+
+`ui-test-junit4` pulls Espresso 3.5.0, which reflects on a method that no longer
+exists on API 37. Pinned to 3.7.0. A dependency that a test rule brings in
+transitively can break tests that have nothing to do with it.
+
+### The recommendation
+
+Keep the Views, and keep this screen. It is worth more as an answer than as an
+architecture: 16 MB and a parallel design system is a real price for an app
+whose whole proposition is a free download, and the saving does not arrive until
+a port is most of the way done.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

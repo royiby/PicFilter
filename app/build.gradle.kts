@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 /**
@@ -90,6 +91,10 @@ android {
         }
     }
 
+    // One screen is Compose, as a measured comparison rather than a migration.
+    // See PersonScreen.kt.
+    buildFeatures { compose = true }
+
     androidResources { noCompress += "tflite" }
 
     compileOptions {
@@ -114,6 +119,23 @@ android {
 }
 
 dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2025.09.01")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.activity:activity-compose:1.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    // Compose's test rule drags in Espresso 3.5.0, which calls
+    // InputManager.getInstance by reflection -- a method that no longer exists
+    // on API 37, so every test in a class holding a ComposeTestRule dies in
+    // Espresso.onIdle before reaching its own assertions. Pinned forward.
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+
     // Reached by reflection in CrashReports.send, so its absence is a
     // runtime no-op rather than a compile error.
     if (hasFirebaseConfig) {

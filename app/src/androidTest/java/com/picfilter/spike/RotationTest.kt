@@ -16,7 +16,11 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -43,6 +47,14 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class RotationTest {
+
+    /**
+     * Empty rather than createAndroidComposeRule: the Activity under test needs
+     * intent extras, so it is launched by hand and this only supplies the
+     * synchronisation with Compose's frame clock.
+     */
+    @get:Rule
+    val compose = createEmptyComposeRule()
 
     private val ctx = InstrumentationRegistry.getInstrumentation().targetContext
     private val app = ApplicationProvider.getApplicationContext<PixKinApp>()
@@ -166,16 +178,33 @@ class RotationTest {
         }
     }
 
+    /**
+     * The person screen is the one Compose screen, so this is the one test that
+     * cannot walk the view tree.
+     *
+     * It used to, and it broke the moment the screen was ported: Compose draws
+     * into a single AndroidComposeView and emits no TextViews at all, so a tree
+     * walk finds nothing and the assertion fails with no clue why. The replacement
+     * asks the semantics tree instead, which is the only thing a Compose screen
+     * exposes -- and the reason every node this test touches had to be given a
+     * testTag in the screen itself.
+     *
+     * That cost is the finding, not an inconvenience: porting a screen means
+     * porting its tests too, and the two test APIs do not meet in the middle.
+     */
     @Test fun the_person_screen_keeps_its_list_across_a_rotation() {
         val alice = db.upsertPerson("alice")
         val intent = Intent(ctx, PersonActivity::class.java)
             .putExtra("person_id", alice)
             .putExtra("person_name", "alice")
         ActivityScenario.launch<PersonActivity>(intent).use { s ->
-            val before = s.visibleText()
-            assertTrue("the title bar carries the name", before.any { it.contains("alice") })
+            compose.onNodeWithTag("title").assertTextEquals("alice")
+            compose.onNodeWithTag("grid").assertExists()
+
             s.recreate()
-            assertTrue("and still does", s.visibleText().any { it.contains("alice") })
+
+            compose.onNodeWithTag("title").assertTextEquals("alice")
+            compose.onNodeWithTag("grid").assertExists()
         }
     }
 
