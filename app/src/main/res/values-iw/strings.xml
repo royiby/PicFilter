@@ -161,7 +161,7 @@
     </plurals>
     <string name="onboard_no_whatsapp">לא נמצאו תמונות WhatsApp בטלפון הזה</string>
     <string name="onboard_time">כארבע דקות לאיתור, או שניות אם בוחרים תמונות בעצמכם</string>
-    <string name="onboard_private">שום דבר לא יוצא מהטלפון הזה</string>
+    <string name="onboard_private">התמונות שלכם לא יוצאות מהטלפון הזה</string>
     <string name="onboard_find">איתור האנשים שלי</string>
     <string name="onboard_pick_instead">בחירת תמונות של מישהו במקום</string>
     <string name="onboard_continue_found">המשך עם פנים שכבר נמצאו</string>

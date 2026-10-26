@@ -171,7 +171,14 @@
     </plurals>
     <string name="onboard_no_whatsapp">No WhatsApp photos found on this phone</string>
     <string name="onboard_time">About four minutes to find them, or seconds if you pick photos yourself</string>
-    <string name="onboard_private">Nothing leaves this phone</string>
+    <!-- Narrower than it used to be, on purpose. This said "Nothing leaves
+         this phone", which is the first promise a new user reads and was
+         stronger than the app can defend: the merged manifest carries INTERNET
+         (the image and background-work libraries declare it) and there is an
+         opt-in crash reporter. The photos claim is absolute and true; the
+         blanket one was not. A sentence whose whole job is to be believed has
+         to be the one that survives being checked. -->
+    <string name="onboard_private">Your photos never leave this phone</string>
     <string name="onboard_find">Find my people</string>
     <string name="onboard_pick_instead">Pick photos of someone instead</string>
     <string name="onboard_continue_found">Continue with faces already found</string>

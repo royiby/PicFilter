@@ -153,7 +153,7 @@
     </plurals>
     <string name="onboard_no_whatsapp">Aucune photo WhatsApp trouvée sur ce téléphone</string>
     <string name="onboard_time">Environ quatre minutes pour les trouver, ou quelques secondes si vous choisissez les photos vous-même</string>
-    <string name="onboard_private">Rien ne quitte ce téléphone</string>
+    <string name="onboard_private">Vos photos ne quittent jamais ce téléphone</string>
     <string name="onboard_find">Trouver mes proches</string>
     <string name="onboard_pick_instead">Choisir plutôt des photos de quelqu\'un</string>
     <string name="onboard_continue_found">Continuer avec les visages déjà trouvés</string>
