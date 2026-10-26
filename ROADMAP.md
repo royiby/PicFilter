@@ -132,12 +132,16 @@ more as an answer than as an architecture. 16 MB and a parallel design system is
 real price for an app whose pitch is a free download, and "I ported one screen and
 measured it" is a stronger interview answer than either dogma.
 
-## 6. R8 — half a day
+## 6. R8 — done
 
-Off, because it needs keep rules for TFLite's and ML Kit's reflection and getting them
-wrong fails at runtime in a build that compiled cleanly. Turning it on means re-running
-the embedding equality check in TESTING.md: the whole-corpus fingerprint must still be
-1156 faces, sum 454.099573.
+On, with keep rules in `proguard-rules.pro`, and the embedding equality check re-run
+against a minified build first: the corpus fingerprint, the five re-scored
+similarities and the whole `face` table hash are all unchanged.
+
+**Release APK 67.0 MB → 38.5 MB**, which is smaller than the 51 MB this app shipped
+before the Compose screen — so R8 paid for Compose twice over.
+
+Not verified: a signed release on a phone. That needs the developer's key.
 
 ## Blocked, not scheduled
 

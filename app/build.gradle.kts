@@ -75,11 +75,17 @@ android {
 
     buildTypes {
         release {
-            // R8 is off: it needs keep rules for TFLite's and ML Kit's
-            // reflection, and getting those wrong fails at runtime in a build
-            // that compiled cleanly. Turning it on means re-running the
-            // embedding equality check in TESTING.md.
-            isMinifyEnabled = false
+            // R8 is ON, with the keep rules in proguard-rules.pro. Every one
+            // of them exists because something is reached by name. The
+            // embedding equality check in TESTING.md was re-run against a
+            // minified build before this was turned on: the corpus
+            // fingerprint does not move.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             signingConfig = signingConfigs.findByName("release")
             ndk {
                 // 90 MB of this app's 122 MB is four copies of the same native

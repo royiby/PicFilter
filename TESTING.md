@@ -665,6 +665,47 @@ Measured across two runs: every similarity reproduced exactly (0.286414,
 sum 454.099573. `op=modelcheck` also reports the same shape, 192-d and
 batch 2.
 
+### R8 is on, and the fingerprint did not move
+
+R8 was off for most of this project because TFLite and ML Kit reach for
+classes by name, and a wrong keep rule fails at runtime in a build that
+compiled cleanly. The same procedure above answers whether it is safe, because
+the thing at risk is identical: a renamed class that falls back to a different
+code path would change the numbers every threshold is fitted against.
+
+**The diagnostics that report the fingerprint are debug-gated**, so proving
+minification does not move them needed a build that was both minified and
+debuggable — `isMinifyEnabled = true` on the debug type, temporarily, then
+removed. Verifying R8 against the release build alone is not possible here
+without shipping the diagnostics into it, which is the thing they are gated to
+prevent.
+
+| | before R8 | after R8 |
+|---|---|---|
+| corpus fingerprint | 1216 faces, 479.794662 | **1216 faces, 479.794662** |
+| the five re-scored | 0.413036, 0.508781, 0.539177, 0.477501, 0.217753 | **identical** |
+| whole `face` table hash | `3f51775676b5a732` | **`3f51775676b5a732`** |
+| `op=modelcheck` | 192-d, batch 2 | 192-d, batch 2, `PLUMBING_OK=true` |
+| release APK | 67.0 MB | **38.5 MB** |
+
+Every keep rule in `proguard-rules.pro` exists because something is reached by
+name: LiteRT's native delegates, ML Kit's registrar, and `CrashReports.send`,
+which finds `FirebaseCrashlytics` reflectively so a build without a
+google-services.json carries no Google code at all. R8 cannot see that call, so
+without the rule the class is stripped from exactly the build that has it.
+
+**`-keepnames` for our own classes**, not `-keep`. A crash report is written
+into app storage and shown to the user before it goes anywhere; obfuscated it
+is a wall of `a.b.c()`, worth nothing to the person deciding whether to send it
+or to anyone reading it later without the mapping file. R8 still removes unused
+code, it just does not rename what survives. The cost measured 0.1 MB.
+
+**38.5 MB is smaller than the 51 MB this app shipped before Compose**, so R8
+paid for the Compose screen twice over. What is not verified is a *signed*
+release on the phone: that needs the developer's key, and the throwaway used
+for the debug-gate check was destroyed. The minified debug build is the
+evidence, and it is the build the diagnostics can actually run in.
+
 LiteRT 2.3.0 is declined for now and the reason is in `build.gradle.kts`: it
 ships Kotlin 2.4.0 metadata against this project's 2.2.0 toolchain, so taking
 it is a Kotlin upgrade rather than a dependency bump, and would want this
