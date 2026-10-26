@@ -65,10 +65,9 @@ Three decisions worth keeping:
 
 With the seam in place these are ordinary now. In value order:
 
-- **Rotation and process death** (`What is not covered yet` #1). `ActivityScenario
-  .recreate()` against fixtures: the review queue keeps its position, onboarding keeps
-  its step, the person grid keeps its list. Hand-verified once on a device; nothing
-  stops it regressing.
+- ~~Rotation and process death~~ — done, `RotationTest`, seven cases, each proven by
+  mutation. The lesson worth keeping: `recreate()` keeps the ViewModel, so it cannot
+  test `SavedStateHandle` at all; both halves are needed.
 - **The home screen's figures** match the database rather than a stale read — the bug
   that started this whole line of work.
 - **Partial media grants** (#8). Android 14+ `READ_MEDIA_VISUAL_USER_SELECTED` gives a

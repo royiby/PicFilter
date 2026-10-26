@@ -1332,21 +1332,59 @@ was deleted and the question asked again.
 **What is still true:** reports written before consent are this app's own, and
 those are scrubbed. What Crashlytics captures afterwards is not.
 
+## Rotation, process death, and why one test of each is not one test twice
+
+*What is not covered yet* #1 is covered now: `RotationTest`, seven cases over
+the review queue, the grid toggle, the person screen and onboarding's step.
+
+**The two halves test different things, and the difference is the whole point.**
+
+- `ActivityScenario.recreate()` is a **configuration change**. The Activity
+  dies; the ViewModel does not. It proves the screen rebuilds from state it is
+  still holding — which is what rotating a phone does.
+- A ViewModel constructed from a pre-seeded `SavedStateHandle` is **process
+  death**. The ViewModel is gone and the bundle is all there is. Only this
+  exercises the `persist()` calls at all.
+
+That claim was tested rather than asserted. `ReviewViewModel.persist()` was
+made a no-op:
+
+| test | mutant |
+|---|---|
+| `the_review_position_comes_back_from_the_bundle_alone` | **caught** |
+| `the_grid_choice_comes_back_from_the_bundle_alone` | **caught** |
+| `the_review_queue_keeps_its_place_across_a_rotation` | passed |
+| `the_grid_toggle_survives_a_rotation` | passed |
+
+**The two rotation tests passed with the persistence deleted**, which is the
+proof that a suite of only `recreate()` calls would be green on a build whose
+SavedStateHandle writes had been removed entirely — and the user would find out
+when the system killed their backgrounded app mid-review.
+
+`onboarding_keeps_its_step_across_process_death` was proven separately, by
+dropping the `state[S_STEP]` write in `goTo`, rather than assumed to work
+because it is shaped like the other two. Both ViewModels were restored and
+verified identical to HEAD.
+
+### What is still not covered
+
+Real process death, as opposed to the simulation of it. These tests construct
+the ViewModel the way the framework would; they do not kill the process. A
+genuine `adb shell am kill` while backgrounded would also exercise the
+Activity's own `onSaveInstanceState` and the restore of view state, which this
+does not. The gap is smaller than it was and it is not closed.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.
 
-1. **Configuration changes and process death.** `ReviewActivity` and
-   `OnboardingActivity` now save their step, index and undo history, and the
-   onboarding scan survives in `Scan` rather than dying with the Activity.
-   **None of it is tested automatically**, and it wants
-   `ActivityScenario.recreate()` against fixtures, which collides with the rule
-   below about never automating the review screen. The person screen has now
-   been rotated on a device and came back with its list intact and no database
-   read — see *The grid in landscape* above — so the ViewModel retention is
-   demonstrated for that screen. Still hand-verification only, and still
-   unverified where it matters most: rotate mid-review and mid-scan, and check
-   the queue position and progress survive.
+1. **Real process death, and the onboarding scan.** Rotation and simulated
+   process death are covered by `RotationTest` — see *Rotation, process death*
+   above. What is left is the real thing: killing the process while the app is
+   backgrounded, which also exercises the Activity's own `onSaveInstanceState`
+   and view-state restore. And the scan: `Scan` is process-scoped so a rotation
+   mid-scan should keep its progress, which is still hand-verification only,
+   because starting one means a real bootstrap pass over the user's library.
 2. **A UI handler that silently does nothing.** Every rescue button once became a
    no-op because a `when` over card types quietly stopped being exhaustive, and
    nothing failed — the buttons just did nothing. Needs an instrumented test that
