@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import com.picfilter.spike.data.Db
 import com.picfilter.spike.data.*
+import com.picfilter.spike.data.*
 
 /**
  * What a screen needs and should not build for itself.
@@ -30,6 +31,14 @@ import com.picfilter.spike.data.*
 interface Deps {
     /** A new handle. The caller owns it and closes it. */
     fun openDb(): Db
+
+    // One per screen, each only as wide as that screen needs -- see
+    // [com.picfilter.spike.data.Repositories]. A fake for a test implements the
+    // interface rather than a database.
+    fun homeRepo(): HomeRepo = DbHomeRepo(openDb())
+    fun personRepo(): PersonRepo = DbPersonRepo(openDb())
+    fun reviewRepo(): ReviewRepo = DbReviewRepo(openDb())
+    fun onboardingRepo(): OnboardingRepo = DbOnboardingRepo(openDb())
 }
 
 /** The real one: the app's own database, under its own name. */

@@ -90,9 +90,11 @@ converters to `DbBytes.kt`; neither ever belonged to a SQLiteOpenHelper.
 | `DbClusters.kt` | 208 |
 | `DbLabels.kt` / `DbScoring.kt` / `DbPeople.kt` / `DbMeta.kt` / `DbItems.kt` | 69–127 |
 
-**What this is not:** a repository interface per screen. The API is identical, which
-is why it was safe to do mechanically — a fake still has to implement all of `Db`.
-That is the next step and a real design change, not a move.
+**And the repositories are done too.** Each screen now depends on an interface only
+as wide as it needs: `PersonRepo` is two methods, `OnboardingRepo` four, `ReviewRepo`
+eleven, `HomeRepo` fifteen. `PersonRepoTest` drives the person screen with a
+twelve-line fake and no SQLite anywhere — its `openDb()` throws, so the test passing
+is the assertion that the screen never reaches past its interface.
 
 `Ui.kt` is done too: 950 lines down to 158, holding the tokens — spacing, radius,
 sizes, colour roles, the type scale and the three nested types. The components moved

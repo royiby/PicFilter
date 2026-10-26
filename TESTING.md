@@ -1543,6 +1543,57 @@ architecture: 16 MB and a parallel design system is a real price for an app
 whose whole proposition is a free download, and the saving does not arrive until
 a port is most of the way done.
 
+## Repositories, and the test that needs no database
+
+Splitting `Db.kt` made it readable without making it smaller from a caller's
+point of view: every ViewModel still held a `Db` and could reach all ninety-odd
+queries. "What does the person screen touch?" could only be answered by reading
+it, and a fake for a test had to be a real database, because nothing smaller
+would satisfy the type.
+
+One interface per screen, each as wide as that screen and no wider:
+
+| | methods |
+|---|---|
+| `PersonRepo` | 2 |
+| `OnboardingRepo` | 4 |
+| `ReviewRepo` | 11 |
+| `HomeRepo` | 15 |
+
+`PersonRepoTest` is what that is for. The fake is twelve lines and answers from
+a list, and its `openDb()` throws:
+
+```kotlin
+override fun openDb(): Db = throw AssertionError("the screen must not open a database")
+```
+
+**The test passing is the assertion.** If the ViewModel reached past its
+interface the throw would say so, by name, instead of a seeded SQLite file
+quietly making it work.
+
+### Two things drawing the line found
+
+**A ViewModel was holding a SQL string.** `ReviewViewModel.undo()` called
+`db.writableDatabase.execSQL("DELETE FROM dupe_verdict WHERE group_id=?")`. It
+survived the file split because a move does not ask what anything is for; it
+did not survive being put behind an interface, because *an operation with no
+name cannot be declared*. It is `deleteDupeVerdict` now.
+
+**`DbQueue` took a `Db` only to close it.** It takes an `AutoCloseable`, so the
+thing a ViewModel owns and the thing that closes it are the same object, and
+neither is a database as far as the screen is concerned.
+
+### What a seam does not do
+
+`PersonRepoTest` is still instrumented, not JVM. `PersonViewModel` is an
+`AndroidViewModel` and `remove()` reaches the file system through
+`Clusterer.personFaces`. The repository narrowed the data dependency to nothing
+and left the Android one exactly where it was.
+
+**A seam removes the dependency you drew it around and no others.** Getting
+these screens onto the JVM would need a second seam around the file system, and
+that is a different piece of work with its own justification to make.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

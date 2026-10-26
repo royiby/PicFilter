@@ -82,6 +82,18 @@ fun Db.putDupeVerdict(groupId: Long, verdict: String) {
     writableDatabase.insertWithOnConflict("dupe_verdict", null, v, SQLiteDatabase.CONFLICT_REPLACE)
 }
 
+/**
+ * Undo a duplicate verdict.
+ *
+ * This was `db.writableDatabase.execSQL(...)` inside ReviewViewModel, which is
+ * a screen holding a SQL string. It surfaced while drawing the repository
+ * boundary: an operation with no name cannot be put behind an interface.
+ */
+fun Db.deleteDupeVerdict(groupId: Long) {
+    writableDatabase.execSQL(
+        "DELETE FROM dupe_verdict WHERE group_id=?", arrayOf<Any>(groupId))
+}
+
 fun Db.dupeVerdictCounts(): List<Pair<String, Int>> {
     val out = mutableListOf<Pair<String, Int>>()
     readableDatabase.rawQuery(

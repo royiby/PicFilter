@@ -52,8 +52,8 @@ class ReviewViewModel(
 
     val mode: String = state["mode"] ?: "golden"
 
-    private val db = deps.openDb()
-    private val dbq = DbQueue(db)
+    private val repo = deps.reviewRepo()
+    private val dbq = DbQueue(repo)
 
     private val _queue = MutableStateFlow<List<Card>?>(null)
     val queue: StateFlow<List<Card>?> = _queue.asStateFlow()
@@ -90,12 +90,12 @@ class ReviewViewModel(
             val loaded = withContext(dbq.context) {
                 try {
                     when (mode) {
-                        "dupes" -> db.dupeGroups().map { DupeCard(it.first, it.second) }
-                        "rescue" -> db.rescueQueue().map { RescueCard(it) }
-                        "noface" -> db.rescueQueue(listOf("NO_FACE_PLAIN")).map { RescueCard(it) }
-                        "verify" -> db.promotedForReview().map { RescueCard(it) }
-                        "junk" -> db.junkQueue().map { RescueCard(it) }
-                        else -> db.goldenQueue(perReason = 40).map { ItemCard(it) }
+                        "dupes" -> repo.dupeGroups().map { DupeCard(it.first, it.second) }
+                        "rescue" -> repo.rescueQueue().map { RescueCard(it) }
+                        "noface" -> repo.rescueQueue(listOf("NO_FACE_PLAIN")).map { RescueCard(it) }
+                        "verify" -> repo.promotedForReview().map { RescueCard(it) }
+                        "junk" -> repo.junkQueue().map { RescueCard(it) }
+                        else -> repo.goldenQueue(perReason = 40).map { ItemCard(it) }
                     }
                 } catch (e: SQLException) {
                     Log.w(TAG, "REVIEW queue load failed: ${e.message}")
@@ -132,7 +132,7 @@ class ReviewViewModel(
             // silently return. A missing branch once made every button a no-op.
             is DupeCard -> { Log.w(TAG, "label() on a DupeCard"); return }
         }
-        dbq.submit { db.putLabel(id, verdict) }
+        dbq.submit { repo.putLabel(id, verdict) }
         if (mode == "verify" && verdict == "DISCARD") {
             val app = getApplication<Application>()
             Background.io.execute {
@@ -152,7 +152,7 @@ class ReviewViewModel(
 
     fun verdict(v: String) {
         val card = _queue.value?.getOrNull(_idx.value) as? DupeCard ?: return
-        dbq.submit { db.putDupeVerdict(card.groupId, v) }
+        dbq.submit { repo.putDupeVerdict(card.groupId, v) }
         history.addLast(_idx.value to card.groupId)
         _idx.value += 1
         persist()
@@ -164,9 +164,8 @@ class ReviewViewModel(
         val dupes = mode == "dupes"
         // Ordered after the write it undoes: [DbQueue] is one thread.
         dbq.submit {
-            if (dupes) db.writableDatabase.execSQL(
-                "DELETE FROM dupe_verdict WHERE group_id=?", arrayOf<Any>(last.second))
-            else db.deleteLabel(last.second)
+            if (dupes) repo.deleteDupeVerdict(last.second)
+            else repo.deleteLabel(last.second)
         }
         _idx.value = last.first
         persist()
@@ -200,7 +199,7 @@ class ReviewViewModel(
                 "SKIP" to R.plurals.tally_skipped,
             )
             val counts =
-                (if (mode == "dupes") db.dupeVerdictCounts() else db.labelCounts()).toMap()
+                (if (mode == "dupes") repo.dupeVerdictCounts() else repo.labelCounts()).toMap()
             val parts = order.mapNotNull { (key, plural) ->
                 val n = counts[key] ?: 0
                 if (n <= 0) null else qty(plural, n)

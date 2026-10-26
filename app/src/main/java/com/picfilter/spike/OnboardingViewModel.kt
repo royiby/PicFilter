@@ -43,8 +43,8 @@ class OnboardingViewModel(
 ) :
     AndroidViewModel(app) {
 
-    private val db = deps.openDb()
-    private val dbq = DbQueue(db)
+    private val repo = deps.onboardingRepo()
+    private val dbq = DbQueue(repo)
 
     private val _step = MutableStateFlow(state[S_STEP] ?: STEP_INTRO)
     val step: StateFlow<String> = _step.asStateFlow()
@@ -86,14 +86,14 @@ class OnboardingViewModel(
 
     /** Whether anything is already extracted, for the "continue" button. */
     suspend fun hasCandidates(): Boolean = withContext(dbq.context) {
-        try { db.candidates(limit = 1, thumbsEach = 1).isNotEmpty() }
+        try { repo.candidates(limit = 1, thumbsEach = 1).isNotEmpty() }
         catch (e: SQLException) { false }
     }
 
     fun loadCandidates(keepIndex: Boolean = false, then: () -> Unit) {
         viewModelScope.launch {
             candidates = withContext(dbq.context) {
-                try { db.candidates(limit = 20, thumbsEach = 6) }
+                try { repo.candidates(limit = 20, thumbsEach = 6) }
                 catch (e: SQLException) { emptyList() }
             }
             if (!keepIndex) idx = 0
@@ -106,7 +106,7 @@ class OnboardingViewModel(
     fun loadSkipped(then: () -> Unit) {
         viewModelScope.launch {
             val read = withContext(dbq.context) {
-                try { db.skippedClusters(minSize = 5) to db.enrolledCount() }
+                try { repo.skippedClusters(minSize = 5) to repo.enrolledCount() }
                 catch (e: SQLException) { emptyList<Candidate>() to 0 }
             }
             skipped = read.first
@@ -126,7 +126,7 @@ class OnboardingViewModel(
     fun decide(clusterId: Long, status: String, then: () -> Unit) {
         viewModelScope.launch {
             withContext(dbq.context) {
-                try { db.setClusterStatus(clusterId, status, null) }
+                try { repo.setClusterStatus(clusterId, status, null) }
                 catch (e: SQLException) { Log.w(TAG, "CLUSTER status: ${e.message}") }
             }
             idx++; persist()

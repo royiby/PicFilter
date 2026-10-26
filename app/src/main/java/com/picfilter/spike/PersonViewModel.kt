@@ -46,8 +46,8 @@ class PersonViewModel(
     val personName: String = state["person_name"]
         ?: app.getString(R.string.person_fallback)
 
-    private val db = deps.openDb()
-    private val dbq = DbQueue(db)
+    private val repo = deps.personRepo()
+    private val dbq = DbQueue(repo)
 
     /** null while loading; the screen tells the two apart. */
     private val _photos = MutableStateFlow<List<Pair<Long, String>>?>(null)
@@ -61,7 +61,7 @@ class PersonViewModel(
     private fun load() {
         if (personId <= 0) { _photos.value = emptyList(); return }
         viewModelScope.launch {
-            _photos.value = withContext(dbq.context) { db.photosOf(personId) }
+            _photos.value = withContext(dbq.context) { repo.photosOf(personId) }
         }
     }
 
@@ -76,7 +76,7 @@ class PersonViewModel(
     fun remove() {
         viewModelScope.launch {
             val requeued = withContext(dbq.context) {
-                try { db.removePerson(personId) } catch (e: android.database.SQLException) {
+                try { repo.removePerson(personId) } catch (e: android.database.SQLException) {
                     Log.w(TAG, "REMOVEPERSON ${e.javaClass.simpleName}: ${e.message}")
                     -1
                 }

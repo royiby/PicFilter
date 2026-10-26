@@ -92,10 +92,10 @@ class HomeViewModel(
             withContext(Dispatchers.IO) {
                 val ctx = getApplication<Application>()
                 val want = !currentlyOn
-                val db = deps.openDb()
-                try { db.setAutoSaveWanted(want) }
+                val repo = deps.homeRepo()
+                try { repo.setAutoSaveWanted(want) }
                 catch (e: SQLException) { Log.w(TAG, "WATCH intent not saved: ${e.message}") }
-                finally { db.close() }
+                finally { repo.close() }
                 if (want) Watcher.enable(ctx) else Watcher.disable(ctx)
             }
             refresh()
@@ -121,10 +121,10 @@ class HomeViewModel(
             val ctx = getApplication<Application>()
             if (CrashReports.pending(ctx).isEmpty()) return@launch
             val wanted = withContext(Dispatchers.IO) {
-                val db = deps.openDb()
-                try { db.crashReportsWanted() }
+                val repo = deps.homeRepo()
+                try { repo.crashReportsWanted() }
                 catch (e: SQLException) { Log.w(TAG, "CRASH consent: ${e.message}"); false }
-                finally { db.close() }
+                finally { repo.close() }
             }
             when (wanted) {
                 null -> ask()
@@ -144,10 +144,10 @@ class HomeViewModel(
         viewModelScope.launch {
             withContext(Dispatchers.IO) {
                 val ctx = getApplication<Application>()
-                val db = deps.openDb()
-                try { db.setCrashReportsWanted(on) }
+                val repo = deps.homeRepo()
+                try { repo.setCrashReportsWanted(on) }
                 catch (e: SQLException) { Log.w(TAG, "CRASH consent save: ${e.message}") }
-                finally { db.close() }
+                finally { repo.close() }
                 CrashReports.setCollection(on)
                 if (on) CrashReports.send(ctx) else CrashReports.clear(ctx)
             }
@@ -186,12 +186,12 @@ class HomeViewModel(
         viewModelScope.launch {
             val rebuilt = withContext(Dispatchers.IO) {
                 val ctx = getApplication<Application>()
-                val db = deps.openDb()
+                val repo = deps.homeRepo()
                 val missing = try {
-                    persons.count { it.faces.isEmpty() && db.matchedItemsFor(it.id, 1).isNotEmpty() }
+                    persons.count { it.faces.isEmpty() && repo.matchedItemsFor(it.id, 1).isNotEmpty() }
                 } catch (e: SQLException) {
                     Log.w(TAG, "AVATAR count: ${e.javaClass.simpleName}"); 0
-                } finally { db.close() }
+                } finally { repo.close() }
                 if (missing == 0) 0 else {
                     Log.i(TAG, "AVATAR $missing of ${persons.size} have no face to show; rebuilding")
                     Clusterer.rebuildAvatars(ctx)
@@ -213,37 +213,37 @@ class HomeViewModel(
         val ctx = getApplication<Application>()
         val prefs = ctx.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
         if (prefs.getBoolean(KEY_ONBOARDED, false)) return@withContext false
-        val db = deps.openDb()
-        val people = try { db.enrolledCount() } catch (e: SQLException) { 0 } finally { db.close() }
+        val repo = deps.homeRepo()
+        val people = try { repo.enrolledCount() } catch (e: SQLException) { 0 } finally { repo.close() }
         people == 0
     }
 
     /** Disk and WorkManager only. Must not touch a View. */
     private fun read(): HomeData {
         val ctx = getApplication<Application>()
-        val db = deps.openDb()
+        val repo = deps.homeRepo()
         // One try for the whole read: these queries fail together or not at
         // all -- the database is either openable or it is not -- and wrapping
         // each one separately only hid which had failed.
         val r = try {
             Read(
-                promoted = db.promotionCount(),
-                notSaved = db.notSavedCount(),
-                undecided = db.undecidedCount(),
-                persons = db.enrolledPeople(),
-                queues = db.queueSizes(),
-                junk = db.junkQueue(limit = 5).map { it.uri },
-                dupes = db.dupePreview(limit = 5),
-                saved = db.promotedForReview(limit = 5).map { it.uri },
-                rescue = db.rescueQueue(limit = 5).map { it.uri },
-                noface = db.rescueQueue(listOf("NO_FACE_PLAIN"), limit = 5).map { it.uri },
-                wanted = db.autoSaveWanted(),
+                promoted = repo.promotionCount(),
+                notSaved = repo.notSavedCount(),
+                undecided = repo.undecidedCount(),
+                persons = repo.enrolledPeople(),
+                queues = repo.queueSizes(),
+                junk = repo.junkQueue(limit = 5).map { it.uri },
+                dupes = repo.dupePreview(limit = 5),
+                saved = repo.promotedForReview(limit = 5).map { it.uri },
+                rescue = repo.rescueQueue(limit = 5).map { it.uri },
+                noface = repo.rescueQueue(listOf("NO_FACE_PLAIN"), limit = 5).map { it.uri },
+                wanted = repo.autoSaveWanted(),
             )
         } catch (e: SQLException) {
             Log.w(TAG, "HOME read failed, showing an empty screen: ${e.message}")
             Read()
         } finally {
-            db.close()
+            repo.close()
         }
 
         // A re-scan wipes the cluster crops, so prefer the copies enrolment
@@ -282,10 +282,10 @@ class HomeViewModel(
         // down what WorkManager already held so the question is answered from
         // then on. Once per install, hence the short-lived handle.
         if (r.wanted == null) {
-            val db = deps.openDb()
-            try { db.setAutoSaveWanted(watchOn) }
+            val repo = deps.homeRepo()
+            try { repo.setAutoSaveWanted(watchOn) }
             catch (e: SQLException) { Log.w(TAG, "WATCH intent not recorded: ${e.message}") }
-            finally { db.close() }
+            finally { repo.close() }
         }
 
         return HomeData(

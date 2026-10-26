@@ -28,7 +28,7 @@ private const val TAG = "PICFILTER"
  * Every database touch from a screen -- read or write -- goes through here, so
  * "last" means what it says.
  */
-class DbQueue(private val db: Db) {
+class DbQueue(private val owned: AutoCloseable) {
 
     private val exec = Executors.newSingleThreadExecutor { r -> Thread(r, "pixkin-db") }
 
@@ -56,7 +56,7 @@ class DbQueue(private val db: Db) {
 
     /** Queue the close behind everything already asked for, then stop taking work. */
     fun closeAfterPending() {
-        submit { db.close() }
+        submit { owned.close() }
         exec.shutdown()
     }
 }
