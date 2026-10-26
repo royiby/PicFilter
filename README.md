@@ -8,11 +8,10 @@ backed-up one — on-device, with no account and no network.
 On the phone it was built against, **609 of 714 images (85%) came from
 WhatsApp.**
 
-> **Naming.** The product is PixKin and it installs as `com.pixkin.app`. The
-> repository, the Kotlin package (`com.picfilter.spike`) and the destination
-> folder (`Pictures/PicFilter`) are still PicFilter: the install id is the only
-> one a user ever sees and the only one that is permanent once released, so
-> that is the one that was changed.
+> **Naming.** The product is PixKin. It installs as `com.pixkin.app` and saves
+> to `Pictures/PixKin` — the two names a user ever sees. The repository and the
+> Kotlin package (`com.picfilter.spike`) are still PicFilter, because renaming
+> a package moves every file for nothing anyone can see.
 
 ## Why it is not a website
 
