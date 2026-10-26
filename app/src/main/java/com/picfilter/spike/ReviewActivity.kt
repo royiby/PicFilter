@@ -28,6 +28,8 @@ import coil.load
 import coil.size.Scale
 import com.picfilter.spike.Ui.setMarginsRelative
 import com.picfilter.spike.data.Db
+import com.picfilter.spike.data.*
+import com.picfilter.spike.data.RescueRow
 import com.picfilter.spike.data.DbQueue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -381,7 +383,7 @@ class ReviewActivity : ComponentActivity() {
     private fun sim(v: Float) = "%.3f".format(v)
 
     /** ", matching גבע at 0.752" — or nothing, when there is nobody close. */
-    private fun matchSuffix(r: Db.RescueRow, verify: Boolean): String {
+    private fun matchSuffix(r: RescueRow, verify: Boolean): String {
         val name = r.nearName ?: return ""
         val v = r.nearSim
         return when {

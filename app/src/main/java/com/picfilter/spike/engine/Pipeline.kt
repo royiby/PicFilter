@@ -11,6 +11,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.picfilter.spike.data.Db
+import com.picfilter.spike.data.*
 import java.io.FileNotFoundException
 import androidx.core.net.toUri
 import androidx.core.graphics.scale

@@ -1,5 +1,6 @@
 package com.picfilter.spike
 
+import com.picfilter.spike.data.*
 import android.Manifest
 import android.app.Activity
 import android.app.RecoverableSecurityException

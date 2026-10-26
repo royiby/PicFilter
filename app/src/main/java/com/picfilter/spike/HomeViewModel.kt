@@ -11,6 +11,9 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.picfilter.spike.data.Db
+import com.picfilter.spike.data.*
+import com.picfilter.spike.data.PersonChip
+import com.picfilter.spike.data.QueueSizes
 import com.picfilter.spike.engine.Clusterer
 import com.picfilter.spike.engine.Watcher
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +36,7 @@ data class HomeData(
     val promoted: Int,
     val notSaved: Int,
     val undecided: Int,
-    val queues: Db.QueueSizes,
+    val queues: QueueSizes,
     val people: List<HomePerson>,
     val watchOn: Boolean,
     val armed: Boolean,
@@ -298,8 +301,8 @@ class HomeViewModel(
         val promoted: Int = 0,
         val notSaved: Int = 0,
         val undecided: Int = 0,
-        val persons: List<Db.PersonChip> = emptyList(),
-        val queues: Db.QueueSizes = Db.QueueSizes(0, 0, 0, 0, 0),
+        val persons: List<PersonChip> = emptyList(),
+        val queues: QueueSizes = QueueSizes(0, 0, 0, 0, 0),
         val junk: List<String> = emptyList(),
         val dupes: List<String> = emptyList(),
         val saved: List<String> = emptyList(),

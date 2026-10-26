@@ -75,14 +75,30 @@ With the seam in place these are ordinary now. In value order:
 - **Date preservation** (#5) and **promote/verify under interruption** (#6), both of
   which have lost real files before.
 
-## 4. Break up the god objects — two days
+## 4. Break up the god objects — `Db` done, `Ui` left
 
-`Db.kt` is 1,501 lines and `Ui.kt` is 950. Reviewers will say so before they say
-anything else. `Db` splits cleanly along the lines its own sections already draw —
-items and scores, people and faces, queues, promotions — behind a repository
-interface per screen, which also narrows what a fake has to implement.
+`Db.kt` was 1,501 lines and is now 170: the class, the schema and eight migrations.
+The queries moved into eight files named for what they answer, as extensions on `Db`,
+so every call site is unchanged. The row types went to `DbRows.kt` and the two byte
+converters to `DbBytes.kt`; neither ever belonged to a SQLiteOpenHelper.
 
-Mechanical, low risk, high signal. Do it after the tests exist, not before.
+| | lines |
+|---|---|
+| `Db.kt` (class, schema, migrations) | 170 |
+| `DbPromotion.kt` | 357 |
+| `DbScreens.kt` | 307 |
+| `DbClusters.kt` | 208 |
+| `DbLabels.kt` / `DbScoring.kt` / `DbPeople.kt` / `DbMeta.kt` / `DbItems.kt` | 69–127 |
+
+**What this is not:** a repository interface per screen. The API is identical, which
+is why it was safe to do mechanically — a fake still has to implement all of `Db`.
+That is the next step and a real design change, not a move.
+
+`Ui.kt` is still 950 lines and splits the same way: tokens, text, buttons, rows.
+
+The cost worth knowing: extensions in another package need importing, so callers
+carry `import com.picfilter.spike.data.*`. A wildcard for a package that is entirely
+this app's own is a fair trade for not touching 24 files' worth of call sites.
 
 ## 5. Decide about Compose — a day to prototype
 

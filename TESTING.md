@@ -1374,6 +1374,49 @@ genuine `adb shell am kill` while backgrounded would also exercise the
 Activity's own `onSaveInstanceState` and the restore of view state, which this
 does not. The gap is smaller than it was and it is not closed.
 
+## Splitting Db.kt, and how a move was proved to be a move
+
+`Db.kt` was 1,501 lines. It is 170 now — the class, the schema and the eight
+migrations — with the queries in eight files named for the question they answer,
+as extensions on `Db`. The API did not change, so no call site did either.
+
+A refactor that passes the tests has proved less than it looks: the tests were
+written against the same behaviour that might have been dropped. Two checks were
+cheap and are much stronger than a green run.
+
+**Every SQL statement, before and after.** Pull each literal out of the old file
+and the new ones, normalise whitespace, sort, compare:
+
+```
+SQL statements before: 132   after: 132
+identical: True
+```
+
+**Every function.** 100 members before; 93 extensions plus 7 remaining members
+after. A method quietly lost in a line-range move would show up in both counts,
+and a query altered rather than moved would show up in the first.
+
+Then the ordinary checks: 85 JVM, 69 instrumented, lint clean, the app launched
+on the phone with no crash, and the user's six tables hashing the same before
+and after.
+
+### What went wrong on the way
+
+Three things, each caught by the compiler rather than by review:
+
+- The last section's line range ran to the end of the class and **took the
+  companion object with it**, so `DEFAULT_NAME` vanished from `Db`.
+- `floatsToBytes` and `bytesToFloats` lived in that companion and resolved
+  unqualified from inside the class. From an extension file they did not. They
+  are top-level in `DbBytes.kt` now, which is where they belonged: they convert
+  floats to bytes and know nothing about SQLite.
+- Extensions in a package need importing by name at every call site, which would
+  have meant dozens of imports. The callers take `import
+  com.picfilter.spike.data.*` instead.
+
+None of it reached a test. All of it would have reached one if the move had been
+done by hand in an editor without a compile between each step.
+
 ## What is not covered yet
 
 Ordered by the risk each one leaves open.

@@ -3,6 +3,7 @@ package com.picfilter.spike
 import android.app.Application
 import android.content.Context
 import com.picfilter.spike.data.Db
+import com.picfilter.spike.data.*
 
 /**
  * What a screen needs and should not build for itself.

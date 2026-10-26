@@ -31,6 +31,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.picfilter.spike.Ui.setMarginsRelative
 import com.picfilter.spike.data.Db
+import com.picfilter.spike.data.*
+import com.picfilter.spike.data.Candidate
 import com.picfilter.spike.engine.Clusterer
 import com.picfilter.spike.engine.Promoter
 import androidx.core.content.edit
@@ -53,7 +55,7 @@ class OnboardingActivity : ComponentActivity() {
     private val vm: OnboardingViewModel by viewModels { OnboardingViewModel.Factory }
     private lateinit var root: LinearLayout
 
-    private var candidates: List<Db.Candidate>
+    private var candidates: List<Candidate>
         get() = vm.candidates
         set(_) { }
     private val idx get() = vm.idx
@@ -318,7 +320,7 @@ class OnboardingActivity : ComponentActivity() {
         })
     }
 
-    private fun promptName(c: Db.Candidate) {
+    private fun promptName(c: Candidate) {
         val input = EditText(this).apply {
             hint = getString(R.string.onboard_name_hint_optional)
             setPaddingRelative(dp(20), dp(20), dp(20), dp(20))
@@ -396,7 +398,7 @@ class OnboardingActivity : ComponentActivity() {
             .show()
     }
 
-    private fun decide(c: Db.Candidate, status: String) =
+    private fun decide(c: Candidate, status: String) =
         vm.decide(c.id, status) { showCandidate() }
 
     // ----------------------------------------------------------- 4. summary

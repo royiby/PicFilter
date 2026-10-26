@@ -13,6 +13,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.picfilter.spike.data.Db
+import com.picfilter.spike.data.*
+import com.picfilter.spike.data.Candidate
 import com.picfilter.spike.data.DbQueue
 import com.picfilter.spike.engine.Clusterer
 import kotlinx.coroutines.Dispatchers
@@ -47,7 +49,7 @@ class OnboardingViewModel(
     private val _step = MutableStateFlow(state[S_STEP] ?: STEP_INTRO)
     val step: StateFlow<String> = _step.asStateFlow()
 
-    var candidates: List<Db.Candidate> = emptyList(); private set
+    var candidates: List<Candidate> = emptyList(); private set
     var idx: Int = state[S_IDX] ?: 0; private set
     var named: Int = state[S_NAMED] ?: 0; private set
     // state[S_FIRST] is NOT only what markFirstRun wrote. A SavedStateHandle is
@@ -59,7 +61,7 @@ class OnboardingViewModel(
     val firstRun: Boolean = firstRunFlag(state.get<Any>(S_FIRST))
 
     /** Read once per visit to the summary. */
-    var skipped: List<Db.Candidate>? = null; private set
+    var skipped: List<Candidate>? = null; private set
 
     /**
      * How many people are enrolled **in total**, which is not [named].
@@ -105,7 +107,7 @@ class OnboardingViewModel(
         viewModelScope.launch {
             val read = withContext(dbq.context) {
                 try { db.skippedClusters(minSize = 5) to db.enrolledCount() }
-                catch (e: SQLException) { emptyList<Db.Candidate>() to 0 }
+                catch (e: SQLException) { emptyList<Candidate>() to 0 }
             }
             skipped = read.first
             enrolled = read.second

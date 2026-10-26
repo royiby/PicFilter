@@ -12,6 +12,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import com.picfilter.spike.data.Db
+import com.picfilter.spike.data.*
+import com.picfilter.spike.data.RescueRow
+import com.picfilter.spike.data.ReviewRow
 import com.picfilter.spike.data.DbQueue
 import com.picfilter.spike.engine.Promoter
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,9 +46,9 @@ class ReviewViewModel(
     AndroidViewModel(app) {
 
     sealed interface Card
-    data class ItemCard(val row: Db.ReviewRow) : Card
+    data class ItemCard(val row: ReviewRow) : Card
     data class DupeCard(val groupId: Long, val members: List<Pair<Long, String>>) : Card
-    data class RescueCard(val row: Db.RescueRow) : Card
+    data class RescueCard(val row: RescueRow) : Card
 
     val mode: String = state["mode"] ?: "golden"
 
